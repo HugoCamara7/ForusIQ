@@ -157,6 +157,8 @@ def _selector_marcas() -> None:
         return
     opciones = [str(m) for m in df["marca"].dropna()]
     if not opciones:
+        st.warning("ARTI no devolvió marcas: revisa la tabla en la página Conexión.")
+        marcas_arti.clear()  # no dejar el vacío en caché
         return
     if ss.marcas is None:
         pedidas = [m.upper() for m in SETTINGS.marcas]

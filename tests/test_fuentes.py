@@ -366,3 +366,29 @@ def test_errores_claros():
     fake.datos["arti"] = fake.datos["arti"].iloc[0:0]
     with pytest.raises(ValueError, match="marca"):
         FuentesRepository(client=fake, secrets=SECRETS_CATALOGO).cargar_entradas(CORTE)
+
+
+def test_tabla_de_venta_ilegible_no_bloquea_la_corrida():
+    """Caso real: INFORMATION_SCHEMA de ventas_table responde vacío / sin permiso."""
+    sec = {
+        "bigquery": {
+            **SECRETS_CATALOGO["bigquery"],
+            "ventas_table": "forus-analitica-prod-datalake.silver.stg_pe_reporteria_ventas_tablon",
+        }
+    }
+    fake = _FakeBQ()
+    base = fake.columnas
+
+    def columnas(tabla):
+        if "silver" in tabla:
+            raise ValueError("sin columnas")
+        return base(tabla)
+
+    fake.columnas = columnas
+    fake.tablas_del_dataset = lambda p, d, patron="": ["stg_pe_reporteria_ventas_tablon_v2"]
+    repo = FuentesRepository(client=fake, secrets=sec)
+    inp = repo.cargar_entradas(CORTE)
+    diag = repo.ultimo_diagnostico
+    assert diag.fuente_venta == F.VENTA_CONSUMO and len(inp.ventas) > 0
+    assert any("stg_pe_reporteria_ventas_tablon_v2" in n for n in diag.notas)
+    assert "ventas" not in [c[0] for c in fake.consultas]

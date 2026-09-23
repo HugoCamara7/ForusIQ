@@ -364,15 +364,33 @@ class BigQueryClient:
         return df
 
     def columnas(self, tabla: str) -> pd.DataFrame:
-        """Esquema de una tabla vía INFORMATION_SCHEMA (gratis, no toca los datos)."""
+        """Esquema de una tabla: INFORMATION_SCHEMA (gratis) y, si viene vacío, la API de la
+        tabla (`get_table`), que sólo necesita permiso sobre la tabla y no sobre el dataset."""
         proyecto, dataset, nombre = validar_tabla(tabla).split(".")
         sql = (
             f"SELECT column_name, data_type FROM `{proyecto}.{dataset}.INFORMATION_SCHEMA.COLUMNS` "
             "WHERE table_name = @tabla ORDER BY ordinal_position"
         )
-        return self.client.query(
-            sql, job_config=self._config({"tabla": nombre}, None)
-        ).to_dataframe()
+        try:
+            df = self.client.query(
+                sql, job_config=self._config({"tabla": nombre}, None)
+            ).to_dataframe()
+        except Exception:
+            df = pd.DataFrame(columns=["column_name", "data_type"])
+        if len(df):
+            return df
+        esquema = self.client.get_table(f"{proyecto}.{dataset}.{nombre}").schema
+        return pd.DataFrame(
+            {"column_name": [c.name for c in esquema], "data_type": [c.field_type for c in esquema]}
+        )
+
+    def tablas_del_dataset(self, proyecto: str, dataset: str, patron: str = "") -> list[str]:
+        """Nombres de tablas de un dataset (para sugerir cuando una ruta no existe)."""
+        tablas = self.client.list_tables(
+            f"{validar_identificador(proyecto)}.{validar_identificador(dataset)}"
+        )
+        nombres = sorted(t.table_id for t in tablas)
+        return [n for n in nombres if patron.lower() in n.lower()] if patron else nombres
 
     def load_df(
         self, df: pd.DataFrame, tabla_id: str, write_disposition: str = "WRITE_APPEND"

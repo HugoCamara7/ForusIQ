@@ -130,3 +130,26 @@ def test_repositorio_sintetico_y_export(resultado_sintetico):
     assert "Stock CD 320" in hojas["Distribucion"].columns
     assert hojas["Distribucion"]["Cantidad a distribuir"].sum() == d["cantidad"].sum()
     assert a_csv(resultado_sintetico.detalle).startswith("﻿Tienda".encode())
+
+
+def test_columnas_cae_a_get_table_si_information_schema_viene_vacio():
+    class Campo:
+        def __init__(self, n):
+            self.name, self.field_type = n, "STRING"
+
+    class Job:
+        def to_dataframe(self):
+            return pd.DataFrame(columns=["column_name", "data_type"])
+
+    class Cliente:
+        project = "p"
+
+        def query(self, sql, job_config=None):
+            return Job()
+
+        def get_table(self, ruta):
+            assert ruta == "p.d.t"
+            return type("T", (), {"schema": [Campo("fec_doc"), Campo("cant_venta")]})()
+
+    c = bq_client.BigQueryClient(settings=AppSettings(gcp_project="p"), client=Cliente())
+    assert list(c.columnas("p.d.t")["column_name"]) == ["fec_doc", "cant_venta"]

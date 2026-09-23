@@ -245,6 +245,7 @@ class FuentesRepository(BigQueryRepository):
             client=client or BigQueryClient(settings, secrets=self.secrets), settings=settings
         )
         self.ultimo_diagnostico = None
+        self.aviso_ventas = ""
 
     def tablas(self) -> dict[str, str | None]:
         from forusight.data import fuentes as F
@@ -280,23 +281,54 @@ class FuentesRepository(BigQueryRepository):
 
         tablas = tablas or self.tablas()
         out = {}
+        self.aviso_ventas = ""
         for fuente, tabla in tablas.items():
             if not tabla:
                 continue
-            cols, _ = self.columnas(tabla)
+            try:
+                cols, _ = self.columnas(tabla)
+            except Exception as exc:
+                if fuente != "ventas":
+                    raise
+                # La venta es opcional: nunca bloquea la corrida.
+                self.aviso_ventas = self._explicar_tabla_ventas(tabla, exc)
+                continue
             mapa, origen = mapeo.resolver(fuente, tabla, cols, self.secrets)
             out[fuente] = (mapa, origen, cols)
         return out
+
+    def _explicar_tabla_ventas(self, tabla: str, exc: Exception) -> str:
+        from forusight.data.bq_client import explicar_error
+
+        texto = (
+            f"No se pudo leer `ventas_table` ({tabla}): se usa la venta estimada por "
+            f"consumo de stock. {explicar_error(exc)}"
+        )
+        try:
+            proyecto, dataset, _ = tabla.split(".")
+            parecidas = self.client.tablas_del_dataset(proyecto, dataset, "vent")
+            if parecidas:
+                texto += f"\n\nTablas con 'vent' en `{proyecto}.{dataset}`: " + ", ".join(
+                    parecidas[:15]
+                )
+        except Exception:
+            pass
+        return texto
 
     def marcas_disponibles(self) -> pd.DataFrame:
         """Marcas del maestro ARTI con su cantidad de SKU."""
         from forusight.data import fuentes as F
 
         tabla = self.tablas()["arti"]
-        mapa = self.mapeos({"arti": tabla})["arti"][0]
+        mapa, _, cols = self.mapeos({"arti": tabla})["arti"]
         if "marca" not in mapa:
-            return pd.DataFrame(columns=["marca", "skus"])
-        return self.client.query_df(F.sql_marcas(tabla, mapa), {}, labels={"consulta": "marcas"})
+            raise ValueError(
+                f"ARTI ({tabla}) no tiene una columna de marca reconocible. "
+                f"Columnas: {', '.join(map(str, cols[:30]))}"
+            )
+        df = self.client.query_df(F.sql_marcas(tabla, mapa), {}, labels={"consulta": "marcas"})
+        df.attrs["columna_marca"] = mapa["marca"]
+        return df
 
     def cargar_entradas(
         self,
@@ -363,7 +395,9 @@ class FuentesRepository(BigQueryRepository):
         )
 
         ventas = None
-        if tablas["ventas"]:
+        if tablas["ventas"] and "ventas" not in mapas:
+            diag.notas.append(getattr(self, "aviso_ventas", "") or "No se pudo leer ventas_table.")
+        elif tablas["ventas"]:
             m_v = mapas["ventas"][0]
             faltan = mapeo.faltantes("ventas", m_v)
             if faltan:
