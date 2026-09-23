@@ -91,40 +91,34 @@ Roles opcionales en `[app_auth.roles]`:
 
 | Rol | Puede |
 |---|---|
-| `admin` | todo: ejecutar, aprobar, guardar parámetros, página **Conexión** |
+| `admin` | todo: ejecutar, aprobar, guardar parámetros, página **Conexión**. Sin `[app_auth.roles]` todos son admin, como en el Catálogo |
 | `aprobador` | ejecutar, revisar y confirmar aprobaciones |
-| `analista` (por defecto) | ejecutar, revisar y exportar la propuesta |
+| `analista` | ejecutar, revisar y exportar (quien no esté listado si existe `[app_auth.roles]`) |
 
 Sin `[app_auth]` la app sólo abre en **modo demo** (datos sintéticos); con BigQuery exige login.
 
 ## Conexión a las tablas de Forus
 
-Fuente `bigquery`: lee directo de las tablas configuradas en `[bigquery]` (las mismas de los
-otros Control Center) y las lleva a los contratos canónicos (`data/fuentes.py`):
+**Basta con pegar los secrets de Catálogo Control Center** (`[app_auth]`, `[bigquery]`,
+`[gcp_service_account]`). No hay tablas que configurar:
 
-| Clave en `[bigquery]` | Tabla (ejemplo) | Alimenta |
+| Dato | Tabla | Cómo se usa |
 |---|---|---|
-| `product_master_table` (o `table`) | `…bronze.stg_pe_central_arti` (ARTI) | dimensión producto: `CODINT_MA` = SKU, `CODMOD_MA`-`CODCOL_MA` = modelo-color, `TALNUM_MA`, `MARCA_MA`, `GENERO_MA` |
-| `stock_table` | `…bronze.stg_pe_central_stock_bi` | última foto → stock por tienda y stock del CD 320; historial por `fecha_corte` → **días con stock** por semana |
-| `ventas_table` | tabla de venta (la de Repo Control Center) | venta semanal por tienda × SKU, agregada en el servidor |
-| *(archivo)* STOCK CD.xlsx | subido en la barra lateral | disponible y reservas del CD (mismo archivo que Repo Control Center) |
+| Maestro de productos | `table` / `product_master_table` del Catálogo (por defecto `…bronze.stg_pe_central_arti`) | SKU = `CODINT_MA`, modelo-color = `CODMOD_MA`-`CODCOL_MA`, talla `TALNUM_MA`, marca `MARCA_MA` |
+| Stock | `stock_table` (por defecto `…bronze.stg_pe_central_stock_bi`) | última foto: en tienda sólo `stock_tiendas`; en el CD 320 `stock_tiendas + stock_bodega` (regla de Reassign Control Center). Historial por `fecha_corte`: días con stock |
+| Venta | `ventas_table` (**opcional**) | si no está, o no responde, se **estima por consumo de stock** (caída entre fotos) y la app lo avisa |
+| Reservas CD | archivo STOCK CD (opcional, barra lateral) | disponible y reservas, igual que Repo Control Center |
 
-- **Columnas**: no se asumen. Se leen con `INFORMATION_SCHEMA` (gratis) y se emparejan por
-  alias (algoritmo de Repo Control Center). La página **Conexión** (sólo admin) muestra y
-  permite corregir el mapeo y genera el bloque `[bigquery.mapeo.<fuente>]` para fijarlo en
-  los secrets (el disco de Streamlit Cloud es efímero).
-- **Costo**: filtro de fecha parametrizado, agregación `GROUP BY` en el servidor, filtro por
-  marca (`[forusight] marcas`, por defecto `AZALEIA`) con semijoin a ARTI, columnas
-  explícitas y **dry run** con tope `max_gb` (20 GB) antes de cada consulta.
-- **Stock**: `stock_tiendas + stock_bodega` (igual que Catálogo); se puede quitar
-  `stock_bodega` del mapeo. Días con stock = fotos con stock × 7 / fotos de la semana.
-- **Tiendas**: salen de la foto de stock y de la venta; el CD 320 y `tiendas_excluidas` no
-  reciben. Sin clusters todavía: similitud por coseno del mix, importancia = percentil de
-  venta.
-- El ARTI de BigQuery **no trae precio**: `rango_precio = SIN_RANGO` hasta tener la fuente.
-
-Errores de credenciales traducidos a algo accionable (firma JWT, formato de llave, permisos,
-ruta inexistente), igual que en Repo Control Center.
+- La **marca** se elige en la barra lateral entre las que existen en ARTI (por defecto
+  AZALEIA).
+- El `id_producto` se canoniza en SQL (sin `.0` ni ceros a la izquierda) para que ARTI y
+  stock crucen siempre.
+- La región no se fuerza: BigQuery la infiere de las tablas, como en el Catálogo.
+- Columnas por `INFORMATION_SCHEMA` y alias; si la cuenta no puede leer metadatos, se usa el
+  esquema conocido de esas tablas. La página **Conexión** (admin) muestra el mapeo, **busca
+  tablas de venta** en el datalake y hace una prueba de lectura.
+- Costo: filtro de fecha parametrizado, agregación en el servidor, semijoin por marca y
+  dry run con tope `max_gb` (20 GB).
 
 ## Configuración de secretos
 
