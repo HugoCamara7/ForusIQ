@@ -1,0 +1,81 @@
+# Parámetros del motor Forusight. Editables desde la página "Parámetros".
+# Unidades: semanas, pares (unidades) y fracciones 0-1 salvo que se indique.
+# Los valores marcados PENDIENTE son supuestos hasta que Forus los confirme.
+
+horizonte:
+  semanas_analisis: 12          # ventana para estados, demanda y curva
+  semanas_bloque_reciente: 4    # "4S"
+
+disponibilidad:
+  dias_min_exposicion: 14       # < 14 días con stock y sin venta => EXPOSICION_INSUFICIENTE
+  quiebre_fraccion_core: 0.5    # modelo-color en QUIEBRE si >= 50% de sus tallas core están bajo el mínimo
+
+demanda:
+  exposicion_minima: 0.3        # venta / max(expo, 0.3)
+  tope_correccion: 2.0          # la corrección nunca multiplica más de 2x
+  pesos_bloques: [0.5, 0.3, 0.2]  # 4S / 5-8S / 9-12S
+  volumen_min_pesos: 8          # pares en 12S para usar pesos recientes
+  umbral_tendencia: 0.15        # |tasa4S/tasa12S - 1| mínimo para considerarla significativa
+  tendencia_min: 0.85
+  tendencia_max: 1.20
+  aplicar_factor_tendencia: true
+  factor_sin_historia: 0.7      # velocidad similares x índice categoría x 0.7
+  indice_categoria_min: 0.5
+  indice_categoria_max: 1.5
+
+similitud:
+  k_vecinos: 5                  # vecinos por coseno cuando la tienda no tiene cluster
+
+curva:
+  k_prior: 10                   # fuerza del prior bayesiano (pares equivalentes)
+  n_min_nivel_prior: 20         # pares mínimos para aceptar un nivel del prior
+
+cobertura:                      # PENDIENTE (h, i)
+  lead_time_semanas: 1.0
+  ciclo_revision_semanas: 1.0
+  seguridad_semanas:
+    alta: 1.0
+    media: 0.75
+    baja: 0.5
+  umbral_sobrestock_semanas: 12.0
+  por_categoria: {}             # ej.: {"SANDALIA": {"lead_time_semanas": 1.5, "seguridad_semanas": {"alta": 1.5}}}
+
+rotacion:
+  percentil_alta: 0.67          # sell-through >= p67 dentro de la categoría => alta
+  percentil_baja: 0.33          # sell-through < p33 => baja
+
+exhibicion:                     # PENDIENTE (i)
+  minimo_por_talla_core: 1
+  minimo_por_categoria: {}      # ej.: {"BOTA": 2}
+  tallas_core_default: ["36", "37", "38", "39"]
+  tallas_core_por_genero:
+    DAMA: ["36", "37", "38", "39"]
+    CABALLERO: ["39", "40", "41", "42"]
+    NINA: ["30", "31", "32", "33"]
+    NINO: ["30", "31", "32", "33"]
+  tallas_core_por_categoria: {}
+  tallas_minimas_sin_core: 3    # curva mínima si el modelo no fabrica tallas core
+
+tope_tienda:                    # PENDIENTE (i)
+  max_unidades_por_sku: 12
+  max_unidades_por_tienda: 600  # por corrida; dim_tienda.max_unidades_corrida lo sobrescribe
+
+afinidad:
+  umbral_introduccion: 0.45
+  penalizacion_sin_venta: 0.2   # factor multiplicativo si TUVO_SIN_VENTA con exposición suficiente
+  pesos:
+    a1_historia_propia: 0.35
+    a2_indice_tienda: 0.20
+    a3_modelos_similares: 0.20
+    a4_tiendas_similares: 0.15
+    a5_presencia_historica: 0.10
+
+asignacion:
+  multiplo_envio: 1             # PENDIENTE (g): pares sueltos vs curvas cerradas
+  pesos_prioridad:
+    riesgo_quiebre: 0.30
+    velocidad: 0.25
+    afinidad: 0.15
+    tendencia: 0.10
+    importancia_comercial: 0.10
+    bono_curva_rota: 0.10
