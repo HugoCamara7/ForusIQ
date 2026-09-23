@@ -246,16 +246,47 @@ class FuentesRepository(BigQueryRepository):
         )
         self.ultimo_diagnostico = None
         self.aviso_ventas = ""
+        self._arti_resuelta: str | None = None
 
     def tablas(self) -> dict[str, str | None]:
         from forusight.data import fuentes as F
         from forusight.data.bq_client import tabla_configurada
 
         return {
-            "arti": tabla_configurada("arti", self.secrets, F.TABLA_ARTI),
+            "arti": self._tabla_arti(),
             "stock": tabla_configurada("stock", self.secrets, F.TABLA_STOCK),
             "ventas": tabla_configurada("ventas", self.secrets),
         }
+
+    def _tabla_arti(self) -> str:
+        """Primera candidata (`table`, `product_master_table`, por defecto) que tenga
+        producto, modelo-color y talla. Se resuelve una vez y se recuerda."""
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+        from forusight.data.bq_client import tablas_candidatas
+
+        if getattr(self, "_arti_resuelta", None):
+            return self._arti_resuelta
+        candidatas = tablas_candidatas("arti", self.secrets, F.TABLA_ARTI)
+        descartes = []
+        for tabla in candidatas:
+            try:
+                cols, _ = self.columnas(tabla)
+            except Exception as exc:
+                descartes.append(f"{tabla}: {type(exc).__name__}")
+                continue
+            mapa, _ = mapeo.resolver("arti", tabla, cols, self.secrets)
+            faltan = mapeo.faltantes("arti", mapa)
+            if not faltan:
+                self._arti_resuelta = tabla
+                return tabla
+            descartes.append(f"{tabla}: no trae {', '.join(faltan)}")
+        raise ValueError(
+            "Ninguna tabla sirve como maestro de productos (ARTI). Probadas: "
+            + "; ".join(descartes)
+            + ". Pon la tabla ARTI en `table` dentro de "
+            "[bigquery] (la misma que usa Catálogo)."
+        )
 
     def columnas(self, tabla: str) -> tuple[list[str], str]:
         """(columnas, origen). Si INFORMATION_SCHEMA falla, usa el esquema conocido."""

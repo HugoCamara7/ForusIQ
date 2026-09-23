@@ -59,7 +59,9 @@ CAMPOS_CUENTA = ("client_email", "private_key")
 #: claves de [bigquery] → nombre lógico de la tabla (primera que exista gana)
 CLAVES_TABLA = {
     "ventas": ("ventas_table", "tabla_ventas"),
-    "arti": ("product_master_table", "table"),
+    # En Catálogo `table` es ARTI y `product_master_table` suele ser la tabla de EAN
+    # (stg_pe_central_cean): se prueban en ese orden y gana la que tenga modelo y talla.
+    "arti": ("arti_table", "table", "product_master_table"),
     "stock": ("stock_table", "tabla_stock"),
 }
 
@@ -150,6 +152,23 @@ def tabla_configurada(
     if not valor or es_placeholder(valor):
         valor = por_defecto or ""
     return validar_tabla(valor) if valor else None
+
+
+def tablas_candidatas(
+    nombre: str, secrets: Mapping[str, Any] | None = None, por_defecto: str | None = None
+) -> list[str]:
+    """Todas las rutas configuradas para ``nombre`` (en orden de prioridad) + la por defecto."""
+    cfg = config_bigquery(secrets)
+    out: list[str] = []
+    for k in CLAVES_TABLA[nombre]:
+        v = str(cfg.get(k, "") or "").strip()
+        if v and not es_placeholder(v):
+            ruta = validar_tabla(v)
+            if ruta not in out:
+                out.append(ruta)
+    if por_defecto and por_defecto not in out:
+        out.append(por_defecto)
+    return out
 
 
 def es_placeholder(ruta: str) -> bool:

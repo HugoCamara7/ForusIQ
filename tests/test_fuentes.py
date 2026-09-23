@@ -360,7 +360,7 @@ def test_esquema_conocido_si_information_schema_falla():
 def test_errores_claros():
     fake = _FakeBQ()
     fake.columnas = lambda t: pd.DataFrame({"column_name": ["solo_esto"]})
-    with pytest.raises(ValueError, match="Mapeo incompleto"):
+    with pytest.raises(ValueError, match="Ninguna tabla sirve como maestro"):
         FuentesRepository(client=fake, secrets=SECRETS_CATALOGO).cargar_entradas(CORTE)
     fake = _FakeBQ()
     fake.datos["arti"] = fake.datos["arti"].iloc[0:0]
@@ -392,3 +392,24 @@ def test_tabla_de_venta_ilegible_no_bloquea_la_corrida():
     assert diag.fuente_venta == F.VENTA_CONSUMO and len(inp.ventas) > 0
     assert any("stg_pe_reporteria_ventas_tablon_v2" in n for n in diag.notas)
     assert "ventas" not in [c[0] for c in fake.consultas]
+
+
+def test_arti_salta_la_tabla_de_ean_del_catalogo():
+    """Caso real: product_master_table = stg_pe_central_cean (sólo EAN) y table = ARTI."""
+    cean = "forus-analitica-prod-datalake.bronze.stg_pe_central_cean"
+    sec = {"bigquery": {"project_id": "p", "product_master_table": cean, "table": ARTI_T}}
+    fake = _FakeBQ()
+    base = fake.columnas
+    fake.columnas = lambda t: (
+        pd.DataFrame(
+            {"column_name": ["codint_ce", "codean_ce", "nomlar_ce", "id_producto", "is_deleted"]}
+        )
+        if t == cean
+        else base(t)
+    )
+    repo = FuentesRepository(client=fake, secrets=sec)
+    assert repo.tablas()["arti"] == ARTI_T
+    # aunque la de EAN venga primero en la lista, se descarta por no tener talla ni modelo
+    sec2 = {"bigquery": {"project_id": "p", "arti_table": cean}}
+    repo2 = FuentesRepository(client=fake, secrets=sec2)
+    assert repo2.tablas()["arti"] == ARTI_T
