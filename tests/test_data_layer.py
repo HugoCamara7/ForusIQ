@@ -40,9 +40,13 @@ def test_credenciales_desde_entorno(monkeypatch):
     monkeypatch.setenv("FORUSIGHT_GCP_SA_JSON", json.dumps({"client_email": "x@y"}))
     assert bq_client.resolver_credenciales({}) == "CREDS"
     assert llamado["info"]["client_email"] == "x@y"
-    # secrets tiene prioridad sobre el entorno
-    assert bq_client.resolver_credenciales({"gcp_service_account": {"a": 1}}) == "CREDS"
-    assert llamado["info"] == {"a": 1}
+    # secrets tiene prioridad sobre el entorno, también anidada dentro de [bigquery]
+    cuenta = {"client_email": "sa@p.iam", "private_key": "k"}
+    assert bq_client.resolver_credenciales({"bigquery": {"gcp_service_account": cuenta}}) == "CREDS"
+    assert llamado["info"] == cuenta
+    # una cuenta incompleta se ignora (cae al entorno)
+    bq_client.resolver_credenciales({"gcp_service_account": {"a": 1}})
+    assert llamado["info"] == {"client_email": "x@y"}
 
 
 @pytest.mark.parametrize("malo", ["", "a.b", "x;DROP", "a b", "`x`"])

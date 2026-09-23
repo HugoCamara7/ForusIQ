@@ -22,7 +22,7 @@ class AppSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="FORUSIGHT_", extra="ignore")
 
-    data_source: Literal["bigquery", "synthetic"] = "synthetic"
+    data_source: Literal["bigquery", "mart", "synthetic"] = "synthetic"
     gcp_project: str | None = None
     bq_location: str = "US"
     dataset_mart: str = "forusight_mart"
@@ -30,6 +30,11 @@ class AppSettings(BaseSettings):
     cd_id: str = "320"
     cache_ttl_seconds: int = 3600
     params_path: Path = DEFAULT_PARAMS_PATH
+    #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas). PENDIENTE confirmar.
+    marcas: list[str] = Field(default_factory=lambda: ["AZALEIA"])
+    #: Códigos de tienda/bodega que nunca reciben (bodegas eComm, outlets…). PENDIENTE (j).
+    tiendas_excluidas: list[str] = Field(default_factory=list)
+    semanas_historia: int = 16
 
 
 # --------------------------------------------------------------------------- params
