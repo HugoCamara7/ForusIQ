@@ -32,7 +32,7 @@ def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
     assert app.session_state.auth_user == "demo"
     app.sidebar.button[0].click().run()
     assert app.session_state.resultado is not None
-    app.switch_page(f"app/pages/{pagina}.py").run()
+    app.switch_page(f"app/vistas/{pagina}.py").run()
     assert not app.exception, app.exception
 
 
@@ -65,7 +65,7 @@ def test_login_correcto_con_rol(monkeypatch):
     assert [t.value for t in app.title] == ["Dashboard"]
     # un aprobador no tiene registrada la página Conexión (sólo admin)
     with pytest.raises(ValueError, match="Could not find a navigation page"):
-        app.switch_page("app/pages/6_Conexion.py")
+        app.switch_page("app/vistas/6_Conexion.py")
 
 
 def test_modo_demo_no_expone_bigquery_aunque_haya_secrets(monkeypatch):
@@ -81,4 +81,4 @@ def test_modo_demo_no_expone_bigquery_aunque_haya_secrets(monkeypatch):
     assert app.session_state.sin_login
     assert app.session_state.fuente == "synthetic"
     with pytest.raises(ValueError, match="Could not find a navigation page"):
-        app.switch_page("app/pages/6_Conexion.py")
+        app.switch_page("app/vistas/6_Conexion.py")

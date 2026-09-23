@@ -38,7 +38,7 @@ Dataset APP  ── corridas, distribucion_propuesta, distribucion_aprobada, aud
 
 ```
 streamlit_app.py                 entrada Streamlit (st.navigation)
-app/pages/                       1_Dashboard … 5_Parametros, 6_Conexion (admin)
+app/vistas/                       1_Dashboard … 5_Parametros, 6_Conexion (admin)
 app/components/                  login, estado/caché, filtros, kpis, tablas, panel de motivo
 src/forusight/config/            settings.py (pydantic) + params.yaml
 src/forusight/auth.py            usuarios y roles desde [app_auth]

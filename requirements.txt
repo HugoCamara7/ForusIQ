@@ -1,0 +1,3 @@
+# Streamlit Community Cloud instala este archivo. Instala el paquete forusight (src/)
+# con las dependencias declaradas en pyproject.toml.
+.
