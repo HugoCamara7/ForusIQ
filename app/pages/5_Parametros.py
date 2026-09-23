@@ -1,6 +1,7 @@
 import streamlit as st
 import yaml
 from app.components.estado import SETTINGS
+from app.components.login import puede
 from pydantic import BaseModel, ValidationError
 
 from forusight.config.settings import EngineParams, dump_params, save_params
@@ -58,7 +59,9 @@ with tab_yaml:
             st.success("YAML válido y aplicado a la sesión.")
         except (ValidationError, yaml.YAMLError) as exc:
             st.error(str(exc))
-    if c2.button("Guardar en params.yaml"):
+    if c2.button(
+        "Guardar en params.yaml", disabled=not puede("parametros"), help="Sólo administradores"
+    ):
         ruta = save_params(ss.params, SETTINGS.params_path)
         st.success(f"Guardado en {ruta}. En despliegue se versionará en el dataset APP.")
     st.download_button("Descargar params.yaml", dump_params(ss.params), file_name="params.yaml")

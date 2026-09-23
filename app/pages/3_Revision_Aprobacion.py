@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 from app.components.estado import SETTINGS, repositorio, resultado_o_aviso
 from app.components.filtros import filtros_detalle
+from app.components.login import puede, usuario_actual
 
 st.title("Revisión y aprobación")
 res = resultado_o_aviso()
@@ -86,14 +87,15 @@ if res is not None:
         st.error("La aprobación supera el stock disponible del CD en estos SKU:")
         st.dataframe(malas, width="stretch")
 
+    if not puede("aprobar"):
+        st.info("Tu rol permite revisar, no aprobar. Pide el rol `aprobador` en [app_auth.roles].")
     if st.button(
         "Confirmar aprobación",
         type="primary",
-        disabled=not malas.empty or not ss.usuario,
-        help="Requiere usuario en la barra lateral",
+        disabled=not malas.empty or not puede("aprobar"),
     ):
         try:
-            repositorio(ss.fuente).guardar_aprobacion(res.run_id, aprob, ss.usuario)
+            repositorio(ss.fuente).guardar_aprobacion(res.run_id, aprob, usuario_actual())
             ss.aprobacion_confirmada = res.run_id
             st.success(f"Aprobación de la corrida {res.run_id} guardada.")
         except Exception as exc:
