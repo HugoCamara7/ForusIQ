@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from importlib import resources
 from typing import Protocol
 
@@ -36,12 +37,22 @@ COLUMNAS_APROBACION = [
 ]
 
 
+def params_usados(sql: str, params: dict) -> dict:
+    """Sólo los parámetros que la consulta referencia (@hasta no confunde a @hasta_foto)."""
+    return {k: v for k, v in params.items() if re.search(rf"@{k}\b", sql)}
+
+
 def leer_sql(nombre: str) -> str:
     return resources.files("forusight.data.queries").joinpath(nombre).read_text(encoding="utf-8")
 
 
 class Repository(Protocol):
-    def cargar_entradas(self, fecha_corte: pd.Timestamp, semanas: int = 16) -> EngineInputs: ...
+    def cargar_entradas(
+        self,
+        fecha_corte: pd.Timestamp,
+        semanas: int = 16,
+        stock_cd_archivo: pd.DataFrame | None = None,
+    ) -> EngineInputs: ...
 
     def guardar_corrida(self, result: EngineResult, usuario: str) -> None: ...
 
@@ -97,7 +108,10 @@ class SyntheticRepository:
         self.auditoria: list[pd.DataFrame] = []
 
     def cargar_entradas(
-        self, fecha_corte: pd.Timestamp | None = None, semanas: int = 16
+        self,
+        fecha_corte: pd.Timestamp | None = None,
+        semanas: int = 16,
+        stock_cd_archivo: pd.DataFrame | None = None,
     ) -> EngineInputs:
         from forusight.data.synthetic import ConfigSintetica, generar
 
@@ -129,7 +143,7 @@ def validar_aprobacion(df: pd.DataFrame) -> None:
 
 
 class BigQueryRepository:
-    """Una consulta por contrato y corrida; escritura en APP con load jobs."""
+    """Lee el dataset MART propio (una consulta por contrato); escribe APP con load jobs."""
 
     TABLAS_APP = {
         "corridas": "corridas",
@@ -154,7 +168,12 @@ class BigQueryRepository:
             app=self._dataset(self.settings.dataset_app),
         )
 
-    def cargar_entradas(self, fecha_corte: pd.Timestamp, semanas: int = 16) -> EngineInputs:
+    def cargar_entradas(
+        self,
+        fecha_corte: pd.Timestamp,
+        semanas: int = 16,
+        stock_cd_archivo: pd.DataFrame | None = None,
+    ) -> EngineInputs:
         corte = pd.Timestamp(fecha_corte).date()
         params = {
             "fecha_corte": corte,
@@ -164,7 +183,7 @@ class BigQueryRepository:
         datos = {}
         for nombre, archivo in CONSULTAS.items():
             sql = self._sql(archivo)
-            usados = {k: v for k, v in params.items() if f"@{k}" in sql}
+            usados = params_usados(sql, params)
             datos[nombre] = self.client.query_df(sql, usados, labels={"consulta": nombre})
         return EngineInputs(**datos)
 
@@ -199,3 +218,117 @@ class BigQueryRepository:
 def parametros_snapshot(params: EngineParams) -> str:
     """YAML de parámetros para guardar junto a la corrida."""
     return dump_params(params)
+
+
+class FuentesRepository(BigQueryRepository):
+    """Lee directo de las tablas fuente de Forus configuradas en [bigquery] de los secrets.
+
+    Mismo esquema de secrets que Catálogo/Repo Control Center: `ventas_table`,
+    `product_master_table` (ARTI) y `stock_table`. Las columnas se descubren con
+    INFORMATION_SCHEMA y se mapean por alias (``data/mapeo.py``).
+    """
+
+    def __init__(
+        self,
+        client: BigQueryClient | None = None,
+        settings: AppSettings | None = None,
+        secrets=None,
+    ) -> None:
+        from forusight.data.bq_client import leer_st_secrets
+
+        self.secrets = leer_st_secrets() if secrets is None else secrets
+        super().__init__(
+            client=client or BigQueryClient(settings, secrets=self.secrets), settings=settings
+        )
+        self.ultimo_diagnostico = None
+
+    def tablas(self) -> dict[str, str]:
+        from forusight.data.bq_client import tabla_configurada
+
+        return {n: tabla_configurada(n, self.secrets) for n in ("ventas", "arti", "stock")}
+
+    def mapeos(self, tablas: dict[str, str] | None = None) -> dict[str, tuple[dict, str, list]]:
+        """fuente → (mapeo, origen, columnas de la tabla)."""
+        from forusight.data import mapeo
+
+        tablas = tablas or self.tablas()
+        out = {}
+        for fuente, tabla in tablas.items():
+            cols = list(self.client.columnas(tabla)["column_name"])
+            if not cols:
+                raise ValueError(
+                    f"INFORMATION_SCHEMA no devolvió columnas para {tabla}: revisa "
+                    "el nombre exacto (distingue mayúsculas) y el permiso."
+                )
+            mapa, origen = mapeo.resolver(fuente, tabla, cols, self.secrets)
+            out[fuente] = (mapa, origen, cols)
+        return out
+
+    def cargar_entradas(
+        self,
+        fecha_corte: pd.Timestamp,
+        semanas: int | None = None,
+        stock_cd_archivo: pd.DataFrame | None = None,
+    ) -> EngineInputs:
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+
+        semanas = semanas or self.settings.semanas_historia
+        tablas = self.tablas()
+        mapas = self.mapeos(tablas)
+        for fuente, (mapa, _, _) in mapas.items():
+            faltan = mapeo.faltantes(fuente, mapa)
+            if faltan:
+                raise ValueError(
+                    f"Mapeo incompleto de {fuente} ({tablas[fuente]}): falta "
+                    f"{', '.join(faltan)}. Corrígelo en la página Conexión."
+                )
+        m_v, m_a, m_s = (mapas[k][0] for k in ("ventas", "arti", "stock"))
+        marcas = [m.strip().upper() for m in self.settings.marcas if m.strip()]
+        con_marcas = bool(marcas)
+        base = {**F.ventana(fecha_corte, semanas), "marcas": marcas}
+        diag = F.Diagnostico(mapeos={k: v[0] for k, v in mapas.items()})
+
+        def q(nombre: str, sql: str, extra: dict | None = None) -> pd.DataFrame:
+            params = params_usados(sql, {**base, **(extra or {})})
+            df = self.client.query_df(sql, params, labels={"consulta": nombre})
+            diag.filas[f"sql_{nombre}"] = len(df)
+            return df
+
+        arti = q("arti", F.sql_arti(tablas["arti"], m_a, con_marcas))
+        if arti.empty:
+            raise ValueError(
+                f"ARTI no devolvió productos para las marcas {marcas}: revisa el "
+                "valor exacto de la marca en `[forusight] marcas`."
+            )
+        ventas = q("ventas", F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas))
+        cortes = q("cortes", F.sql_cortes(tablas["stock"], m_s))
+        if cortes.empty:
+            raise ValueError("La tabla de stock no tiene fotos en la ventana de análisis.")
+        foto = pd.Timestamp(cortes["fecha_corte"].max()).date()
+        diag.fecha_foto, diag.cortes_en_ventana = foto.isoformat(), int(len(cortes))
+        dias = q(
+            "dias_con_stock",
+            F.sql_dias_con_stock(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
+        )
+        stock = q(
+            "stock_foto",
+            F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
+            {"fecha_foto": foto},
+        )
+        excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
+        entradas = F.construir_entradas(
+            arti,
+            ventas,
+            dias,
+            cortes,
+            stock,
+            self.settings.cd_id,
+            excl,
+            stock_cd_archivo,
+            fecha_corte,
+            diag,
+        )
+        diag.gb_leidos = round(self.client.gb_leidos, 3)
+        self.ultimo_diagnostico = diag
+        return entradas
