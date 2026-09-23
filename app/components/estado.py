@@ -123,6 +123,8 @@ def ejecutar_corrida() -> EngineResult:
     ss = st.session_state
     cd = ss.get("cd_archivo") or (None, "")
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
+    if ss.fuente == "bigquery" and ss.get("marcas") is not None and not ss.marcas:
+        raise ValueError("Elige al menos una marca en la barra lateral (p. ej. HUSH PUPPIES).")
     res, diag = correr_motor(
         ss.fuente,
         pd.Timestamp(ss.fecha_corte).date().isoformat(),
