@@ -99,26 +99,38 @@ Sin `[app_auth]` la app sólo abre en **modo demo** (datos sintéticos); con Big
 
 ## Conexión a las tablas de Forus
 
-**Basta con pegar los secrets de Catálogo Control Center** (`[app_auth]`, `[bigquery]`,
-`[gcp_service_account]`). No hay tablas que configurar:
+Flujo: **BigQuery → análisis de necesidad → distribución CD 320 → match maestros → archivo
+formato Neogística**.
 
-| Dato | Tabla | Cómo se usa |
+| Dato | Clave en `[bigquery]` | Uso |
 |---|---|---|
-| Maestro de productos | `table` / `product_master_table` del Catálogo (por defecto `…bronze.stg_pe_central_arti`) | SKU = `CODINT_MA`, modelo-color = `CODMOD_MA`-`CODCOL_MA`, talla `TALNUM_MA`, marca `MARCA_MA` |
-| Stock | `stock_table` (por defecto `…bronze.stg_pe_central_stock_bi`) | última foto: en tienda sólo `stock_tiendas`; en el CD 320 `stock_tiendas + stock_bodega` (regla de Reassign Control Center). Historial por `fecha_corte`: días con stock |
-| Venta | `ventas_table` (**opcional**) | si no está, o no responde, se **estima por consumo de stock** (caída entre fotos) y la app lo avisa |
-| Reservas CD | archivo STOCK CD (opcional, barra lateral) | disponible y reservas, igual que Repo Control Center |
+| Maestro de productos | `table` (ARTI del Catálogo; `product_master_table` suele ser EAN y se descarta sola) | SKU `CODINT_MA`, modelo-color `CODMOD_MA`-`CODCOL_MA`, talla, marca, género |
+| Stock | `stock_table` (por defecto `stg_pe_central_stock_bi`) | **sólo el último corte**: tienda = `stock_tiendas`; CD 320 = `stock_tiendas + stock_bodega` |
+| Venta | `ventas_table` (**obligatoria**) | 12 semanas cerradas + semana en curso |
+| Maestro tiendas | `maestro_tiendas_table` | código tienda → nombre, centro comercial, zona, cadena |
+| Maestro cadena | `maestro_cadena_table` | código modelo → cadena: un modelo sólo se **introduce** en tiendas de su cadena |
+| Reservas CD | archivo STOCK CD (opcional) | disponible y reservas |
 
-- La **marca** se elige en la barra lateral entre las que existen en ARTI (por defecto
-  AZALEIA).
-- El `id_producto` se canoniza en SQL (sin `.0` ni ceros a la izquierda) para que ARTI y
-  stock crucen siempre.
-- La región no se fuerza: BigQuery la infiere de las tablas, como en el Catálogo.
-- Columnas por `INFORMATION_SCHEMA` y alias; si la cuenta no puede leer metadatos, se usa el
-  esquema conocido de esas tablas. La página **Conexión** (admin) muestra el mapeo, **busca
-  tablas de venta** en el datalake y hace una prueba de lectura.
-- Costo: filtro de fecha parametrizado, agregación en el servidor, semijoin por marca y
-  dry run con tope `max_gb` (20 GB).
+**Sin historial de stock**, la exposición se infiere de la venta real y el stock actual:
+vendió y hoy está en 0 → **quiebre** (falta de stock); tiene stock y no vendió → **falta de
+venta**; sin stock ni venta → **nunca tuvo** (sólo se envía con afinidad y cadena válidas).
+
+La cadena de una tienda sale del maestro o, si no la trae, del prefijo del nombre (HP, HPK,
+RKF, CLB, …), como en los reportes de Neogística.
+
+## Archivo formato Neogística
+
+Página **Exportación → Descargar archivo formato Neogística**. Referencia: reporte "534 -
+Sugerido de Distribución (Extendido)": cabecera Empresa/Reporte/Fecha, encabezado en la fila 7
+con autofiltro, mismos nombres, orden, colores y formatos. Versión **resumida**: sólo columnas
+con dato real (no se inventan costos, clases de demanda, backorder…) y filas con actividad
+(stock, venta, envío o pendiente). Incluye una hoja **Resumen** por tienda. Motivos:
+`Sin Reposición Pendiente`, `Stock CD`, `Almacenamiento`.
+
+## Aprobaciones sin dataset
+
+Si no hay `[forusight] dataset_app`, la aprobación se guarda en **GitHub** con el bloque
+`[ticketing]` del Catálogo (carpeta `forusight/`); si tampoco está, se descarga desde la app.
 
 ## Configuración de secretos
 
