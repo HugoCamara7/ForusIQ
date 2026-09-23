@@ -12,9 +12,11 @@ password = "..."
 "nombre.apellido@forus.pe" = "aprobador"
 ```
 
-No hay usuarios por defecto: tenerlos en el código sería publicarlos. Un usuario sin rol
-explícito queda como ``analista`` (mínimo privilegio), al revés que en Catálogo, donde
-el rol por defecto es admin.
+No hay usuarios por defecto: tenerlos en el código sería publicarlos. Roles:
+  - sin sección [app_auth.roles]: todos los usuarios son admin (igual que en Catálogo, así
+    los secrets se pegan tal cual);
+  - con [app_auth.roles]: quien no esté listado queda como ``analista`` (mínimo privilegio).
+Los roles del Catálogo se traducen: admin → admin, operator → aprobador, brand → analista.
 """
 
 from __future__ import annotations
@@ -37,6 +39,12 @@ _ALIAS_ROL = {
     "analista": ROL_ANALISTA,
     "analyst": ROL_ANALISTA,
     "lector": ROL_ANALISTA,
+    "operator": ROL_APROBADOR,
+    "operador": ROL_APROBADOR,
+    "operaciones": ROL_APROBADOR,
+    "brand": ROL_ANALISTA,
+    "marca": ROL_ANALISTA,
+    "comercial": ROL_ANALISTA,
 }
 
 # Qué puede hacer cada rol.
@@ -69,17 +77,11 @@ def usuarios(secrets: Mapping[str, Any] | None) -> dict[str, str]:
 
 
 def rol(usuario: str, secrets: Mapping[str, Any] | None) -> str:
-    roles = {
-        normalizar(k): normalizar(v)
-        for k, v in dict(_seccion(secrets).get("roles", {}) or {}).items()
-    }
-    usuario = normalizar(usuario)
-    if usuario in roles:
-        return _ALIAS_ROL.get(roles[usuario], ROL_POR_DEFECTO)
-    # Opción A (un solo usuario): es el administrador de la app.
-    if not _seccion(secrets).get("users") and usuarios(secrets):
-        return ROL_ADMIN
-    return ROL_POR_DEFECTO
+    seccion = _seccion(secrets)
+    roles = {normalizar(k): normalizar(v) for k, v in dict(seccion.get("roles", {}) or {}).items()}
+    if not roles:
+        return ROL_ADMIN if normalizar(usuario) in usuarios(secrets) else ROL_POR_DEFECTO
+    return _ALIAS_ROL.get(roles.get(normalizar(usuario), ""), ROL_POR_DEFECTO)
 
 
 def verificar(usuario: str, clave: str, secrets: Mapping[str, Any] | None) -> bool:

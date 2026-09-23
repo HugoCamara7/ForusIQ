@@ -39,10 +39,30 @@ def test_verificar(usuario, clave, ok):
 def test_roles_y_permisos():
     assert auth.rol("hugo.camara@forus.pe", MULTI) == auth.ROL_ADMIN
     assert auth.rol("ana@forus.pe", MULTI) == auth.ROL_APROBADOR
-    otro = {"app_auth": {"users": {"z@forus.pe": "1"}}}
-    assert auth.rol("z@forus.pe", otro) == auth.ROL_ANALISTA  # mínimo privilegio por defecto
-    assert auth.rol("admin", UNO) == auth.ROL_ADMIN  # opción A: usuario único = admin
+    con_roles = {
+        "app_auth": {
+            "users": {"z@forus.pe": "1", "a@forus.pe": "2"},
+            "roles": {"a@forus.pe": "admin"},
+        }
+    }
+    assert auth.rol("z@forus.pe", con_roles) == auth.ROL_ANALISTA  # no listado → mínimo
+    assert auth.rol("admin", UNO) == auth.ROL_ADMIN
     assert auth.puede(auth.ROL_APROBADOR, "aprobar")
     assert not auth.puede(auth.ROL_ANALISTA, "aprobar")
     assert not auth.puede(auth.ROL_APROBADOR, "conexion")
     assert auth.puede(auth.ROL_ADMIN, "parametros")
+
+
+def test_secrets_de_catalogo_funcionan_tal_cual():
+    """Sin [app_auth.roles] (Catálogo) todos entran como admin; roles del Catálogo se traducen."""
+    catalogo = {"app_auth": {"users": {"hugo.camara@forus.pe": "x", "luis.nunez@forus.pe": "y"}}}
+    assert auth.rol("luis.nunez@forus.pe", catalogo) == auth.ROL_ADMIN
+    traducidos = {
+        "app_auth": {
+            "users": {"a@f.pe": "1", "b@f.pe": "2", "c@f.pe": "3"},
+            "roles": {"a@f.pe": "operator", "b@f.pe": "brand", "c@f.pe": "administrador"},
+        }
+    }
+    assert auth.rol("a@f.pe", traducidos) == auth.ROL_APROBADOR
+    assert auth.rol("b@f.pe", traducidos) == auth.ROL_ANALISTA
+    assert auth.rol("c@f.pe", traducidos) == auth.ROL_ADMIN
