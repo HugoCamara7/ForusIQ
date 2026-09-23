@@ -44,6 +44,7 @@ COLUMNAS_SALIDA = [
 ]
 COLUMNAS_EXTRA = [
     "modelo_id",
+    "minimo_exhibicion",
     "color",
     "categoria",
     "genero",
@@ -78,9 +79,12 @@ class EngineInputs:
     stock_cd: pd.DataFrame
     dim_producto: pd.DataFrame
     dim_tienda: pd.DataFrame
+    #: Opcional: pares (tienda_id, modelo_id) donde se puede INTRODUCIR un modelo.
+    permitidos: pd.DataFrame | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
+            permitidos=self.permitidos,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),
@@ -123,7 +127,14 @@ def ejecutar(
     corte = resolver_fecha_corte(inp.ventas, fecha_corte)
 
     base = construir_base(
-        inp.ventas, inp.stock_tienda, inp.stock_cd, inp.dim_producto, inp.dim_tienda, params, corte
+        inp.ventas,
+        inp.stock_tienda,
+        inp.stock_cd,
+        inp.dim_producto,
+        inp.dim_tienda,
+        params,
+        corte,
+        inp.permitidos,
     )
     sku, mc = estados_disponibilidad(base.sku, base.semanal, params)
     similares = tiendas_similares(base.tiendas, base.semanal, params)

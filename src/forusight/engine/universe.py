@@ -57,7 +57,11 @@ def construir_base(
     dim_tienda: pd.DataFrame,
     params: EngineParams,
     fecha_corte: pd.Timestamp,
+    permitidos: pd.DataFrame | None = None,
 ) -> Base:
+    """``permitidos`` (tienda_id, modelo_id), si viene, limita las INTRODUCCIONES a los
+    pares tienda×modelo autorizados (maestro modelo → cadena). La reposición de lo que la
+    tienda ya tiene o vendió no se restringe."""
     n_sem = params.horizonte.semanas_analisis
     b = params.horizonte.semanas_bloque_reciente
     prod = dim_producto[PROD_COLS].copy()
@@ -97,6 +101,11 @@ def construir_base(
     mc_stock = st.loc[(st["stock_disponible"] > 0) | (st["stock_transito"] > 0), KEY_MC]
     mc_cd = prod.loc[prod["sku"].isin(cd.loc[cd["disponible"] > 0, "sku"]), ["modelo_color_id"]]
     mc_cd = mc_cd.drop_duplicates().merge(tiendas[["tienda_id"]], how="cross")
+    if permitidos is not None:
+        mod = prod[["modelo_color_id", "modelo_id"]].drop_duplicates()
+        mc_cd = mc_cd.merge(mod, on="modelo_color_id").merge(
+            permitidos[["tienda_id", "modelo_id"]].drop_duplicates(), on=["tienda_id", "modelo_id"]
+        )
     universo_mc = pd.concat([mc_hist, mc_stock, mc_cd[KEY_MC]]).drop_duplicates()
 
     # --- expandir a todas las tallas fabricadas
