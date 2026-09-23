@@ -153,3 +153,14 @@ def test_columnas_cae_a_get_table_si_information_schema_viene_vacio():
 
     c = bq_client.BigQueryClient(settings=AppSettings(gcp_project="p"), client=Cliente())
     assert list(c.columnas("p.d.t")["column_name"]) == ["fec_doc", "cant_venta"]
+
+
+def test_config_no_envia_tope_vacio_a_bigquery():
+    """BigQuery responde 400 si maximumBytesBilled viaja como "None"."""
+    c = bq_client.BigQueryClient(settings=AppSettings(gcp_project="p"), client=object())
+    seco = c._config({"x": 1}, None, dry_run=True).to_api_repr()
+    assert "maximumBytesBilled" not in seco["query"] and seco["dryRun"] is True
+    real = c._config({}, None).to_api_repr()["query"]
+    assert real["maximumBytesBilled"] == str(int(20 * 1e9))
+    c.max_gb = 0
+    assert "maximumBytesBilled" not in c._config({}, None).to_api_repr()["query"]

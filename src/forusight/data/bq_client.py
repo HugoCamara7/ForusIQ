@@ -349,17 +349,16 @@ class BigQueryClient:
     def _config(self, params, labels, dry_run: bool = False):
         from google.cloud import bigquery
 
-        return bigquery.QueryJobConfig(
+        cfg = bigquery.QueryJobConfig(
             query_parameters=a_query_parameters(params),
             labels={"app": "forusight", **(labels or {})},
             dry_run=dry_run,
             use_query_cache=not dry_run,
-            maximum_bytes_billed=None
-            if dry_run
-            else int(self.max_gb * 1e9)
-            if self.max_gb
-            else None,
         )
+        # Sólo se envía con valor: BigQuery rechaza maximum_bytes_billed = None.
+        if not dry_run and self.max_gb:
+            cfg.maximum_bytes_billed = int(self.max_gb * 1e9)
+        return cfg
 
     def estimar_gb(self, sql: str, params: Mapping[str, Any] | None = None) -> float:
         """Dry run: cuánto se leería, sin leer ni cobrar."""
