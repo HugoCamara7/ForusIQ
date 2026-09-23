@@ -1,0 +1,29 @@
+# --- Secretos: nunca en git ---
+.streamlit/secrets.toml
+*.json
+!.vscode/*.json
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Salidas locales ---
+exports/
+*.xlsx
+*.parquet
+.DS_Store
+.idea/
