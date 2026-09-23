@@ -11,7 +11,9 @@ for _ruta in (_RAIZ, _RAIZ / "src"):
     if str(_ruta) not in sys.path:
         sys.path.insert(0, str(_ruta))
 
-st.set_page_config(page_title="Forusight", page_icon=":material/inventory_2:", layout="wide")
+st.set_page_config(
+    page_title="Forusight", page_icon=str(_RAIZ / "assets" / "forus_icon.png"), layout="wide"
+)
 
 from app.components.estado import barra_lateral, fuente_por_defecto, inicializar  # noqa: E402
 from app.components.login import puede, requerir_login  # noqa: E402

@@ -1,24 +1,12 @@
-"""Pantalla de acceso (mismo esquema que Catálogo/Repo Control Center)."""
+"""Pantalla de acceso con el diseño de Catálogo / Repo Control Center."""
 
 from __future__ import annotations
 
-import base64
-from pathlib import Path
-
 import streamlit as st
 
+from app.components.ui import brand_strip, forus_logo_html, html, login_styles
 from forusight import auth
 from forusight.data.bq_client import leer_st_secrets
-
-LOGO = Path(__file__).resolve().parents[2] / "assets" / "forus_logo.png"
-
-
-def _logo_html() -> str:
-    try:
-        b64 = base64.b64encode(LOGO.read_bytes()).decode()
-        return f'<img src="data:image/png;base64,{b64}" alt="FORUS" style="height:42px">'
-    except OSError:
-        return "<strong>FORUS</strong>"
 
 
 def usuario_actual() -> str:
@@ -41,30 +29,43 @@ def requerir_login(modo_demo: bool) -> bool:
     if ss.get("authenticated"):
         return True
     secrets = leer_st_secrets() or {}
+    if not auth.usuarios(secrets) and modo_demo:
+        ss.authenticated, ss.auth_user, ss.auth_rol = True, "demo", auth.ROL_ADMIN
+        ss.sin_login = True
+        return True
+
+    login_styles()
+    with st.container(key="login_card"):
+        html(f"""
+        <div class="login-head">
+            <div class="login-logo-row">
+                <div class="login-forus-logo">{forus_logo_html()}</div>
+                <div class="login-divider"></div>
+                <div class="login-app-badge">👟</div>
+            </div>
+            <h1>Forusight</h1>
+            <p>Reposición y distribución CD 320 → tiendas</p>
+        </div>
+        """)
+        brand_strip()
+        with st.container(key="login_form_area"), st.form("login_form"):
+            usuario = st.text_input("Correo electrónico", placeholder="nombre.apellido@forus.pe")
+            clave = st.text_input("Contraseña", type="password", placeholder="********")
+            entrar = st.form_submit_button("Ingresar", type="primary")
+        html('<div class="login-note">Sistema exclusivo para personal autorizado</div>')
+    html("""
+    <div class="login-foot">
+        <strong>Reposición Azaleia</strong>
+        CD 320 &bull; Tiendas &bull; Área de Producto
+    </div>
+    """)
+
     if not auth.usuarios(secrets):
-        if modo_demo:
-            ss.authenticated, ss.auth_user, ss.auth_rol = True, "demo", auth.ROL_ADMIN
-            ss.sin_login = True
-            return True
         st.error(
-            "No hay usuarios configurados. Agrega [app_auth] o [app_auth.users] a los secrets "
-            "(Streamlit Cloud: Settings → Secrets). La app no trae usuarios por defecto."
+            "No hay usuarios configurados. Pega el bloque [app_auth] de Catálogo Control "
+            "Center en los secrets (Settings → Secrets)."
         )
         return False
-
-    _, centro, _ = st.columns([1, 1.2, 1])
-    with centro, st.container(border=True):
-        st.markdown(
-            f'<div style="text-align:center">{_logo_html()}<h2 style="margin:.4rem 0 0">'
-            "Forusight</h2><p style='opacity:.7'>Reposición y distribución CD 320 → tiendas</p>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        with st.form("login_form"):
-            usuario = st.text_input("Correo electrónico", placeholder="nombre.apellido@forus.pe")
-            clave = st.text_input("Contraseña", type="password")
-            entrar = st.form_submit_button("Ingresar", type="primary", width="stretch")
-        st.caption("Sistema exclusivo para personal autorizado")
     if entrar:
         if auth.verificar(usuario, clave, secrets):
             ss.authenticated = True

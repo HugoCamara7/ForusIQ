@@ -1,15 +1,20 @@
 [server]
 headless = true
 runOnSave = false
-maxUploadSize = 50
+maxUploadSize = 200
+# En Streamlit Cloud el watcher agota el límite de inotify (igual que en Catálogo).
+fileWatcherType = "none"
+enableXsrfProtection = true
 
 [browser]
 gatherUsageStats = false
 
 [theme]
 base = "light"
-primaryColor = "#C8102E"
-font = "sans serif"
+primaryColor = "#2367FF"
+backgroundColor = "#F6F8FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
 
 [client]
 toolbarMode = "minimal"
