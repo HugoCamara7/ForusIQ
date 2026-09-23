@@ -85,6 +85,7 @@ ALIAS_STOCK: dict[str, list[str]] = {
     "tienda_cod": ["codigo_tienda", "cod_tienda", "cod_local", "tienda", "cod_bodega"],
     "tienda_nombre": ["concat_tienda", "nombre_tienda", "desc_tienda", "nombre_local"],
     "id_producto": ["id_producto", "codint", "codint_ma", "sku", "idproducto"],
+    # En tienda cuenta sólo stock_tiendas; stock_bodega suma únicamente en el CD 320.
     "stock_tienda": ["stock_tiendas", "stock_tienda", "stock", "unidades_stock"],
     "stock_bodega": ["stock_bodega"],
     "transito": ["stock_transito", "transito", "en_transito", "cant_transito"],
@@ -108,10 +109,7 @@ def faltantes(fuente: str, mapa: Mapping[str, str]) -> list[str]:
             f.append("modelo-color (modcol, o cod_modelo + cod_color)")
         return f
     if fuente == "stock":
-        f = [c for c in ("fecha", "tienda_cod", "id_producto") if c not in mapa]
-        if "stock_tienda" not in mapa and "stock_bodega" not in mapa:
-            f.append("stock (stock_tiendas y/o stock_bodega)")
-        return f
+        return [c for c in ("fecha", "tienda_cod", "id_producto", "stock_tienda") if c not in mapa]
     raise KeyError(fuente)
 
 

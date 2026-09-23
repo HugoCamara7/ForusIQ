@@ -96,19 +96,32 @@ def test_sql_parametrizado_sin_select_estrella():
         F.sql_arti("p.d.arti", a, True),
         F.sql_ventas("p.d.v", v, "p.d.arti", a, True),
         F.sql_cortes("p.d.s", s),
-        F.sql_dias_con_stock("p.d.s", s, "p.d.arti", a, True),
+        F.sql_historial("p.d.s", s, "p.d.arti", a, True),
         F.sql_stock_foto("p.d.s", s, "p.d.arti", a, True),
+        F.sql_marcas("p.d.arti", a),
     ]
     for sql in sqls:
         assert "SELECT *" not in sql.upper()
     assert "@desde" in sqls[1] and "@hasta" in sqls[1] and "IN UNNEST(@marcas)" in sqls[1]
     assert "`MARCA_MA`" in sqls[0] and "GROUP BY 1" in sqls[0]
-    assert "@fecha_foto" in sqls[4] and "`stock_tiendas`" in sqls[4] and "`stock_bodega`" in sqls[4]
-    # sin marca en ventas: semijoin con ARTI filtrado por marca
+    # SKU canónico en SQL (sin .0 ni ceros a la izquierda) en ARTI y en stock
+    assert "REGEXP_REPLACE(UPPER(TRIM(CAST(`CODINT_MA` AS STRING)))" in sqls[0]
+    assert "REGEXP_REPLACE(UPPER(TRIM(CAST(`id_producto` AS STRING)))" in sqls[4]
+    # historial: una lectura, fechas como parámetro, sólo stock en sala
+    assert "UNNEST(@fechas)" in sqls[3] and "`stock_tiendas`" in sqls[3]
+    assert "`stock_bodega`" not in sqls[3]
+    # foto: sala y bodega por separado (bodega sólo suma en el CD), CONCAT_TIENDA de respaldo
+    assert "AS stock_tienda" in sqls[4] and "AS stock_bodega" in sqls[4]
+    assert "`CONCAT_TIENDA`" in sqls[4] and "@fecha_foto" in sqls[4]
     v2 = {k: x for k, x in v.items() if k != "marca"}
-    assert "SELECT CAST(`CODINT_MA` AS STRING) FROM `p.d.arti`" in F.sql_ventas(
-        "p.d.v", v2, "p.d.arti", a, True
+    assert "FROM `p.d.arti` WHERE UPPER(TRIM(CAST(`MARCA_MA` AS STRING))) IN UNNEST(@marcas)" in (
+        F.sql_ventas("p.d.v", v2, "p.d.arti", a, True)
     )
+
+
+def test_sku_canonico_igual_que_en_sql():
+    s = pd.Series(["0005438957", "5438957.0", " 5438957 ", "ab12", "'00123"])
+    assert list(F.sku_canonico(s)) == ["5438957", "5438957", "5438957", "AB12", "123"]
 
 
 @pytest.mark.parametrize("malo", ["a b", "x`; DROP", "1col", ""])
@@ -177,18 +190,21 @@ def test_archivo_stock_cd():
 # ------------------------------------------------------------------ repositorio de punta a punta
 
 CORTE = pd.Timestamp("2026-09-21")
-SECRETS = {
+ARTI_T = F.TABLA_ARTI
+STOCK_T = F.TABLA_STOCK
+#: Los secrets de Catálogo Control Center, tal cual (sin stock_table ni ventas_table).
+SECRETS_CATALOGO = {
     "bigquery": {
-        "project_id": "proj",
-        "ventas_table": "proj.silver.ventas",
-        "product_master_table": "proj.bronze.stg_pe_central_arti",
-        "stock_table": "proj.bronze.stg_pe_central_stock_bi",
+        "enabled": True,
+        "project_id": "forus-analitica-prod",
+        "job_project_id": "forus-analitica-prod",
+        "table": ARTI_T,
     }
 }
 
 
 def _datos_falsos():
-    arti, rng = [], np.random.default_rng(0)
+    arti = []
     for m in ("1001", "1002"):
         for t in ("36", "37", "38", "39"):
             arti.append(
@@ -205,102 +221,120 @@ def _datos_falsos():
                 }
             )
     arti = pd.DataFrame(arti)
-    semanas = [CORTE - pd.Timedelta(weeks=k) for k in range(1, 17)]
-    ventas = pd.DataFrame(
+    semanas = [CORTE - pd.Timedelta(weeks=k) for k in range(1, 14)]
+    cortes = pd.DataFrame(
+        {
+            "fecha_corte": [(CORTE - pd.Timedelta(days=d)).date() for d in range(-2, 92)],
+            "filas": 100,
+        }
+    )
+    rng = np.random.default_rng(0)
+    hist = pd.DataFrame(
         [
             {
                 "semana_inicio": s.date(),
                 "tienda_cod": tc,
                 "id_producto": sku,
-                "unidades": float(rng.poisson(2)),
+                "cortes_con_stock": 7,
+                "consumo": float(rng.poisson(2)),
             }
             for s in semanas
             for tc in ("018", "025")
             for sku in arti.id_producto
         ]
     )
-    cortes = pd.DataFrame(
-        {
-            "fecha_corte": [(CORTE - pd.Timedelta(days=d)).date() for d in range(1, 113)],
-            "filas": 100,
-        }
-    )
-    dias = pd.DataFrame(
-        [
-            {"semana_inicio": s.date(), "tienda_cod": tc, "id_producto": sku, "cortes_con_stock": 7}
-            for s in semanas
-            for tc in ("018", "025")
-            for sku in arti.id_producto
-        ]
-    )
+    # id_producto con ".0" y ceros: la canonización lo iguala a ARTI
     foto = pd.DataFrame(
         [
             {
                 "tienda_cod": tc,
-                "id_producto": sku,
-                "tienda_nombre": f"T{tc}",
-                "stock": 0.0 if tc == "025" else 3.0,
+                "id_producto": f"00{sku}.0",
+                "tienda_nombre": f"1-{tc}",
+                "stock_tienda": 0.0 if tc == "025" else 3.0,
+                "stock_bodega": 5.0,
             }
-            for tc in ("018", "025", "320", "0320")
+            for tc in ("018", "025", "320")
             for sku in arti.id_producto
         ]
     )
-    return {
-        "arti": arti,
-        "ventas": ventas,
-        "cortes": cortes,
-        "dias_con_stock": dias,
-        "stock_foto": foto,
-    }
+    ventas = hist.rename(columns={"consumo": "unidades"})[
+        ["semana_inicio", "tienda_cod", "id_producto", "unidades"]
+    ]
+    return {"arti": arti, "cortes": cortes, "historial": hist, "stock_foto": foto, "ventas": ventas}
 
 
 class _FakeBQ:
-    def __init__(self):
-        self.settings = AppSettings(gcp_project="proj", marcas=["azaleia"])
+    def __init__(self, falla_ventas=False):
+        self.settings = AppSettings(gcp_project="forus-analitica-prod", marcas=["azaleia"])
         self.datos = _datos_falsos()
         self.consultas = []
         self.gb_leidos = 0.0
+        self.falla_ventas = falla_ventas
+        self.max_gb = 20
 
     def columnas(self, tabla):
-        cols = {
-            "proj.silver.ventas": COLS_VENTAS,
-            "proj.bronze.stg_pe_central_arti": COLS_ARTI,
-            "proj.bronze.stg_pe_central_stock_bi": COLS_STOCK,
-        }[tabla]
+        cols = {"p.silver.ventas": COLS_VENTAS, ARTI_T: COLS_ARTI, STOCK_T: COLS_STOCK}[tabla]
         return pd.DataFrame({"column_name": cols})
 
     def query_df(self, sql, params=None, labels=None):
-        self.consultas.append((labels["consulta"], sql, params))
+        nombre = labels["consulta"]
+        self.consultas.append((nombre, sql, params))
+        if nombre == "ventas" and self.falla_ventas:
+            raise RuntimeError("404 Not found: Dataset p:silver was not found in location US")
         self.gb_leidos += 0.01
-        return self.datos[labels["consulta"]].copy()
+        return self.datos[nombre].copy()
 
 
-def test_repositorio_fuentes_produce_entradas_validas_y_el_motor_corre():
+def test_funciona_con_los_secrets_de_catalogo_sin_configurar_tablas():
     fake = _FakeBQ()
-    repo = FuentesRepository(client=fake, secrets=SECRETS)
+    repo = FuentesRepository(client=fake, secrets=SECRETS_CATALOGO)
+    assert repo.tablas() == {"arti": ARTI_T, "stock": STOCK_T, "ventas": None}
     inp = repo.cargar_entradas(CORTE)
-    nombres = [c[0] for c in fake.consultas]
-    assert nombres == ["arti", "ventas", "cortes", "dias_con_stock", "stock_foto"]
+    assert [c[0] for c in fake.consultas] == ["arti", "cortes", "historial", "stock_foto"]
     for _, sql, p in fake.consultas:
         assert "SELECT *" not in sql.upper()
         if "@marcas" in sql:
             assert p["marcas"] == ["AZALEIA"]
-    assert fake.consultas[-1][2]["fecha_foto"].isoformat() == "2026-09-20"
-
+    hist_params = fake.consultas[2][2]
+    assert all(f < CORTE.date() for f in hist_params["fechas"])  # sólo fotos cerradas
+    assert fake.consultas[3][2]["fecha_foto"].isoformat() == "2026-09-23"
+    diag = repo.ultimo_diagnostico
+    assert diag.fuente_venta == F.VENTA_CONSUMO
     assert set(inp.dim_tienda["tienda_id"]) == {"18", "25"}  # el CD 320 no es tienda
-    assert inp.stock_cd["fisico"].gt(0).all()  # 320 y 0320 se normalizan al mismo CD
-    assert repo.ultimo_diagnostico.fecha_foto == "2026-09-20"
+    # tienda: sólo stock_tiendas; CD: stock_tiendas + stock_bodega
+    assert inp.stock_tienda.query("tienda_id == '18'")["stock_disponible"].eq(3).all()
+    assert inp.stock_cd["fisico"].eq(3 + 5).all()
     res = ejecutar(inp, params(), CORTE, run_id="R")
     d = res.detalle
-    assert (d.groupby("sku")["cantidad"].sum() <= 6).all()
+    assert (d.groupby("sku")["cantidad"].sum() <= 8).all()
     assert (d.query("tienda_id == '25'")["estado_mc"] == "QUIEBRE").all()
     assert d.query("tienda_id == '25'")["cantidad"].sum() > 0
 
 
-def test_repositorio_fuentes_archivo_cd_reemplaza_foto_y_excluidas():
+def test_ventas_table_se_usa_y_si_falla_cae_a_consumo():
+    sec = {"bigquery": {**SECRETS_CATALOGO["bigquery"], "ventas_table": "p.silver.ventas"}}
     fake = _FakeBQ()
-    fake.settings = AppSettings(gcp_project="proj", tiendas_excluidas=["025"])
-    repo = FuentesRepository(client=fake, secrets=SECRETS)
+    repo = FuentesRepository(client=fake, secrets=sec)
+    repo.cargar_entradas(CORTE)
+    assert repo.ultimo_diagnostico.fuente_venta == F.VENTA_TABLA
+    fake = _FakeBQ(falla_ventas=True)
+    repo = FuentesRepository(client=fake, secrets=sec)
+    inp = repo.cargar_entradas(CORTE)
+    diag = repo.ultimo_diagnostico
+    assert diag.fuente_venta == F.VENTA_CONSUMO
+    assert any("ventas_table" in n and "no existen" in n for n in diag.notas)
+    assert len(inp.ventas) > 0
+
+
+def test_placeholder_de_venta_se_ignora():
+    sec = {"bigquery": {"table": ARTI_T, "ventas_table": "PROY.DATASET.TABLA_DE_VENTAS"}}
+    assert FuentesRepository(client=_FakeBQ(), secrets=sec).tablas()["ventas"] is None
+
+
+def test_archivo_cd_reemplaza_foto_y_excluidas():
+    fake = _FakeBQ()
+    fake.settings = AppSettings(gcp_project="p", tiendas_excluidas=["025"])
+    repo = FuentesRepository(client=fake, secrets=SECRETS_CATALOGO)
     archivo = pd.DataFrame(
         {"sku": ["100136"], "fisico": [5.0], "reservado": [2.0], "comprometido": [0.0]}
     )
@@ -309,10 +343,26 @@ def test_repositorio_fuentes_archivo_cd_reemplaza_foto_y_excluidas():
     assert set(inp.dim_tienda["tienda_id"]) == {"18"}
 
 
-def test_repositorio_fuentes_errores_claros():
-    with pytest.raises(ValueError, match="ventas_table"):
-        FuentesRepository(client=_FakeBQ(), secrets={"bigquery": {}}).tablas()
+def test_esquema_conocido_si_information_schema_falla():
+    fake = _FakeBQ()
+
+    def sin_permiso(tabla):
+        raise RuntimeError("403 Access Denied: INFORMATION_SCHEMA")
+
+    fake.columnas = sin_permiso
+    repo = FuentesRepository(client=fake, secrets=SECRETS_CATALOGO)
+    cols, origen = repo.columnas(STOCK_T)
+    assert origen == "esquema_conocido" and "stock_tiendas" in cols
+    with pytest.raises(RuntimeError):
+        repo.columnas("otro.proyecto.tabla")
+
+
+def test_errores_claros():
     fake = _FakeBQ()
     fake.columnas = lambda t: pd.DataFrame({"column_name": ["solo_esto"]})
     with pytest.raises(ValueError, match="Mapeo incompleto"):
-        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+        FuentesRepository(client=fake, secrets=SECRETS_CATALOGO).cargar_entradas(CORTE)
+    fake = _FakeBQ()
+    fake.datos["arti"] = fake.datos["arti"].iloc[0:0]
+    with pytest.raises(ValueError, match="marca"):
+        FuentesRepository(client=fake, secrets=SECRETS_CATALOGO).cargar_entradas(CORTE)

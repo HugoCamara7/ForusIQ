@@ -48,11 +48,17 @@ exhibicion:                     # PENDIENTE (i)
   minimo_por_talla_core: 1
   minimo_por_categoria: {}      # ej.: {"BOTA": 2}
   tallas_core_default: ["36", "37", "38", "39"]
-  tallas_core_por_genero:
+  tallas_core_por_genero:          # claves = valor de GENERO_MA en ARTI (mayúsculas)
     DAMA: ["36", "37", "38", "39"]
+    MUJER: ["36", "37", "38", "39"]
+    FEMENINO: ["36", "37", "38", "39"]
     CABALLERO: ["39", "40", "41", "42"]
+    HOMBRE: ["39", "40", "41", "42"]
+    MASCULINO: ["39", "40", "41", "42"]
     NINA: ["30", "31", "32", "33"]
+    NIÑA: ["30", "31", "32", "33"]
     NINO: ["30", "31", "32", "33"]
+    NIÑO: ["30", "31", "32", "33"]
   tallas_core_por_categoria: {}
   tallas_minimas_sin_core: 3    # curva mínima si el modelo no fabrica tallas core
 

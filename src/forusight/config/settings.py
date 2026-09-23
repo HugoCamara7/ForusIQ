@@ -24,7 +24,8 @@ class AppSettings(BaseSettings):
 
     data_source: Literal["bigquery", "mart", "synthetic"] = "synthetic"
     gcp_project: str | None = None
-    bq_location: str = "US"
+    #: Región de los jobs. Vacío = BigQuery la infiere de las tablas (igual que Catálogo).
+    bq_location: str | None = None
     dataset_mart: str = "forusight_mart"
     dataset_app: str = "forusight_app"
     cd_id: str = "320"
@@ -34,7 +35,8 @@ class AppSettings(BaseSettings):
     marcas: list[str] = Field(default_factory=lambda: ["AZALEIA"])
     #: Códigos de tienda/bodega que nunca reciben (bodegas eComm, outlets…). PENDIENTE (j).
     tiendas_excluidas: list[str] = Field(default_factory=list)
-    semanas_historia: int = 16
+    #: Semanas de historia a leer (12 de análisis + 1 de margen).
+    semanas_historia: int = 13
 
 
 # --------------------------------------------------------------------------- params

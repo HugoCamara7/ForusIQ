@@ -4,21 +4,21 @@ Usa el mismo esquema de secrets que Catálogo Control Center y Repo Control Cent
 que los bloques se pueden pegar tal cual:
 
 ```toml
-[bigquery]
+[bigquery]                    # el MISMO bloque de Catálogo Control Center
 enabled = true
-project_id = "..."            # proyecto de las tablas (o por defecto de la cuenta)
+project_id = "..."            # proyecto por defecto (o el de la cuenta)
 job_project_id = "..."        # proyecto donde corren (y se facturan) los jobs
-location = "US"
-ventas_table = "proyecto.dataset.tabla"
-product_master_table = "proyecto.dataset.tabla"   # ARTI (alias heredado: `table`)
-stock_table = "proyecto.dataset.tabla"            # stock por fecha de corte
-max_gb = 20                                       # tope por consulta (dry run)
+table = "…stg_pe_central_arti"   # ARTI (también `product_master_table`)
+# stock_table = "…"           # opcional: por defecto stg_pe_central_stock_bi
+# ventas_table = "…"          # opcional: sin ella, venta estimada por consumo de stock
+# location = "US"             # opcional: si falta, BigQuery la infiere
+# max_gb = 20                 # tope por consulta (dry run)
 
 [gcp_service_account]
 ...JSON de la cuenta de servicio...
 ```
 
-Las rutas de las tablas viven sólo en los secrets: el código no trae valores por defecto.
+ARTI y stock tienen valor por defecto (las tablas de los Control Center); venta es opcional.
 
 Orden de resolución de credenciales:
   1. JSON de la cuenta de servicio en los secrets ([gcp_service_account], o anidado en
@@ -135,17 +135,26 @@ def bigquery_habilitado(secrets: Mapping[str, Any] | None = None) -> bool:
     return str(cfg.get("enabled", "true")).strip().lower() not in ("0", "false", "no", "off")
 
 
-def tabla_configurada(nombre: str, secrets: Mapping[str, Any] | None = None) -> str:
-    """Ruta proyecto.dataset.tabla de los secrets, validada. Error claro si falta."""
+def tabla_configurada(
+    nombre: str, secrets: Mapping[str, Any] | None = None, por_defecto: str | None = None
+) -> str | None:
+    """Ruta proyecto.dataset.tabla de los secrets (o ``por_defecto``), validada.
+
+    Devuelve None si no está configurada, no hay valor por defecto o quedó el texto de
+    ejemplo de la plantilla.
+    """
     cfg = config_bigquery(secrets)
-    claves = CLAVES_TABLA[nombre]
-    valor = next((str(cfg[k]).strip() for k in claves if str(cfg.get(k, "")).strip()), "")
-    if not valor:
-        raise ValueError(
-            f"Falta la tabla de {nombre} en los secrets: agrega `{claves[0]} = "
-            '"proyecto.dataset.tabla"` dentro del bloque [bigquery] (sin repetir el encabezado).'
-        )
-    return validar_tabla(valor)
+    valor = next(
+        (str(cfg[k]).strip() for k in CLAVES_TABLA[nombre] if str(cfg.get(k, "")).strip()), ""
+    )
+    if not valor or es_placeholder(valor):
+        valor = por_defecto or ""
+    return validar_tabla(valor) if valor else None
+
+
+def es_placeholder(ruta: str) -> bool:
+    partes = [p.strip().strip("`").lower() for p in str(ruta).split(".")]
+    return any(p in _PLACEHOLDERS or p.startswith(("proy", "tabla_", "dataset")) for p in partes)
 
 
 def validar_tabla(ruta: str) -> str:
