@@ -63,6 +63,8 @@ CLAVES_TABLA = {
     # (stg_pe_central_cean): se prueban en ese orden y gana la que tenga modelo y talla.
     "arti": ("arti_table", "table", "product_master_table"),
     "stock": ("stock_table", "tabla_stock"),
+    "cadena": ("maestro_cadena_table", "cadena_table"),
+    "tiendas": ("maestro_tiendas_table", "tiendas_table"),
 }
 
 

@@ -27,7 +27,8 @@ class AppSettings(BaseSettings):
     #: Región de los jobs. Vacío = BigQuery la infiere de las tablas (igual que Catálogo).
     bq_location: str | None = None
     dataset_mart: str = "forusight_mart"
-    dataset_app: str = "forusight_app"
+    #: Dataset de BigQuery para guardar aprobaciones. Vacío = no se usa BigQuery (GitHub o descarga).
+    dataset_app: str | None = None
     cd_id: str = "320"
     cache_ttl_seconds: int = 3600
     params_path: Path = DEFAULT_PARAMS_PATH

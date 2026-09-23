@@ -1,25 +1,23 @@
 """Lectura directa de las tablas de Forus → contratos canónicos del motor.
 
-Funciona con los mismos secrets que Catálogo Control Center, sin configurar tablas:
-
-  - ARTI  (`product_master_table` o `table`; por defecto stg_pe_central_arti)
-      → dimensión producto. SKU = CODINT_MA, modelo-color = CODMOD_MA-CODCOL_MA.
-  - STOCK (`stock_table`; por defecto stg_pe_central_stock_bi, una foto por `fecha_corte`)
-      · última foto → stock de cada tienda y del CD 320
-      · historial   → días con stock por semana y, si no hay tabla de venta, venta estimada
-        por consumo (caída del stock entre fotos consecutivas)
-  - VENTA (`ventas_table`, opcional): si está y responde, reemplaza a la venta estimada.
+Con los secrets de Catálogo Control Center:
+  - ARTI    (`table`; por defecto stg_pe_central_arti) → dimensión producto.
+  - STOCK   (`stock_table`; por defecto stg_pe_central_stock_bi). Sólo trae el ÚLTIMO corte
+            del día (no hay historial): se usa la foto más reciente, tiendas y CD 320.
+  - VENTA   (`ventas_table`, obligatoria): 12 semanas cerradas + la semana en curso.
+  - MAESTROS (opcionales): `maestro_tiendas_table` (tienda → nombre) y
+            `maestro_cadena_table` (modelo → cadena, limita las introducciones).
   - STOCK CD.xlsx (opcional, se sube en la app): disponible y reservas del CD.
 
-Reglas de `stg_pe_central_stock_bi` tomadas de Reassign Control Center:
-  - en una tienda sólo cuenta `stock_tiendas` (su `stock_bodega` es de otro almacén);
-  - en la bodega central (320) el disponible es `stock_tiendas + stock_bodega`;
-  - el `id_producto` se canoniza en SQL (sin `.0`, sin ceros a la izquierda) para que los
-    cruces con ARTI no fallen por tipo;
-  - nunca se suman cortes distintos.
+Sin historial de stock, la exposición semanal se INFIERE de la venta real y del stock actual:
+  - vendió y hoy tiene stock      → expuesto desde la primera venta hasta hoy;
+  - vendió y hoy está en 0        → expuesto entre la primera y la última venta (después,
+                                    quiebre: esas semanas no cuentan como "sin demanda");
+  - no vendió y hoy tiene stock   → expuesto toda la ventana (falta de venta, no de stock);
+  - no vendió y no tiene stock    → sin exposición (nunca tuvo).
 
-Costo: filtro de fecha parametrizado, agregación en el servidor, semijoin con ARTI por
-marca, columnas explícitas y dry run con tope de GB antes de cada consulta.
+Reglas de `stg_pe_central_stock_bi` (Reassign Control Center): en tienda cuenta sólo
+`stock_tiendas`; en el CD 320 `stock_tiendas + stock_bodega`; `id_producto` canonizado.
 """
 
 from __future__ import annotations
@@ -68,7 +66,6 @@ COLUMNAS_CONOCIDAS = {
 }
 
 VENTA_TABLA = "tabla de venta"
-VENTA_CONSUMO = "consumo de stock (estimada)"
 
 
 # ------------------------------------------------------------------ normalización
@@ -175,6 +172,8 @@ def sql_arti(tabla: str, mapa: Mapping[str, str], con_marcas: bool) -> str:
             "categoria",
             "descripcion",
             "color",
+            "prenda",
+            "temporada",
         )
         if c in mapa
     ]
@@ -191,6 +190,7 @@ def sql_arti(tabla: str, mapa: Mapping[str, str], con_marcas: bool) -> str:
 def sql_ventas(
     tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
 ) -> str:
+    """Venta semanal por tienda×SKU: semanas cerradas y la semana en curso (hasta hoy)."""
     f = _c(mapa, "fecha")
     sel = [
         f"DATE_TRUNC(DATE({f}), WEEK(MONDAY)) AS semana_inicio",
@@ -204,7 +204,7 @@ def sql_ventas(
         ]
     grupos = ", ".join(str(i + 1) for i in range(len(sel)))
     sel.append(f"SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades")
-    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta"
+    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto"
     if con_marcas:
         if "marca" in mapa:
             where += f" AND {_marca_sql(mapa)} IN UNNEST(@marcas)"
@@ -214,53 +214,12 @@ def sql_ventas(
 
 
 def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
-    """Fechas de corte disponibles en la ventana (sólo lee la columna de fecha)."""
+    """Fechas de corte recientes (sólo lee la columna de fecha): se usa la última."""
     f = _c(mapa, "fecha")
     return (
         f"SELECT DATE({f}) AS fecha_corte, COUNT(1) AS filas\nFROM {_t(tabla)}\n"
-        f"WHERE DATE({f}) >= @desde AND DATE({f}) < @hasta_foto\nGROUP BY 1 ORDER BY 1"
+        f"WHERE DATE({f}) >= @desde_foto AND DATE({f}) < @hasta_foto\nGROUP BY 1 ORDER BY 1"
     )
-
-
-def sql_historial(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
-) -> str:
-    """Una sola lectura del historial → por semana×tienda×SKU:
-
-    - ``cortes_con_stock``: fotos con stock en sala (> 0), para los días con stock;
-    - ``consumo``: caída del stock entre una foto y la siguiente (si el SKU no aparece en
-      la foto siguiente, llegó a 0). Es la venta estimada cuando no hay tabla de venta.
-    ``@fechas`` son las fechas de corte de la ventana, en orden.
-    """
-    f = _c(mapa, "fecha")
-    idp = sku_sql(_c(mapa, "id_producto"))
-    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta"
-    if con_marcas:
-        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
-    q = f"COALESCE(SAFE_CAST({_c(mapa, 'stock_tienda')} AS FLOAT64), 0)"
-    return f"""WITH fechas AS (
-  SELECT fecha, LEAD(fecha) OVER (ORDER BY fecha) AS siguiente
-  FROM UNNEST(@fechas) AS fecha
-),
-base AS (
-  SELECT DATE({f}) AS fecha, {tienda_sql(mapa)} AS tienda_cod, {idp} AS id_producto,
-         SUM({q}) AS q
-  FROM {_t(tabla)}
-  WHERE {where}
-  GROUP BY 1, 2, 3
-),
-serie AS (
-  SELECT b.*, fe.siguiente,
-         LEAD(b.fecha) OVER w AS fecha_sig, LEAD(b.q) OVER w AS q_sig
-  FROM base AS b JOIN fechas AS fe USING (fecha)
-  WINDOW w AS (PARTITION BY b.tienda_cod, b.id_producto ORDER BY b.fecha)
-)
-SELECT DATE_TRUNC(fecha, WEEK(MONDAY)) AS semana_inicio, tienda_cod, id_producto,
-       COUNTIF(q > 0) AS cortes_con_stock,
-       SUM(IF(siguiente IS NULL, 0,
-              GREATEST(q - IF(fecha_sig = siguiente, q_sig, 0), 0))) AS consumo
-FROM serie
-GROUP BY 1, 2, 3"""
 
 
 def sql_stock_foto(
@@ -282,6 +241,12 @@ def sql_stock_foto(
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2"
 
 
+def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:
+    """Maestro chico (tiendas / modelo→cadena): sólo las columnas mapeadas, sin duplicados."""
+    sel = [f"CAST({_c(mapa, c)} AS STRING) AS {c}" for c in mapa]
+    return f"SELECT DISTINCT {', '.join(sel)}\nFROM {_t(tabla)}"
+
+
 # ------------------------------------------------------------------ transformaciones
 
 
@@ -292,14 +257,18 @@ def a_dim_producto(arti: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     if "modcol" in arti and arti["modcol"].notna().any():
         mc = texto(arti["modcol"]).str.upper()
         d["modelo_id"] = mc.str.split("-").str[0]
+        d["cod_color"] = mc.str.split("-").str[1]
     else:
         mod, col = texto(arti["cod_modelo"]).str.upper(), texto(arti["cod_color"]).str.upper()
-        mc, d["modelo_id"] = mod + "-" + col, mod
+        mc, d["modelo_id"], d["cod_color"] = mod + "-" + col, mod, col
     d["modelo_color_id"] = mc
     d["color"] = texto(arti.get("color", arti.get("cod_color", vacio)))
     d["talla"] = texto(arti["talla"]).str.upper()
     d["categoria"] = texto(arti.get("categoria", vacio)).str.upper().fillna("SIN_CATEGORIA")
     d["genero"] = texto(arti.get("genero", vacio)).str.upper().fillna("SIN_GENERO")
+    # Atributos sólo para el archivo de salida (se omiten si ARTI no los trae).
+    for c in ("marca", "descripcion", "prenda", "temporada"):
+        d[c] = texto(arti.get(c, vacio)).str.upper()
     d = d.dropna(subset=["sku", "modelo_color_id", "talla"])
     if "precio" in arti and arti["precio"].notna().any():
         precio = pd.to_numeric(arti.loc[d.index, "precio"], errors="coerce")
@@ -334,28 +303,40 @@ def _sku_desde_llave(df: pd.DataFrame, dim: pd.DataFrame) -> pd.Series:
     return llave.map(mapa)
 
 
-def _lunes(fechas: pd.Series) -> pd.Series:
-    f = pd.to_datetime(fechas)
-    return f - pd.to_timedelta(f.dt.weekday, unit="D")
+def inferir_exposicion(ventas: pd.DataFrame, stock: pd.DataFrame, semanas: list) -> pd.DataFrame:
+    """Días con stock por semana SIN historial de stock (ver docstring del módulo).
 
-
-def dias_por_semana(hist: pd.DataFrame, cortes: pd.DataFrame) -> pd.DataFrame:
-    """Fotos con stock → días con stock (0..7), escalando por la frecuencia de fotos.
-
-    Con foto diaria, 5 fotos con stock = 5 días. Con foto semanal, 1 foto = 7 días.
+    ``ventas``: semana_inicio, tienda_id, sku, unidades (semanas cerradas).
+    ``stock``: tienda_id, sku, stock_disponible (foto actual). ``semanas``: lunes cerrados.
+    Devuelve semana_inicio, tienda_id, sku, unidades, dias_con_stock (0 o 7).
     """
-    por_semana = (
-        cortes.assign(semana_inicio=_lunes(cortes["fecha_corte"]))
-        .groupby("semana_inicio")["fecha_corte"]
-        .nunique()
-        .rename("cortes_semana")
+    llave = ["tienda_id", "sku"]
+    vv = ventas.loc[ventas["unidades"] > 0]
+    rango = vv.groupby(llave).agg(primera=("semana_inicio", "min"), ultima=("semana_inicio", "max"))
+    st = stock.set_index(llave)["stock_disponible"]
+    pares = pd.DataFrame(index=rango.index.union(st.index[st > 0])).reset_index()
+    pares = pares.join(rango, on=llave).join(st.rename("stock"), on=llave)
+    pares["stock"] = pares["stock"].fillna(0)
+    grid = pares.merge(pd.DataFrame({"semana_inicio": pd.to_datetime(semanas)}), how="cross")
+    tiene = grid["stock"] > 0
+    vendio = grid["primera"].notna()
+    expuesta = np.select(
+        [vendio & tiene, vendio & ~tiene, ~vendio & tiene],
+        [
+            grid["semana_inicio"] >= grid["primera"],
+            (grid["semana_inicio"] >= grid["primera"]) & (grid["semana_inicio"] <= grid["ultima"]),
+            True,
+        ],
+        False,
     )
-    d = hist.copy()
-    d["semana_inicio"] = pd.to_datetime(d["semana_inicio"])
-    d = d.join(por_semana, on="semana_inicio")
-    esc = 7.0 / d["cortes_semana"].where(d["cortes_semana"] > 0, np.nan)
-    d["dias_con_stock"] = np.clip(np.round(d["cortes_con_stock"] * esc), 0, 7).fillna(7)
-    return d
+    grid["dias_con_stock"] = np.where(expuesta, 7, 0)
+    out = grid[llave + ["semana_inicio", "dias_con_stock"]].merge(
+        ventas[llave + ["semana_inicio", "unidades"]], on=llave + ["semana_inicio"], how="outer"
+    )
+    out["unidades"] = out["unidades"].fillna(0.0)
+    out["dias_con_stock"] = out["dias_con_stock"].fillna(7).astype(int)  # vendió → expuesta
+    out.loc[out["unidades"] > 0, "dias_con_stock"] = 7
+    return out.loc[(out["unidades"] > 0) | (out["dias_con_stock"] > 0)]
 
 
 def leer_stock_cd_archivo(contenido: bytes, nombre: str = "stock_cd.xlsx") -> pd.DataFrame:
@@ -396,24 +377,33 @@ class Diagnostico:
     filas: dict[str, int] = field(default_factory=dict)
     gb_leidos: float = 0.0
     fecha_foto: str | None = None
-    cortes_en_ventana: int = 0
-    fuente_venta: str = VENTA_CONSUMO
+    fuente_venta: str = VENTA_TABLA
     marcas: list[str] = field(default_factory=list)
     tablas: dict[str, str] = field(default_factory=dict)
     mapeos: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
+def cadena_de_tienda(dim_t: pd.DataFrame) -> pd.Series:
+    """Cadena de cada tienda: columna del maestro o, si no hay, el prefijo del nombre
+    (HP JOCKEY → HP), que es como la nombra Neogística."""
+    pref = dim_t["nombre"].astype("string").str.strip().str.split().str[0].str.upper()
+    if "cadena" in dim_t:
+        return dim_t["cadena"].astype("string").str.strip().str.upper().fillna(pref)
+    return pref
+
+
 def construir_entradas(
     arti: pd.DataFrame,
-    ventas: pd.DataFrame | None,
-    hist: pd.DataFrame,
-    cortes: pd.DataFrame,
+    ventas: pd.DataFrame,
     foto: pd.DataFrame,
     cd_id: str,
     excluidas: set[str],
     stock_cd_archivo: pd.DataFrame | None,
     fecha_corte: pd.Timestamp,
     diag: Diagnostico,
+    semanas: int = 13,
+    tiendas_m: pd.DataFrame | None = None,
+    cadena_m: pd.DataFrame | None = None,
 ):
     """DataFrames crudos de las consultas → EngineInputs (contratos canónicos)."""
     from forusight.engine.pipeline import EngineInputs
@@ -423,46 +413,8 @@ def construir_entradas(
     dim, notas = a_dim_producto(arti)
     diag.notas += notas
     skus = set(dim["sku"])
-
-    h = hist.copy()
-    h["sku"] = sku_canonico(h["id_producto"])
-    h["tienda_id"] = h["tienda_cod"].map(codigo_tienda)
-    h = h.loc[h["sku"].isin(skus) & ~h["tienda_id"].isin(no_reciben) & h["tienda_id"].ne("")]
-    llave = ["semana_inicio", "tienda_id", "sku"]
-
-    # --- venta semanal: tabla de venta o consumo de stock
-    if ventas is not None:
-        v = ventas.copy()
-        v["sku"] = (
-            sku_canonico(v["id_producto"]) if "id_producto" in v else _sku_desde_llave(v, dim)
-        )
-        v["tienda_id"] = v["tienda_cod"].map(codigo_tienda)
-        v = v.loc[v["sku"].isin(skus) & ~v["tienda_id"].isin(no_reciben)]
-        diag.fuente_venta = VENTA_TABLA
-    else:
-        v = h.rename(columns={"consumo": "unidades"})
-        diag.fuente_venta = VENTA_CONSUMO
-        diag.notas.append(
-            "Venta estimada por consumo de stock (caída entre fotos de "
-            "stg_pe_central_stock_bi): incluye traspasos de salida y no ve la venta "
-            "del mismo día de una reposición. Configura `ventas_table` para usar "
-            "la venta real."
-        )
-    v["semana_inicio"] = pd.to_datetime(v["semana_inicio"])
-    v = v.groupby(llave, as_index=False)["unidades"].sum()
-
-    # --- días con stock desde el historial de fotos
-    d = dias_por_semana(h, cortes).groupby(llave, as_index=False)["dias_con_stock"].max()
-    sem = v.merge(d, on=llave, how="outer")
-    sem["unidades"] = sem["unidades"].fillna(0.0).clip(lower=0)
-    semanas_con_foto = set(_lunes(cortes["fecha_corte"]))
-    sin_foto = ~sem["semana_inicio"].isin(semanas_con_foto)
-    # Semana sin foto: no hay información de exposición → se asume expuesta si vendió.
-    sem["dias_con_stock"] = sem["dias_con_stock"].fillna(
-        pd.Series(np.where(sin_foto & (sem["unidades"] > 0), 7, 0), index=sem.index)
-    )
-    sem["dias_con_stock"] = sem["dias_con_stock"].astype(int)
-    sem = sem.loc[(sem["unidades"] > 0) | (sem["dias_con_stock"] > 0)]
+    corte = pd.Timestamp(fecha_corte).normalize()
+    lunes = [corte - pd.Timedelta(weeks=k) for k in range(semanas, 0, -1)]
 
     # --- última foto: tiendas (sólo stock en sala) y CD (sala + bodega)
     f = foto.copy()
@@ -481,6 +433,24 @@ def construir_entradas(
         lower=0
     )
 
+    # --- venta real semanal (cerradas + semana en curso)
+    v = ventas.copy()
+    v["sku"] = sku_canonico(v["id_producto"]) if "id_producto" in v else _sku_desde_llave(v, dim)
+    v["tienda_id"] = v["tienda_cod"].map(codigo_tienda)
+    v = v.loc[v["sku"].isin(skus) & ~v["tienda_id"].isin(no_reciben)]
+    v["semana_inicio"] = pd.to_datetime(v["semana_inicio"])
+    v = v.groupby(["semana_inicio", "tienda_id", "sku"], as_index=False)["unidades"].sum()
+    v["unidades"] = v["unidades"].clip(lower=0)
+    en_curso = v.loc[v["semana_inicio"] >= corte]
+    cerradas = v.loc[v["semana_inicio"] < corte]
+    sem = inferir_exposicion(cerradas, st, lunes)
+    # la semana en curso viaja aparte del análisis (Demanda Periodo Actual en el archivo)
+    en_curso = en_curso.assign(dias_con_stock=0)
+    diag.notas.append(
+        "Stock sin historial (sólo el último corte): la exposición semanal se "
+        "infiere de la venta real y del stock actual."
+    )
+
     if stock_cd_archivo is not None:
         stock_cd = stock_cd_archivo.loc[stock_cd_archivo["sku"].isin(skus)].copy()
         diag.notas.append("Stock CD desde el archivo subido (disponible y reservas).")
@@ -494,23 +464,18 @@ def construir_entradas(
                 "comprometido": 0.0,
             }
         )
-        diag.notas.append(
-            f"Stock CD {cd} = stock_tiendas + stock_bodega de la última foto, sin "
-            "reservas: sube el archivo STOCK CD para descontarlas."
-        )
         if stock_cd.empty:
             diag.notas.append(
                 f"La foto de stock no trae filas de la bodega {cd} para estas marcas."
             )
 
-    # --- dimensión tienda (derivada; clusters reales: pendiente)
+    # --- dimensión tienda: maestro de tiendas si está; si no, la foto de stock
+    ids = sorted(set(st["tienda_id"]) | set(sem["tienda_id"]))
     nombres = (
         tiendas_f.dropna(subset=["tienda_nombre"]).groupby("tienda_id")["tienda_nombre"].first()
         if "tienda_nombre" in tiendas_f
         else pd.Series(dtype=str)
     )
-    ids = sorted(set(st["tienda_id"]) | set(sem["tienda_id"]))
-    corte = pd.Timestamp(fecha_corte)
     v12 = sem.loc[sem["semana_inicio"] >= corte - pd.Timedelta(weeks=12)]
     venta_t = v12.groupby("tienda_id")["unidades"].sum().reindex(ids, fill_value=0)
     reciente = set(
@@ -533,6 +498,48 @@ def construir_entradas(
             "max_unidades_corrida": np.nan,
         }
     )
+    if tiendas_m is not None and len(tiendas_m):
+        m = tiendas_m.copy()
+        m["tienda_id"] = m["tienda_cod"].map(codigo_tienda)
+        m = m.drop_duplicates("tienda_id").set_index("tienda_id")
+        dim_t["nombre"] = dim_t["tienda_id"].map(m["tienda_nombre"]).fillna(dim_t["nombre"])
+        for c in ("centro_comercial", "zona", "cadena"):
+            if c in m:
+                dim_t[c] = dim_t["tienda_id"].map(m[c])
+        sin = sorted(set(ids) - set(m.index))
+        if sin:
+            diag.notas.append(
+                f"{len(sin)} tiendas no están en el maestro de tiendas: " + ", ".join(sin[:20])
+            )
+    dim_t["cadena"] = cadena_de_tienda(dim_t)
+
+    # --- elegibilidad por cadena (maestro modelo → cadena): limita las introducciones
+    permitidos = None
+    if cadena_m is not None and len(cadena_m):
+        cm = (
+            pd.DataFrame(
+                {
+                    "modelo_id": texto(cadena_m["cod_modelo"]).str.upper(),
+                    "cadena": texto(cadena_m["cadena"]).str.upper(),
+                }
+            )
+            .dropna()
+            .drop_duplicates()
+        )
+        permitidos = dim_t[["tienda_id", "cadena"]].merge(cm, on="cadena")[
+            ["tienda_id", "modelo_id"]
+        ]
+        sin_cadena = set(dim["modelo_id"]) - set(cm["modelo_id"])
+        diag.notas.append(
+            f"Maestro modelo→cadena: {len(permitidos):,} pares tienda×modelo "
+            f"habilitados; {len(sin_cadena)} modelos sin cadena (sólo reposición, "
+            "no se introducen)."
+        )
+    else:
+        diag.notas.append(
+            "Sin maestro modelo→cadena: los modelos pueden introducirse en "
+            "cualquier tienda que cumpla la afinidad."
+        )
     diag.filas.update(
         {
             "productos": len(dim),
@@ -543,11 +550,14 @@ def construir_entradas(
         }
     )
     return EngineInputs(
-        ventas=sem[["semana_inicio", "tienda_id", "sku", "unidades", "dias_con_stock"]],
+        ventas=pd.concat([sem, en_curso[sem.columns]], ignore_index=True)[
+            ["semana_inicio", "tienda_id", "sku", "unidades", "dias_con_stock"]
+        ],
         stock_tienda=st,
         stock_cd=stock_cd[["sku", "fisico", "reservado", "comprometido"]],
         dim_producto=dim,
         dim_tienda=dim_t,
+        permitidos=permitidos,
     )
 
 
@@ -556,5 +566,6 @@ def ventana(fecha_corte: pd.Timestamp, semanas: int) -> dict[str, dt.date]:
     return {
         "desde": corte - dt.timedelta(weeks=semanas),
         "hasta": corte,
-        "hasta_foto": corte + dt.timedelta(days=7),
+        "desde_foto": corte - dt.timedelta(days=21),
+        "hasta_foto": max(corte + dt.timedelta(days=7), dt.date.today() + dt.timedelta(days=1)),
     }

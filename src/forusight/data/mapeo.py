@@ -77,6 +77,48 @@ ALIAS_ARTI: dict[str, list[str]] = {
     "descripcion": ["descripcion_ma", "descripcion", "desc_modelo", "nombre_modelo"],
     "color": ["color_ma", "desc_color", "nombre_color", "color"],
     "precio": ["precio_ma", "precio", "pvp", "precio_venta", "precio_lista"],
+    "prenda": ["prenda_ma", "prenda", "desc_prenda", "subclase"],
+    "temporada": ["temporada_comercial", "temporada_ma", "temporada", "temp_ma"],
+}
+
+#: Maestro tienda → nombre (`maestro_tiendas_table`).
+ALIAS_TIENDAS: dict[str, list[str]] = {
+    "tienda_cod": [
+        "codigo_tienda",
+        "cod_tienda",
+        "codigo_centro",
+        "cod_centro",
+        "cod_local",
+        "codigo_local",
+        "id_tienda",
+        "tienda",
+    ],
+    "tienda_nombre": [
+        "nombre_tienda",
+        "nombre_centro",
+        "desc_tienda",
+        "tienda_nombre",
+        "nombre_local",
+        "desc_local",
+        "nombre",
+    ],
+    "centro_comercial": ["centro_comercial", "mall", "centro_comercial_nombre"],
+    "zona": ["zona_cc", "zona", "region", "ubicacion"],
+    "cadena": ["cadena", "cod_cadena", "tipo_cadena", "desc_cadena", "nombre_cadena"],
+}
+
+#: Maestro código/modelo → cadena (`maestro_cadena_table`).
+ALIAS_CADENA: dict[str, list[str]] = {
+    "cod_modelo": [
+        "cod_modelo",
+        "codigo_modelo",
+        "codmod",
+        "codmod_ma",
+        "modelo_cod",
+        "modelo",
+        "codigo",
+    ],
+    "cadena": ["cadena", "cod_cadena", "tipo_cadena", "desc_cadena", "nombre_cadena"],
 }
 
 #: Stock por fecha de corte (`stock_table`), p. ej. stg_pe_central_stock_bi.
@@ -91,7 +133,13 @@ ALIAS_STOCK: dict[str, list[str]] = {
     "transito": ["stock_transito", "transito", "en_transito", "cant_transito"],
 }
 
-FUENTES = {"ventas": ALIAS_VENTAS, "arti": ALIAS_ARTI, "stock": ALIAS_STOCK}
+FUENTES = {
+    "ventas": ALIAS_VENTAS,
+    "arti": ALIAS_ARTI,
+    "stock": ALIAS_STOCK,
+    "tiendas": ALIAS_TIENDAS,
+    "cadena": ALIAS_CADENA,
+}
 
 
 def faltantes(fuente: str, mapa: Mapping[str, str]) -> list[str]:
@@ -110,6 +158,10 @@ def faltantes(fuente: str, mapa: Mapping[str, str]) -> list[str]:
         return f
     if fuente == "stock":
         return [c for c in ("fecha", "tienda_cod", "id_producto", "stock_tienda") if c not in mapa]
+    if fuente == "tiendas":
+        return [c for c in ("tienda_cod", "tienda_nombre") if c not in mapa]
+    if fuente == "cadena":
+        return [c for c in ("cod_modelo", "cadena") if c not in mapa]
     raise KeyError(fuente)
 
 

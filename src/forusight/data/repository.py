@@ -15,7 +15,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from forusight.config.settings import AppSettings, EngineParams, dump_params
+from forusight.config.settings import AppSettings
 from forusight.data.bq_client import BigQueryClient, validar_identificador
 from forusight.engine.pipeline import EngineInputs, EngineResult
 
@@ -57,7 +57,7 @@ class Repository(Protocol):
 
     def guardar_corrida(self, result: EngineResult, usuario: str) -> None: ...
 
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> None: ...
+    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str: ...
 
 
 def _ahora() -> pd.Timestamp:
@@ -128,12 +128,38 @@ class SyntheticRepository:
         self.propuestas[result.run_id] = result.detalle.copy()
         self.auditoria.append(tabla_auditoria(result.run_id, usuario, "CORRIDA", result.resumen))
 
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> None:
+    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str:
         validar_aprobacion(aprobacion)
         self.aprobaciones[run_id] = aprobacion.assign(aprobado_por=usuario, aprobado_en=_ahora())
         self.auditoria.append(
             tabla_auditoria(run_id, usuario, "APROBACION", {"filas": len(aprobacion)})
         )
+        return "sesión (demo)"
+
+
+class SinAlmacenamiento(RuntimeError):
+    """No hay dataset ni GitHub configurados: la aprobación sólo puede descargarse."""
+
+
+def guardar_aprobacion_github(run_id: str, df: pd.DataFrame, usuario: str, secrets=None) -> str:
+    from forusight.data.bq_client import leer_st_secrets
+    from forusight.data.github_store import GitHubStore, config_github
+
+    cfg = config_github(leer_st_secrets() if secrets is None else secrets)
+    if cfg is None:
+        raise SinAlmacenamiento(
+            "No hay dónde guardar la aprobación (sin dataset de BigQuery ni GitHub). Descárgala "
+            "con el botón de abajo, o pega en los secrets el bloque [ticketing] de Catálogo "
+            "Control Center para guardarla en GitHub."
+        )
+    store = GitHubStore(cfg["repository"], cfg["token"], cfg["branch"], cfg["prefix"])
+    fecha = _ahora().strftime("%Y%m%d_%H%M%S")
+    ruta = store.guardar(
+        f"aprobaciones/{run_id}_{fecha}.csv",
+        df.to_csv(index=False).encode("utf-8-sig"),
+        f"forusight: aprobación {run_id} por {usuario}",
+    )
+    return f"GitHub ({cfg['repository']}, rama {cfg['branch']}: {ruta})"
 
 
 def validar_aprobacion(df: pd.DataFrame) -> None:
@@ -167,7 +193,7 @@ class BigQueryRepository:
     def _sql(self, archivo: str) -> str:
         return leer_sql(archivo).format(
             mart=self._dataset(self.settings.dataset_mart),
-            app=self._dataset(self.settings.dataset_app),
+            app=self._dataset(self.settings.dataset_app) if self.settings.dataset_app else "",
         )
 
     def cargar_entradas(
@@ -203,24 +229,28 @@ class BigQueryRepository:
             self._tabla_app("auditoria"),
         )
 
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> None:
+    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str:
+        """Guarda la aprobación y devuelve dónde quedó.
+
+        Destino: dataset de BigQuery si `[forusight] dataset_app` está configurado; si no,
+        GitHub (bloque [ticketing] del Catálogo o [forusight] github_*); si no hay ninguno,
+        lanza SinAlmacenamiento para que la UI ofrezca la descarga.
+        """
         validar_aprobacion(aprobacion)
         df = aprobacion[COLUMNAS_APROBACION].assign(aprobado_por=usuario, aprobado_en=_ahora())
-        self.client.load_df(df, self._tabla_app("aprobada"))
-        self.client.load_df(
-            tabla_auditoria(
-                run_id,
-                usuario,
-                "APROBACION",
-                {"filas": len(df), "unidades": int(df["cantidad_aprobada"].sum())},
-            ),
-            self._tabla_app("auditoria"),
-        )
-
-
-def parametros_snapshot(params: EngineParams) -> str:
-    """YAML de parámetros para guardar junto a la corrida."""
-    return dump_params(params)
+        if self.settings.dataset_app:
+            self.client.load_df(df, self._tabla_app("aprobada"))
+            self.client.load_df(
+                tabla_auditoria(
+                    run_id,
+                    usuario,
+                    "APROBACION",
+                    {"filas": len(df), "unidades": int(df["cantidad_aprobada"].sum())},
+                ),
+                self._tabla_app("auditoria"),
+            )
+            return f"BigQuery ({self.settings.dataset_app})"
+        return guardar_aprobacion_github(run_id, df, usuario, getattr(self, "secrets", None))
 
 
 class FuentesRepository(BigQueryRepository):
@@ -256,6 +286,8 @@ class FuentesRepository(BigQueryRepository):
             "arti": self._tabla_arti(),
             "stock": tabla_configurada("stock", self.secrets, F.TABLA_STOCK),
             "ventas": tabla_configurada("ventas", self.secrets),
+            "tiendas": tabla_configurada("tiendas", self.secrets),
+            "cadena": tabla_configurada("cadena", self.secrets),
         }
 
     def _tabla_arti(self) -> str:
@@ -319,6 +351,8 @@ class FuentesRepository(BigQueryRepository):
             try:
                 cols, _ = self.columnas(tabla)
             except Exception as exc:
+                if fuente in ("tiendas", "cadena"):
+                    continue  # maestros opcionales: se informa en el diagnóstico
                 if fuente != "ventas":
                     raise
                 # La venta es opcional: nunca bloquea la corrida.
@@ -370,18 +404,26 @@ class FuentesRepository(BigQueryRepository):
     ) -> EngineInputs:
         from forusight.data import fuentes as F
         from forusight.data import mapeo
+        from forusight.data.bq_client import explicar_error
 
         semanas = semanas or self.settings.semanas_historia
         tablas = self.tablas()
+        if not tablas["ventas"]:
+            raise ValueError(
+                "Falta `ventas_table` en [bigquery]: la venta real es obligatoria "
+                "(el stock sólo trae el último corte, no hay historial)."
+            )
         mapas = self.mapeos(tablas)
-        for fuente in ("arti", "stock"):
+        if "ventas" not in mapas:
+            raise ValueError(self.aviso_ventas or f"No se pudo leer {tablas['ventas']}.")
+        for fuente in ("arti", "stock", "ventas"):
             faltan = mapeo.faltantes(fuente, mapas[fuente][0])
             if faltan:
                 raise ValueError(
                     f"Mapeo incompleto de {fuente} ({tablas[fuente]}): falta "
                     f"{', '.join(faltan)}. Corrígelo en la página Conexión."
                 )
-        m_a, m_s = mapas["arti"][0], mapas["stock"][0]
+        m_a, m_s, m_v = mapas["arti"][0], mapas["stock"][0], mapas["ventas"][0]
         marcas = [
             m.strip().upper()
             for m in (marcas if marcas is not None else self.settings.marcas)
@@ -409,58 +451,45 @@ class FuentesRepository(BigQueryRepository):
             )
         cortes = q("cortes", F.sql_cortes(tablas["stock"], m_s))
         if cortes.empty:
-            raise ValueError("La tabla de stock no tiene fotos en la ventana de análisis.")
-        cortes["fecha_corte"] = pd.to_datetime(cortes["fecha_corte"])
-        foto = cortes["fecha_corte"].max().date()
-        diag.fecha_foto, diag.cortes_en_ventana = foto.isoformat(), int(len(cortes))
-        fechas = sorted({d.date() for d in cortes["fecha_corte"] if d.date() < base["hasta"]})
-        hist = q(
-            "historial",
-            F.sql_historial(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
-            {"fechas": fechas or [base["desde"]]},
-        )
+            raise ValueError("La tabla de stock no tiene cortes en las últimas 3 semanas.")
+        foto = pd.to_datetime(cortes["fecha_corte"]).max().date()
+        diag.fecha_foto = foto.isoformat()
         stock = q(
             "stock_foto",
             F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
             {"fecha_foto": foto},
         )
+        ventas = q("ventas", F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas))
 
-        ventas = None
-        if tablas["ventas"] and "ventas" not in mapas:
-            diag.notas.append(getattr(self, "aviso_ventas", "") or "No se pudo leer ventas_table.")
-        elif tablas["ventas"]:
-            m_v = mapas["ventas"][0]
-            faltan = mapeo.faltantes("ventas", m_v)
+        maestros = {}
+        for fuente in ("tiendas", "cadena"):
+            if fuente not in mapas:
+                if tablas[fuente]:
+                    diag.notas.append(f"No se pudo leer el maestro de {fuente} ({tablas[fuente]}).")
+                continue
+            mapa = mapas[fuente][0]
+            faltan = mapeo.faltantes(fuente, mapa)
             if faltan:
-                diag.notas.append(
-                    f"`ventas_table` sin mapeo completo ({', '.join(faltan)}): "
-                    "se usa la venta estimada por consumo de stock."
-                )
-            else:
-                try:
-                    ventas = q(
-                        "ventas",
-                        F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
-                    )
-                except Exception as exc:  # tabla inexistente, permiso: no bloquea la corrida
-                    from forusight.data.bq_client import explicar_error
+                diag.notas.append(f"Maestro de {fuente} sin {', '.join(faltan)}: no se usa.")
+                continue
+            try:
+                maestros[fuente] = q(f"maestro_{fuente}", F.sql_maestro(tablas[fuente], mapa))
+            except Exception as exc:
+                diag.notas.append(f"No se pudo leer el maestro de {fuente}: {explicar_error(exc)}")
 
-                    diag.notas.append(
-                        f"No se pudo leer `ventas_table` ({tablas['ventas']}); se "
-                        f"usa la venta estimada por consumo. {explicar_error(exc)}"
-                    )
         excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
         entradas = F.construir_entradas(
             arti,
             ventas,
-            hist,
-            cortes,
             stock,
             self.settings.cd_id,
             excl,
             stock_cd_archivo,
             fecha_corte,
             diag,
+            semanas=semanas,
+            tiendas_m=maestros.get("tiendas"),
+            cadena_m=maestros.get("cadena"),
         )
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
