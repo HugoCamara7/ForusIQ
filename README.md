@@ -8,17 +8,18 @@ Neogistica) hacia las tiendas. La decisión de qué distribuir es de Forus y la 
 | Tienda | Modelo | SKU | Talla | Stock tienda | Venta 4S | Venta 12S | Demanda estimada | Stock objetivo | Necesidad | Stock CD 320 | Cantidad a distribuir | Motivo |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 
-> Estado: **Fase 0 + Fase 1 (motor)**. El motor corre sobre contratos canónicos y datos
-> sintéticos. El mapeo a las tablas reales de Forus queda pendiente del esquema
-> (ver [Información pendiente](#información-pendiente)).
+> Estado: **Fase 0 + Fase 1 (motor) + Fase 2 inicial (login y conexión a las tablas de
+> Forus)**, con el mismo esquema de secrets que Catálogo Control Center y Repo Control Center.
+> Ver [Información pendiente](#información-pendiente).
 
 ---
 
 ## Arquitectura
 
 ```
-Tablas fuente Forus (solo lectura)
-        │  scheduled queries (sql/marts, pendiente de esquema)
+Tablas fuente Forus (solo lectura: venta, ARTI, stock_bi)
+        │  fuente "bigquery": lectura directa agregada (data/fuentes.py)   ← hoy
+        │  fuente "mart": scheduled queries a un MART propio (sql/marts)  ← optimización futura
         ▼
 Dataset MART  ── mart_venta_semanal (partición semana, cluster tienda+sku), mart_stock_tienda,
         │        mart_stock_cd, mart_dim_producto, mart_dim_tienda
@@ -37,10 +38,12 @@ Dataset APP  ── corridas, distribucion_propuesta, distribucion_aprobada, aud
 
 ```
 streamlit_app.py                 entrada Streamlit (st.navigation)
-app/pages/                       1_Dashboard … 5_Parametros
-app/components/                  estado/caché, filtros, kpis, tablas, panel de motivo
+app/pages/                       1_Dashboard … 5_Parametros, 6_Conexion (admin)
+app/components/                  login, estado/caché, filtros, kpis, tablas, panel de motivo
 src/forusight/config/            settings.py (pydantic) + params.yaml
-src/forusight/data/              bq_client.py, repository.py, schemas.py, synthetic.py, queries/*.sql
+src/forusight/auth.py            usuarios y roles desde [app_auth]
+src/forusight/data/              bq_client.py, mapeo.py, fuentes.py, repository.py, schemas.py,
+                                 synthetic.py, queries/*.sql
 src/forusight/engine/            universe, availability, similarity, demand, size_curve,
                                  affinity, target, allocation, reasons, pipeline
 src/forusight/export/            Excel/CSV
@@ -66,8 +69,9 @@ pip install -e ".[dev]"
 streamlit run streamlit_app.py
 ```
 
-Sin configuración, la app arranca en **modo demo** (datos sintéticos). En la barra lateral:
-fuente de datos, fecha de corte, usuario y **Ejecutar corrida**.
+Sin configuración, la app arranca en **modo demo** (datos sintéticos, sin login). Con
+`[app_auth]` pide correo y contraseña. En la barra lateral: fuente de datos, fecha de corte,
+archivo STOCK CD opcional y **Ejecutar corrida**.
 
 ## Tests y lint
 
@@ -78,6 +82,49 @@ ruff check . && ruff format --check .
 ```
 
 La CI (`.github/workflows/ci.yml`) corre ruff + pytest en cada push y PR.
+
+## Login
+
+Mismo esquema que Catálogo/Repo Control Center (`[app_auth]` con `username`/`password` o
+`[app_auth.users]`), comparación en tiempo constante (`hmac`) y **sin usuarios en el código**.
+Roles opcionales en `[app_auth.roles]`:
+
+| Rol | Puede |
+|---|---|
+| `admin` | todo: ejecutar, aprobar, guardar parámetros, página **Conexión** |
+| `aprobador` | ejecutar, revisar y confirmar aprobaciones |
+| `analista` (por defecto) | ejecutar, revisar y exportar la propuesta |
+
+Sin `[app_auth]` la app sólo abre en **modo demo** (datos sintéticos); con BigQuery exige login.
+
+## Conexión a las tablas de Forus
+
+Fuente `bigquery`: lee directo de las tablas configuradas en `[bigquery]` (las mismas de los
+otros Control Center) y las lleva a los contratos canónicos (`data/fuentes.py`):
+
+| Clave en `[bigquery]` | Tabla (ejemplo) | Alimenta |
+|---|---|---|
+| `product_master_table` (o `table`) | `…bronze.stg_pe_central_arti` (ARTI) | dimensión producto: `CODINT_MA` = SKU, `CODMOD_MA`-`CODCOL_MA` = modelo-color, `TALNUM_MA`, `MARCA_MA`, `GENERO_MA` |
+| `stock_table` | `…bronze.stg_pe_central_stock_bi` | última foto → stock por tienda y stock del CD 320; historial por `fecha_corte` → **días con stock** por semana |
+| `ventas_table` | tabla de venta (la de Repo Control Center) | venta semanal por tienda × SKU, agregada en el servidor |
+| *(archivo)* STOCK CD.xlsx | subido en la barra lateral | disponible y reservas del CD (mismo archivo que Repo Control Center) |
+
+- **Columnas**: no se asumen. Se leen con `INFORMATION_SCHEMA` (gratis) y se emparejan por
+  alias (algoritmo de Repo Control Center). La página **Conexión** (sólo admin) muestra y
+  permite corregir el mapeo y genera el bloque `[bigquery.mapeo.<fuente>]` para fijarlo en
+  los secrets (el disco de Streamlit Cloud es efímero).
+- **Costo**: filtro de fecha parametrizado, agregación `GROUP BY` en el servidor, filtro por
+  marca (`[forusight] marcas`, por defecto `AZALEIA`) con semijoin a ARTI, columnas
+  explícitas y **dry run** con tope `max_gb` (20 GB) antes de cada consulta.
+- **Stock**: `stock_tiendas + stock_bodega` (igual que Catálogo); se puede quitar
+  `stock_bodega` del mapeo. Días con stock = fotos con stock × 7 / fotos de la semana.
+- **Tiendas**: salen de la foto de stock y de la venta; el CD 320 y `tiendas_excluidas` no
+  reciben. Sin clusters todavía: similitud por coseno del mix, importancia = percentil de
+  venta.
+- El ARTI de BigQuery **no trae precio**: `rango_precio = SIN_RANGO` hasta tener la fuente.
+
+Errores de credenciales traducidos a algo accionable (firma JWT, formato de llave, permisos,
+ruta inexistente), igual que en Repo Control Center.
 
 ## Configuración de secretos
 
@@ -97,7 +144,7 @@ En Streamlit Cloud, pegar el mismo contenido en *App settings → Secrets*.
 
 | Variable | Uso |
 |---|---|
-| `FORUSIGHT_DATA_SOURCE` | `bigquery` o `synthetic` |
+| `FORUSIGHT_DATA_SOURCE` | `bigquery` (tablas Forus), `mart` o `synthetic` |
 | `FORUSIGHT_GCP_PROJECT` | proyecto que ejecuta/factura las consultas |
 | `FORUSIGHT_BQ_LOCATION` | región de los datasets (ej. `US`) |
 | `FORUSIGHT_DATASET_MART` / `FORUSIGHT_DATASET_APP` | datasets de Forusight |
@@ -111,11 +158,10 @@ del servicio en Cloud Run). Es la opción recomendada en GCP: no hay llaves que 
 
 ### Cuenta de servicio con mínimo privilegio
 
-- `roles/bigquery.jobUser` en el proyecto de ejecución.
-- `roles/bigquery.dataViewer` **sólo** en el dataset MART.
+- `roles/bigquery.jobUser` en el proyecto de ejecución (`job_project_id`).
+- `roles/bigquery.dataViewer` sobre los datasets de las tablas fuente (lectura directa; es la
+  misma cuenta que ya usan Catálogo/Repo Control Center) o sólo sobre el MART cuando exista.
 - `roles/bigquery.dataEditor` **sólo** en el dataset APP.
-- Ningún permiso sobre las tablas fuente de Forus (las lee la scheduled query, con su
-  propia identidad).
 
 ## Contratos canónicos (`src/forusight/data/schemas.py`)
 
@@ -164,9 +210,16 @@ Ejecutar en BigQuery (consola), sobre el proyecto de Forus, y compartir el resul
 
 ## Información pendiente
 
-a) historial diario de stock por tienda · b) grano de ventas y devoluciones ·
-c) codificación SKU/modelo/color/talla · d) físico/reservado/comprometido del CD 320 ·
-e) tránsitos · f) clusters, formatos e importancia de tiendas · g) despacho en pares o curvas
-cerradas · h) lead time y frecuencia · i) cobertura, mínimos, máximos y tallas core ·
-j) exclusiones · k) formato de exportación WMS/ERP · l) volumetría · m) destino de
-despliegue · n) proyecto GCP para los datasets MART y APP.
+| | Tema | Estado |
+|---|---|---|
+| a | historial diario de stock por tienda | **en curso**: se usa el historial de `stock_bi` por `fecha_corte`; confirmar que la foto es diaria |
+| b | grano de ventas y devoluciones | ruta de `ventas_table` y si las devoluciones vienen netas |
+| c | codificación SKU/modelo/color/talla | **resuelto con ARTI** (`CODINT_MA`, `CODMOD_MA`, `CODCOL_MA`, `TALNUM_MA`); validar el valor de `MARCA_MA` para Azaleia |
+| d | físico/reservado/comprometido del CD 320 | foto de `stock_bi` (sin reservas) o archivo STOCK CD; falta tabla en BigQuery |
+| e | tránsitos | `stock_bi` no trae tránsito: se asume 0 |
+| f | clusters, formatos e importancia de tiendas | pendiente |
+| g–j | despacho, lead time, parámetros, exclusiones (bodegas eComm) | pendiente |
+| k | formato de exportación WMS/ERP | pendiente |
+| l | volumetría | pendiente (`sql/discovery/02_volumetria.sql`) |
+| m | destino de despliegue | Streamlit Cloud, como los otros Control Center (supuesto) |
+| n | proyecto GCP para el dataset APP | pendiente: hasta entonces las aprobaciones no se persisten |
