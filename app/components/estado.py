@@ -136,7 +136,20 @@ def ejecutar_corrida() -> EngineResult:
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
     ss.resultado, ss.diagnostico = res, diag
+    ss.ultima_carga = (
+        ss.fuente,
+        pd.Timestamp(ss.fecha_corte).date().isoformat(),
+        cd[0],
+        cd[1],
+        marcas,
+    )
     return res
+
+
+def entradas_de_la_corrida() -> EngineInputs | None:
+    """Entradas de la última corrida (desde la caché: no vuelve a leer BigQuery)."""
+    carga = st.session_state.get("ultima_carga")
+    return cargar_entradas(*carga)[0] if carga else None
 
 
 def resultado_o_aviso() -> EngineResult | None:

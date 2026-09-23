@@ -47,9 +47,17 @@ st.dataframe(
             {
                 "dato": "Venta",
                 "tabla": tablas["ventas"] or "—",
-                "estado": "secrets"
-                if tablas["ventas"]
-                else "no configurada: se estima por consumo de stock",
+                "estado": "secrets" if tablas["ventas"] else "FALTA: `ventas_table` es obligatoria",
+            },
+            {
+                "dato": "Maestro tienda → nombre",
+                "tabla": tablas["tiendas"] or "—",
+                "estado": "secrets" if tablas["tiendas"] else "opcional: `maestro_tiendas_table`",
+            },
+            {
+                "dato": "Maestro modelo → cadena",
+                "tabla": tablas["cadena"] or "—",
+                "estado": "secrets" if tablas["cadena"] else "opcional: `maestro_cadena_table`",
             },
         ]
     ),
@@ -82,7 +90,13 @@ if encontradas is not None:
 
 mapas = st.session_state.get("mapeos_conexion")
 if mapas:
-    etiquetas = {"ventas": "Venta", "arti": "Maestro ARTI", "stock": "Stock"}
+    etiquetas = {
+        "ventas": "Venta",
+        "arti": "Maestro ARTI",
+        "stock": "Stock",
+        "tiendas": "Maestro tiendas",
+        "cadena": "Maestro modelo→cadena",
+    }
     snippet = {}
     for fuente, tab in zip(mapas, st.tabs([etiquetas[f] for f in mapas]), strict=True):
         mapa, origen, cols = mapas[fuente]
