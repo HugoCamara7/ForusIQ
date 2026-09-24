@@ -118,6 +118,8 @@ class CoberturaParams(_Section):
     lead_time_semanas: float = Field(1.0, ge=0)
     ciclo_revision_semanas: float = Field(1.0, ge=0)
     seguridad_semanas: SeguridadSemanas = Field(default_factory=SeguridadSemanas)
+    #: z del stock de seguridad por talla (0 = sin nivel por talla, sólo curva del MC).
+    seguridad_z_talla: float = Field(0.5, ge=0, le=3)
     umbral_sobrestock_semanas: float = Field(12.0, gt=0)
     por_categoria: dict[str, CoberturaCategoria] = Field(default_factory=dict)
 
@@ -151,6 +153,9 @@ class RotacionParams(_Section):
 
 class ExhibicionParams(_Section):
     minimo_por_talla_core: int = Field(1, ge=0)
+    #: Reposición: cada talla de un modelo-color que la tienda vende mantiene este mínimo
+    #: (reponer lo vendido: si una talla se vendió y quedó en 0, vuelve 1).
+    minimo_por_talla_activa: int = Field(1, ge=0)
     minimo_por_categoria: dict[str, int] = Field(default_factory=dict)
     tallas_core_default: list[str] = Field(default_factory=list)
     tallas_core_por_genero: dict[str, list[str]] = Field(default_factory=dict)
@@ -167,6 +172,14 @@ class ExhibicionParams(_Section):
 
     def minimo(self, categoria: str) -> int:
         return int(self.minimo_por_categoria.get(categoria, self.minimo_por_talla_core))
+
+
+class PrioridadTiendasParams(_Section):
+    """Tiendas prioritarias (p. ej. Jockey): más cobertura y primeras cuando el CD no alcanza."""
+
+    patrones: list[str] = Field(default_factory=lambda: ["JOCKEY"])
+    factor_cobertura: float = Field(1.25, ge=1.0, le=4.0)
+    importancia: float = Field(1.0, ge=0, le=1.0)
 
 
 class TopeTiendaParams(_Section):
@@ -190,10 +203,10 @@ class AfinidadParams(_Section):
 
 class PesosPrioridad(_Section):
     riesgo_quiebre: float = Field(0.30, ge=0)
-    velocidad: float = Field(0.25, ge=0)
-    afinidad: float = Field(0.15, ge=0)
-    tendencia: float = Field(0.10, ge=0)
-    importancia_comercial: float = Field(0.10, ge=0)
+    velocidad: float = Field(0.20, ge=0)
+    afinidad: float = Field(0.10, ge=0)
+    tendencia: float = Field(0.05, ge=0)
+    importancia_comercial: float = Field(0.25, ge=0)
     bono_curva_rota: float = Field(0.10, ge=0)
 
 
@@ -216,6 +229,7 @@ class EngineParams(_Section):
     tope_tienda: TopeTiendaParams = Field(default_factory=TopeTiendaParams)
     afinidad: AfinidadParams = Field(default_factory=AfinidadParams)
     asignacion: AsignacionParams = Field(default_factory=AsignacionParams)
+    prioridad_tiendas: PrioridadTiendasParams = Field(default_factory=PrioridadTiendasParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

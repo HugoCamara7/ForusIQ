@@ -49,6 +49,22 @@ def preparar_cd(stock_cd: pd.DataFrame) -> pd.DataFrame:
     return cd
 
 
+def marcar_prioridad(tiendas: pd.DataFrame, params: EngineParams) -> pd.DataFrame:
+    """Tiendas prioritarias (nombre contiene un patrón, p. ej. JOCKEY): importancia máxima y
+    factor de cobertura mayor. El resto conserva su importancia (peso de su venta)."""
+    p = params.prioridad_tiendas
+    nombre = tiendas["nombre"].astype("string").str.upper().fillna("")
+    prio = pd.Series(False, index=tiendas.index)
+    for patron in p.patrones:
+        if str(patron).strip():
+            prio |= nombre.str.contains(str(patron).strip().upper(), regex=False)
+    tiendas["tienda_prioritaria"] = prio.to_numpy(dtype=bool)
+    imp = pd.to_numeric(tiendas["importancia_comercial"], errors="coerce").fillna(0.5)
+    tiendas["importancia_comercial"] = np.where(prio, np.maximum(imp, p.importancia), imp)
+    tiendas["factor_cobertura_tienda"] = np.where(prio, p.factor_cobertura, 1.0)
+    return tiendas
+
+
 def construir_base(
     ventas: pd.DataFrame,
     stock_tienda: pd.DataFrame,
@@ -65,7 +81,7 @@ def construir_base(
     n_sem = params.horizonte.semanas_analisis
     b = params.horizonte.semanas_bloque_reciente
     prod = dim_producto[PROD_COLS].copy()
-    tiendas = dim_tienda.loc[dim_tienda["activa"]].copy()
+    tiendas = marcar_prioridad(dim_tienda.loc[dim_tienda["activa"]].copy(), params)
     activas = set(tiendas["tienda_id"])
     cd = preparar_cd(stock_cd)
     cd = cd.loc[cd["sku"].isin(set(prod["sku"]))]
@@ -140,7 +156,9 @@ def construir_base(
 
     # atributos de tienda
     sku = sku.merge(
-        tiendas[["tienda_id", "cluster", "importancia_comercial"]], on="tienda_id", how="left"
+        tiendas[["tienda_id", "cluster", "importancia_comercial", "tienda_prioritaria"]],
+        on="tienda_id",
+        how="left",
     )
     sku = sku.sort_values(["tienda_id", "modelo_color_id", "talla_orden", "sku"], kind="mergesort")
     return Base(semanal=semanal, sku=sku.reset_index(drop=True), tiendas=tiendas, cd=cd)

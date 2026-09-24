@@ -140,6 +140,9 @@ def ejecutar(
     similares = tiendas_similares(base.tiendas, base.semanal, params)
     mc = estimar_demanda(mc, base.semanal, similares, params)
     mc = calcular_afinidad(mc, base.semanal, params)
+    mc = mc.merge(
+        base.tiendas[["tienda_id", "factor_cobertura_tienda"]], on="tienda_id", how="left"
+    )
     mc = calcular_objetivo_mc(mc, params)
     sku = curva_tallas(sku, base.semanal, params)
     sku = calcular_necesidad(sku, mc, params)

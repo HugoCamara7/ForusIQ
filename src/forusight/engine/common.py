@@ -63,3 +63,16 @@ def ratio_a_score(r) -> np.ndarray:
     """Mapea un índice relativo (1 = promedio) a [0, 1): r / (1 + r)."""
     r = np.clip(np.asarray(r, dtype=float), 0, None)
     return r / (1.0 + r)
+
+
+def clave_talla(talla: pd.Series) -> pd.Series:
+    """Clave comparable de talla: "390" (formato Forus, 39.0) == "39" == "39.0"; "075" == 7.5.
+
+    Los códigos de 3 dígitos se leen con un decimal implícito (390 → 39.0, 105 → 10.5).
+    Las tallas no numéricas (S, M, L) se comparan en mayúsculas.
+    """
+    t = talla.astype("string").str.strip().str.upper()
+    tres = t.str.fullmatch(r"\d{3}").fillna(False).astype(bool)
+    num = pd.to_numeric(t.str.replace(",", ".", regex=False), errors="coerce").astype("Float64")
+    num = num.where(~tres, num / 10)
+    return num.map(lambda x: f"{x:g}", na_action="ignore").astype("string").fillna(t)

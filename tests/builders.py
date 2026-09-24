@@ -62,11 +62,12 @@ class Escenario:
         importancia: float = 0.5,
         activa: bool = True,
         max_unidades: float | None = None,
+        nombre: str | None = None,
     ) -> None:
         self.tiendas.append(
             {
                 "tienda_id": tid,
-                "nombre": tid,
+                "nombre": nombre or tid,
                 "cluster": cluster,
                 "formato": "MALL",
                 "importancia_comercial": importancia,

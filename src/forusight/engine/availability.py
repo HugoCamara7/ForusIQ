@@ -27,6 +27,7 @@ from forusight.engine.common import (
     QUIEBRE,
     TUVO_SIN_VENTA,
     TUVO_Y_VENDE,
+    clave_talla,
 )
 
 
@@ -39,11 +40,15 @@ def marcar_tallas_core(sku: pd.DataFrame, params: EngineParams) -> pd.DataFrame:
         for c, g in pares.itertuples(index=False)
         for t in ex.tallas_core(c, g)
     ]
-    core = pd.DataFrame(filas, columns=["categoria", "genero", "talla", "_min"])
-    out = sku.merge(core, on=["categoria", "genero", "talla"], how="left")
+    core = pd.DataFrame(filas, columns=["categoria", "genero", "_k", "_min"])
+    core["_k"] = clave_talla(core["_k"])
+    core = core.drop_duplicates(["categoria", "genero", "_k"])
+    out = sku.assign(_k=clave_talla(sku["talla"])).merge(
+        core, on=["categoria", "genero", "_k"], how="left"
+    )
     out["es_core"] = out["_min"].notna()
     out["minimo_exhibicion"] = out["_min"].fillna(0).astype("int64")
-    return out.drop(columns="_min")
+    return out.drop(columns=["_min", "_k"])
 
 
 def clasificar(

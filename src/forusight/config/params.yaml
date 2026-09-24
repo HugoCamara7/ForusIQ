@@ -37,6 +37,7 @@ cobertura:                      # PENDIENTE (h, i)
     alta: 1.0
     media: 0.75
     baja: 0.5
+  seguridad_z_talla: 0.5         # nivel por talla = ⌈demanda·cobertura + z·√(demanda·cobertura)⌉
   umbral_sobrestock_semanas: 12.0
   por_categoria: {}             # ej.: {"SANDALIA": {"lead_time_semanas": 1.5, "seguridad_semanas": {"alta": 1.5}}}
 
@@ -46,6 +47,7 @@ rotacion:
 
 exhibicion:                     # PENDIENTE (i)
   minimo_por_talla_core: 1
+  minimo_por_talla_activa: 1     # reponer lo vendido: cada talla de un modelo que la tienda vende queda con >= 1
   minimo_por_categoria: {}      # ej.: {"BOTA": 2}
   tallas_core_default: ["36", "37", "38", "39"]
   tallas_core_por_genero:          # claves = valor de GENERO_MA en ARTI (mayúsculas)
@@ -80,8 +82,13 @@ asignacion:
   multiplo_envio: 1             # PENDIENTE (g): pares sueltos vs curvas cerradas
   pesos_prioridad:
     riesgo_quiebre: 0.30
-    velocidad: 0.25
-    afinidad: 0.15
-    tendencia: 0.10
-    importancia_comercial: 0.10
+    velocidad: 0.20               # demanda de la tienda
+    afinidad: 0.10
+    tendencia: 0.05
+    importancia_comercial: 0.25   # prioridad de tienda (Jockey = 1) y peso de su venta
     bono_curva_rota: 0.10
+
+prioridad_tiendas:              # tiendas que reciben primero y con más cobertura
+  patrones: ["JOCKEY"]          # texto en el nombre de la tienda (HP JOCKEY, HPK JOCKEY, RKF JOCKEY…)
+  factor_cobertura: 1.25        # su stock objetivo es 1.25x el de una tienda normal
+  importancia: 1.0              # máxima prioridad al repartir el CD

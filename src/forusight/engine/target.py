@@ -57,6 +57,10 @@ def calcular_objetivo_mc(mc: pd.DataFrame, params: EngineParams) -> pd.DataFrame
         columns=["categoria", "rotacion", "cobertura_semanas", "umbral_sobrestock"],
     )
     mc = mc.merge(cob, on=["categoria", "rotacion"], how="left")
+    if "factor_cobertura_tienda" in mc:  # tiendas prioritarias (Jockey) sostienen más stock
+        mc["cobertura_semanas"] = mc["cobertura_semanas"] * mc["factor_cobertura_tienda"].fillna(
+            1.0
+        )
 
     dem = mc["demanda_semanal"].to_numpy()
     mc["objetivo_mc"] = np.floor(dem * mc["cobertura_semanas"] + 0.5).astype("int64")
@@ -103,14 +107,28 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     out["objetivo_curva"] = repartir_hamilton(
         out, "objetivo_mc", "share_talla", KEY_MC, ["talla_orden", "sku"]
     )
-    minimo = np.where(out["es_core"] & activo, out["minimo_exhibicion"], 0)
-    out["stock_objetivo"] = np.maximum(minimo, out["objetivo_curva"]).astype("int64")
+    # Mínimo: talla core de un MC activo; y en reposición, TODA talla del MC que la tienda
+    # vende (reponer lo vendido: la talla que se vendió y quedó en 0 vuelve a 1).
+    repone = activo & ~out["es_introduccion"].fillna(False).astype(bool)
+    minimo = np.maximum(
+        np.where(out["es_core"] & activo, out["minimo_exhibicion"], 0),
+        np.where(repone, params.exhibicion.minimo_por_talla_activa, 0),
+    )
     out["demanda_sku"] = out["demanda_semanal"] * out["share_talla"]
+    # Nivel máximo por talla (como el reporte de distribución de Forus): demanda de la talla
+    # en la cobertura + stock de seguridad z·√(demanda·cobertura), redondeado hacia arriba.
+    ciclo = (out["demanda_sku"] * out["cobertura_semanas"]).fillna(0).clip(lower=0)
+    z = params.cobertura.seguridad_z_talla
+    nivel_talla = np.where(repone & (z > 0), np.ceil(ciclo + z * np.sqrt(ciclo) - 1e-9), 0)
+    objetivo = np.maximum.reduce([minimo, out["objetivo_curva"].to_numpy(), nivel_talla])
+    # MC en sobrestock: no se sube la cobertura, pero la talla vacía vuelve a su mínimo.
+    sobre = out["bloqueo_mc"].eq(NO_SOBRESTOCK).to_numpy()
+    out["stock_objetivo"] = np.where(sobre, minimo, objetivo).astype("int64")
 
     pos = out["stock_disponible"] + out["stock_transito"]
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos)).astype("int64")
     tope = params.tope_tienda.max_unidades_por_sku
-    bloqueada = out["bloqueo_mc"].ne("")
+    bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0))
     out["necesidad_bruta"] = bruta
     out["necesidad"] = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
     out["tope_sku_aplicado"] = ~bloqueada & (bruta > tope)
