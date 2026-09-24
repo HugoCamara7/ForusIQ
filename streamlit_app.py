@@ -18,7 +18,14 @@ st.set_page_config(
 from app.components.estado import barra_lateral, fuente_por_defecto, inicializar  # noqa: E402
 from app.components.login import puede, requerir_login  # noqa: E402
 
+
+def _acceso() -> None:
+    """Página vacía: sin sesión la navegación sólo tiene el acceso (menú oculto)."""
+
+
 if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic"):
+    # Sin esto Streamlit sigue mostrando el menú de la ejecución anterior en el login.
+    st.navigation([st.Page(_acceso, title="Acceso", url_path="acceso")], position="hidden").run()
     st.stop()
 
 inicializar()
@@ -33,6 +40,9 @@ paginas = [
         icon=":material/fact_check:",
     ),
     st.Page("app/vistas/4_Exportacion.py", title="Exportación", icon=":material/download:"),
+    st.Page(
+        "app/vistas/7_Tiendas_Cadenas.py", title="Tiendas y cadenas", icon=":material/storefront:"
+    ),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
 ]
 if puede("conexion"):

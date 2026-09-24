@@ -3,10 +3,15 @@ import streamlit as st
 from app.components.estado import SETTINGS, repositorio, resultado_o_aviso
 from app.components.filtros import filtros_detalle
 from app.components.login import puede, usuario_actual
+from app.components.ui import hero
 
 from forusight.data.repository import SinAlmacenamiento
 
-st.title("Revisión y aprobación")
+hero(
+    "Revisión y aprobación",
+    "Ajusta cantidades si hace falta y aprueba la propuesta que va a Neogística.",
+    eyebrow="Aprobación",
+)
 res = resultado_o_aviso()
 
 

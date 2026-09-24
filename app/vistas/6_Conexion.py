@@ -4,11 +4,16 @@ import pandas as pd
 import streamlit as st
 from app.components.estado import SECRETS, SETTINGS, cargar_entradas, repositorio
 from app.components.login import puede
+from app.components.ui import hero
 
 from forusight.data import mapeo
 from forusight.data.bq_client import bigquery_habilitado, diagnostico_secrets, explicar_error
 
-st.title("Conexión a BigQuery")
+hero(
+    "Conexión a BigQuery",
+    "Tablas, columnas y mapeo que usa Forusight. Prueba la lectura antes de correr.",
+    eyebrow="Datos",
+)
 if not puede("conexion"):
     st.error("Sólo administradores.")
     st.stop()

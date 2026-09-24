@@ -1,11 +1,16 @@
 import pandas as pd
 import streamlit as st
 from app.components.estado import SETTINGS, entradas_de_la_corrida, resultado_o_aviso
+from app.components.ui import hero
 
 from forusight.export.excel import a_csv, a_excel
 from forusight.export.neogistica import a_excel_neogistica, construir_tabla, nombre_archivo
 
-st.title("Exportación")
+hero(
+    "Exportación",
+    "Archivo en el formato de los reportes de Neogística, listo para enviar.",
+    eyebrow="Neogística",
+)
 res = resultado_o_aviso()
 
 if res is not None:

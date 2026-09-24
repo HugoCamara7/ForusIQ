@@ -2,11 +2,16 @@ import streamlit as st
 import yaml
 from app.components.estado import SETTINGS
 from app.components.login import puede
+from app.components.ui import hero
 from pydantic import BaseModel, ValidationError
 
 from forusight.config.settings import EngineParams, dump_params, save_params
 
-st.title("Parámetros")
+hero(
+    "Parámetros",
+    "Reglas del motor: cobertura, curva de tallas, afinidad y topes. Todo sale de params.yaml.",
+    eyebrow="Configuración",
+)
 ss = st.session_state
 
 

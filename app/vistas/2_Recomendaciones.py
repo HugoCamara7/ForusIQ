@@ -3,8 +3,13 @@ from app.components.estado import SETTINGS, resultado_o_aviso
 from app.components.filtros import filtros_detalle
 from app.components.motivo import panel_motivo
 from app.components.tablas import tabla_recomendaciones
+from app.components.ui import hero
 
-st.title("Recomendaciones")
+hero(
+    "Recomendaciones",
+    "Tienda → modelo → talla → cantidad, con el motivo de cada fila. Filtra y revisa antes de aprobar.",
+    eyebrow="Detalle",
+)
 res = resultado_o_aviso()
 
 

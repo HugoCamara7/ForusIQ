@@ -11,6 +11,7 @@ PAGINAS = [
     "2_Recomendaciones",
     "3_Revision_Aprobacion",
     "4_Exportacion",
+    "7_Tiendas_Cadenas",
     "5_Parametros",
 ]
 
@@ -24,6 +25,10 @@ def _app(monkeypatch, secrets=None):
     at.run()
     assert not at.exception, at.exception
     return at
+
+
+def _en_dashboard(app) -> bool:
+    return any('class="hero"' in m.value and ">Dashboard<" in m.value for m in app.markdown)
 
 
 @pytest.mark.parametrize("pagina", PAGINAS)
@@ -52,7 +57,7 @@ def test_login_pide_credenciales_y_rechaza_clave_mala(monkeypatch):
     app.text_input[1].input("mala")
     app.button[0].click().run()
     assert any("incorrectos" in e.value for e in app.error)
-    assert "Dashboard" not in [t.value for t in app.title]
+    assert not _en_dashboard(app)
 
 
 def test_login_correcto_con_rol(monkeypatch):
@@ -62,7 +67,7 @@ def test_login_correcto_con_rol(monkeypatch):
     app.button[0].click().run()
     assert app.session_state.auth_user == "ana@forus.pe"
     assert app.session_state.auth_rol == "aprobador"
-    assert [t.value for t in app.title] == ["Dashboard"]
+    assert _en_dashboard(app)
     # un aprobador no tiene registrada la página Conexión (sólo admin)
     with pytest.raises(ValueError, match="Could not find a navigation page"):
         app.switch_page("app/vistas/6_Conexion.py")
