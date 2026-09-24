@@ -68,6 +68,56 @@ if res is not None:
             ]
         )
 
+    from forusight.engine.disponibilidad import control_cd
+
+    ctrl = control_cd(res.detalle, cantidad)
+    ctrl = ctrl.loc[ctrl["enviado"] > 0]
+    exceso = ctrl.loc[ctrl["queda"] < 0]
+    pend = (ss.get("diagnostico") or {}).get("pendientes") or {}
+    section(
+        "Control de stock del CD",
+        "Lo enviado nunca supera el stock disponible de cada SKU",
+        "shield",
+    )
+    kpi_row(
+        [
+            (
+                "SKU que sobrepasan",
+                f"{len(exceso)}",
+                "debe ser 0" if len(exceso) else "ninguno supera el stock del CD",
+                "check-circle" if not len(exceso) else "alert",
+            ),
+            (
+                "SKU con envío",
+                f"{len(ctrl):,}",
+                f"{int(ctrl['enviado'].sum()):,} unidades",
+                "package",
+            ),
+            (
+                "Envíos pendientes descontados",
+                f"{pend.get('unidades', 0):,}",
+                f"{pend.get('skus', 0):,} SKU · {pend.get('tiendas', 0)} tiendas",
+                "clock",
+            ),
+        ]
+    )
+    if len(exceso):
+        st.error("Estos SKU superan el stock del CD: revisa las cantidades aprobadas.")
+        st.dataframe(exceso, hide_index=True, width="stretch")
+    with st.expander("Ver control por SKU"):
+        st.dataframe(
+            ctrl.sort_values("queda"),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "sku": "SKU",
+                "stock_cd": "Stock CD disponible",
+                "enviado": "Enviado",
+                "tiendas": "Tiendas",
+                "queda": "Queda en CD",
+            },
+        )
+
     st.dataframe(tabla.loc[envio], hide_index=True, width="stretch", height=420)
 
     with st.expander("Otros formatos (detalle con motivo)"):

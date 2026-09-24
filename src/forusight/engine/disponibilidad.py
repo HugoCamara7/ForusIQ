@@ -127,3 +127,18 @@ def kpis(detalle: pd.DataFrame) -> dict:
         "wos_antes": float((stock + trans).sum() / dem_t) if dem_t > 0 else float("nan"),
         "wos_despues": float((stock + trans + cant).sum() / dem_t) if dem_t > 0 else float("nan"),
     }
+
+
+def control_cd(detalle: pd.DataFrame, cantidad: pd.Series | None = None) -> pd.DataFrame:
+    """Por SKU: stock disponible del CD, unidades enviadas y lo que queda (nunca negativo)."""
+    q = detalle["cantidad"] if cantidad is None else cantidad
+    d = pd.DataFrame(
+        {"sku": detalle["sku"], "cd": detalle["stock_cd_disponible"].fillna(0), "enviado": q}
+    )
+    g = d.groupby("sku").agg(
+        stock_cd=("cd", "first"),
+        enviado=("enviado", "sum"),
+        tiendas=("enviado", lambda x: (x > 0).sum()),
+    )
+    g["queda"] = g["stock_cd"] - g["enviado"]
+    return g.reset_index()

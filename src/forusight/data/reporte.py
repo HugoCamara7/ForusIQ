@@ -455,6 +455,14 @@ def resultado_desde_reporte(dist: pd.DataFrame, run_id: str, fecha_corte, cd_id:
         if c not in det:
             det[c] = pd.NA
     det["motivo_reporte"] = mot
+    det["pendiente_recepcion"] = (
+        pd.to_numeric(d["_pendiente_recepcion"], errors="coerce")
+        .fillna(0)
+        .astype("int64")
+        .to_numpy()
+        if "_pendiente_recepcion" in d
+        else 0
+    )
     resumen = {
         "run_id": run_id,
         "fecha_corte": pd.Timestamp(fecha_corte).date().isoformat(),
@@ -486,6 +494,12 @@ def tabla_para_archivo(
     q = (cantidad if cantidad is not None else detalle["cantidad"]).to_numpy(dtype="int64")
     nec = detalle["necesidad"].to_numpy(dtype="int64")
     out[Q] = q
+    # stock del CD y tránsito ya descontados por envíos pendientes de recepción
+    out[CD] = detalle["stock_cd_disponible"].to_numpy(dtype=float)
+    if "pendiente_recepcion" in detalle:
+        out[TR_INT] = _num(out.get(TR_INT, 0)).to_numpy() + detalle["pendiente_recepcion"].to_numpy(
+            dtype=float
+        )
     out[P] = np.maximum(nec - q, 0)
     mot = detalle["motivo_reporte"].astype("string").to_numpy()
     out[MOT] = np.where(out[P].to_numpy() == 0, SIN_PENDIENTE, mot)

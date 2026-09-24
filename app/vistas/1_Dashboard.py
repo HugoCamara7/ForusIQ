@@ -97,6 +97,9 @@ elif diag.get("fuente_venta"):
     tabla_v = str(diag["fuente_venta"]).split(".")[-1]
     hasta = _fecha(diag.get("venta_hasta"))
     meta.append(f"Venta: {tabla_v}" + (f" hasta {hasta}" if hasta else ""))
+pend_d = diag.get("pendientes") or {}
+if pend_d.get("unidades"):
+    meta.append(f"Descontados {pend_d['unidades']:,} u. aún no recibidas")
 hero(
     f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
     f"Distribución sugerida desde el CD {r['cd_id']}: "

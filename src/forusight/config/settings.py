@@ -186,6 +186,12 @@ class PrioridadTiendasParams(_Section):
     importancia_liquidadora: float = Field(0.0, ge=0, le=1.0)
 
 
+class RecepcionParams(_Section):
+    """Envíos aprobados que todavía no llegan a la tienda (no están en el corte de stock)."""
+
+    dias_pendiente: int = Field(3, ge=0, le=14)
+
+
 class TopeTiendaParams(_Section):
     max_unidades_por_sku: int = Field(12, ge=0)
     max_unidades_por_tienda: int = Field(600, ge=0)
@@ -237,6 +243,7 @@ class EngineParams(_Section):
     afinidad: AfinidadParams = Field(default_factory=AfinidadParams)
     asignacion: AsignacionParams = Field(default_factory=AsignacionParams)
     prioridad_tiendas: PrioridadTiendasParams = Field(default_factory=PrioridadTiendasParams)
+    recepcion: RecepcionParams = Field(default_factory=RecepcionParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

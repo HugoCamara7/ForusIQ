@@ -149,11 +149,19 @@ def _correr_motor(
     cd_bytes: bytes | None,
     cd_nombre: str,
     marcas: tuple[str, ...] | None,
+    pend_csv: str = "",
 ) -> tuple[EngineResult, dict]:
+    from forusight.data import pendientes as PEND
+
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
+    pend = _pend_df(pend_csv)
+    inputs = PEND.aplicar_a_entradas(inputs, pend)
+    diag = {**diag, "pendientes": _resumen_pend(pend)}
     firma = hashlib.sha1(
-        "|".join([params_json, fuente, huella, cd_nombre, ",".join(marcas or ())]).encode()
+        "|".join(
+            [params_json, fuente, huella, cd_nombre, ",".join(marcas or ()), pend_csv]
+        ).encode()
         + (cd_bytes or b"")
     ).hexdigest()[:8]
     run_id = f"{fecha_corte.replace('-', '')}-{firma}"
@@ -168,10 +176,29 @@ def correr_motor(
     cd_bytes: bytes | None = None,
     cd_nombre: str = "",
     marcas: tuple[str, ...] | None = None,
+    pend_csv: str = "",
 ):
     return _correr_motor(
-        fuente, huella_config(), fecha_corte, params_json, cd_bytes, cd_nombre, marcas
+        fuente, huella_config(), fecha_corte, params_json, cd_bytes, cd_nombre, marcas, pend_csv
     )
+
+
+def _pend_df(pend_csv: str) -> pd.DataFrame:
+    from forusight.data import pendientes as PEND
+
+    if not pend_csv:
+        return PEND.vacio()
+    import io
+
+    return pd.read_csv(io.StringIO(pend_csv), dtype={"tienda_id": str, "sku": str})
+
+
+def _resumen_pend(pend: pd.DataFrame) -> dict:
+    return {
+        "unidades": int(pend["cantidad"].sum()) if len(pend) else 0,
+        "skus": int(pend["sku"].nunique()) if len(pend) else 0,
+        "tiendas": int(pend["tienda_id"].nunique()) if len(pend) else 0,
+    }
 
 
 # ------------------------------------------------------------------ reporte del día como base
@@ -219,19 +246,28 @@ def _entradas_reporte(
 
 @st.cache_resource(show_spinner="Calculando distribución…", max_entries=6)
 def _correr_reporte(
-    contenido: bytes, marcas: tuple[str, ...] | None, criterio: str, params_json: str
+    contenido: bytes,
+    marcas: tuple[str, ...] | None,
+    criterio: str,
+    params_json: str,
+    pend_csv: str = "",
 ) -> tuple[EngineResult, dict]:
+    from forusight.data import pendientes as PEND
     from forusight.data import reporte as R
 
     params = EngineParams.model_validate_json(params_json)
     inp, diag = _entradas_reporte(contenido, marcas)
-    dist = R.distribuir(inp.reporte, params.prioridad_tiendas.patrones, criterio)
+    pend = _pend_df(pend_csv)
+    base = PEND.aplicar_a_reporte(inp.reporte, pend)
+    diag = {**diag, "pendientes": _resumen_pend(pend)}
+    dist = R.distribuir(base, params.prioridad_tiendas.patrones, criterio)
     firma = hashlib.sha1(
         contenido[:4096]
         + len(contenido).to_bytes(8, "big")
         + criterio.encode()
         + ",".join(marcas or ()).encode()
         + params_json.encode()
+        + pend_csv.encode()
     ).hexdigest()[:8]
     corte = R.corte(inp.reporte)
     run_id = f"{corte:%Y%m%d}-{firma}"
@@ -272,11 +308,46 @@ def inicializar() -> None:
     app_styles()
 
 
+@st.cache_data(ttl=600, show_spinner="Leyendo envíos aprobados…", max_entries=4)
+def _pend_github(huella: str, dias: int, dia: str) -> tuple[str, list[str]]:
+    from forusight.data import pendientes as PEND
+
+    df, usados = PEND.desde_github(secretos(), dias, pd.Timestamp(dia))
+    return df.to_csv(index=False), usados
+
+
+def pendientes_csv() -> str:
+    """Envíos pendientes de recepción: aprobaciones recientes en GitHub + archivos subidos."""
+    from forusight.data import pendientes as PEND
+    from forusight.data.github_store import config_github
+
+    ss = st.session_state
+    partes, fuentes = [], []
+    for contenido, nombre in ss.get("pend_archivos") or []:
+        partes.append(PEND.leer_archivo(contenido, nombre))
+        fuentes.append(nombre)
+    dias = int(ss.params.recepcion.dias_pendiente)
+    if ss.get("pend_github", True) and config_github(secretos()) is not None and dias > 0:
+        try:
+            texto, usados = _pend_github(
+                huella_config(), dias, pd.Timestamp.today().date().isoformat()
+            )
+            partes.append(_pend_df(texto))
+            fuentes += usados
+        except Exception as exc:  # GitHub caído: se sigue sin descontar, avisando
+            st.warning(f"No se pudieron leer las aprobaciones de GitHub: {exc}")
+    ss.pend_fuentes = fuentes
+    pend = PEND.sumar(partes)
+    return pend.to_csv(index=False) if len(pend) else ""
+
+
 def ejecutar_corrida() -> EngineResult:
     ss = st.session_state
     if ss.get("reporte"):
         marcas = tuple(ss.get("marcas_reporte") or ()) or None
-        res, diag = _correr_reporte(ss.reporte[0], marcas, ss.criterio, ss.params.model_dump_json())
+        res, diag = _correr_reporte(
+            ss.reporte[0], marcas, ss.criterio, ss.params.model_dump_json(), pendientes_csv()
+        )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
             ss.aprobacion = None
         ss.resultado, ss.diagnostico = res, diag
@@ -293,6 +364,7 @@ def ejecutar_corrida() -> EngineResult:
         cd[0],
         cd[1],
         marcas,
+        pendientes_csv(),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
@@ -452,6 +524,23 @@ def barra_lateral() -> None:
                         "Datos", opciones, default=ss.fuente, format_func=FUENTES.get
                     )
                     or ss.fuente
+                )
+            archivos_p = st.file_uploader(
+                "Envíos aún no recibidos (opcional)",
+                type=["csv", "xlsx"],
+                accept_multiple_files=True,
+                key="pend_uploader",
+                help="Aprobación (CSV) o archivo Forusight de corridas anteriores que todavía no "
+                "llegan a la tienda: se descuentan del CD y cuentan como tránsito.",
+            )
+            ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
+            from forusight.data.github_store import config_github
+
+            if config_github(secretos()) is not None:
+                ss.pend_github = st.toggle(
+                    f"Descontar aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días",
+                    value=ss.get("pend_github", True),
+                    help="Lee las aprobaciones guardadas en GitHub.",
                 )
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(

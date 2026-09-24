@@ -96,3 +96,6 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
   cadenas_liquidadoras: ["DH", "SE", "FB"]  # outlets: sin introducciones, últimas en el reparto
   factor_cobertura_liquidadora: 0.75
   importancia_liquidadora: 0.0
+
+recepcion:                      # envíos aprobados que aún no llegan (no están en el corte de stock)
+  dias_pendiente: 3             # aprobaciones de los últimos 3 días se descuentan del CD (L-M-V)

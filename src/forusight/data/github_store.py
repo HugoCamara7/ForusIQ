@@ -101,3 +101,23 @@ class GitHubStore:
             body["sha"] = actual["sha"]
         self._request("PUT", path, body)
         return path
+
+    def listar(self, carpeta: str) -> list[dict]:
+        """Archivos de ``prefix/carpeta`` (nombre, ruta completa); [] si no existe."""
+        r = self._request("GET", f"{self.prefix}/{carpeta.strip('/')}")
+        return [x for x in (r or []) if isinstance(x, dict) and x.get("type") == "file"]
+
+    def leer(self, ruta_completa: str) -> bytes | None:
+        """Contenido de un archivo (ruta completa, tal como la da ``listar``)."""
+        r = self._request("GET", ruta_completa)
+        if not isinstance(r, dict):
+            return None
+        if r.get("content"):
+            return base64.b64decode(r["content"])
+        if r.get("download_url"):  # archivos > 1 MB: la API no trae el contenido
+            with self._open(
+                Request(r["download_url"], headers={"User-Agent": "forusight"}),
+                timeout=self.timeout,
+            ) as f:
+                return f.read()
+        return None
