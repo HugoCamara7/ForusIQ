@@ -436,3 +436,15 @@ def test_mapeo_de_una_tabla_de_venta_bi():
     assert m["fecha"] == "fecha_corte" and m["unidades"] == "venta_tiendas"
     assert m["tienda_cod"] == "codigo_tienda" and M.faltantes("ventas", m) == []
     assert "unidades" not in M.mapear(["fecha", "venta_soles"], M.ALIAS_VENTAS)
+
+
+def test_detecta_tabla_de_venta_fuera_de_bigquery():
+    from forusight.data.bq_client import claves_fuera_de_bigquery
+
+    sec = {
+        "bigquery": {"ventas_table": "p.silver.tablon"},
+        "forusight": {"marcas": ["HP"], "ventas_table": "p.bronze.stg_pe_central_ventas_bi"},
+    }
+    assert claves_fuera_de_bigquery(sec) == [
+        ("forusight", "ventas_table", "p.bronze.stg_pe_central_ventas_bi")
+    ]

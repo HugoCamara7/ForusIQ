@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from app.components.archivo import boton_archivo
-from app.components.estado import entradas_de_la_corrida
+from app.components.estado import entradas_de_la_corrida, secretos
 from app.components.ui import (
     apiladas,
     hero,
@@ -63,6 +63,14 @@ if res is None:
     st.stop()
 
 r = res.resumen
+from forusight.data.bq_client import claves_fuera_de_bigquery  # noqa: E402
+
+for seccion, clave, valor in claves_fuera_de_bigquery(secretos()):
+    issue_box(
+        "warn",
+        f"`{clave}` está en [{seccion}], no en [bigquery]",
+        f"La app no la lee ({valor}). Muévela debajo de [bigquery] en los secrets.",
+    )
 entradas = entradas_de_la_corrida()
 tiendas = entradas.dim_tienda if entradas is not None else pd.DataFrame(columns=["tienda_id"])
 cols_t = [c for c in ("tienda_id", "nombre", "cadena") if c in tiendas.columns]
@@ -85,8 +93,10 @@ if entradas is not None and getattr(entradas, "reporte", None) is not None:
     meta.append(
         f"Coincide con el reporte: {coincidencia(entradas.reporte, res.detalle)['pct_filas']:.1%}"
     )
-elif diag.get("corte_venta"):
-    meta.append(f"Venta hasta {_fecha(diag.get('venta_hasta'))}")
+elif diag.get("fuente_venta"):
+    tabla_v = str(diag["fuente_venta"]).split(".")[-1]
+    hasta = _fecha(diag.get("venta_hasta"))
+    meta.append(f"Venta: {tabla_v}" + (f" hasta {hasta}" if hasta else ""))
 hero(
     f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
     f"Distribución sugerida desde el CD {r['cd_id']}: "

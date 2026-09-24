@@ -421,3 +421,24 @@ class BigQueryClient:
         cfg = bigquery.LoadJobConfig(write_disposition=write_disposition)
         job = self.client.load_table_from_dataframe(df, tabla_id.strip("`"), job_config=cfg)
         return job.result()
+
+
+def claves_fuera_de_bigquery(secrets) -> list[tuple[str, str, str]]:
+    """(sección, clave, valor) de claves de tabla escritas fuera de [bigquery]: en TOML una
+    línea agregada al final del archivo cae en la última sección y la app no la lee."""
+    todas = {k for claves in CLAVES_TABLA.values() for k in claves} - {"table"}
+    out = []
+    try:
+        items = dict(secrets or {}).items()
+    except Exception:
+        return out
+    for seccion, valor in items:
+        if seccion == "bigquery":
+            continue
+        if isinstance(valor, str) and seccion in todas:
+            out.append(("(raíz)", seccion, valor))
+        elif hasattr(valor, "items"):
+            for k, v in dict(valor).items():
+                if k in todas and isinstance(v, str):
+                    out.append((seccion, k, v))
+    return out
