@@ -398,3 +398,18 @@ def test_sin_corte_de_este_anio_no_usa_el_del_anio_pasado():
     )
     with pytest.raises(ValueError, match="corte de este año"):
         FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+
+
+def test_venta_desactualizada_detiene_la_corrida():
+    fake = _FakeBQ()
+    ventas = fake.datos["ventas"]
+    fake.datos["ventas"] = ventas.assign(ultima_venta=(CORTE - pd.Timedelta(days=40)).date())
+    with pytest.raises(ValueError, match="sólo llega hasta"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+
+
+def test_venta_filtra_marca_por_arti_y_trae_ultima_fecha():
+    a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
+    v = M.mapear(COLS_VENTAS, M.ALIAS_VENTAS)
+    sql = F.sql_ventas("p.d.v", v, "p.d.arti", a, True)
+    assert "AS ultima_venta" in sql and "`p.d.arti`" in sql

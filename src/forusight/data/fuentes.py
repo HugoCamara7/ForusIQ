@@ -205,12 +205,15 @@ def sql_ventas(
         ]
     grupos = ", ".join(str(i + 1) for i in range(len(sel)))
     sel.append(f"SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades")
+    sel.append(f"MAX(DATE({f})) AS ultima_venta")
     where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto"
     if con_marcas:
-        if "marca" in mapa:
-            where += f" AND {_marca_sql(mapa)} IN UNNEST(@marcas)"
-        elif "id_producto" in mapa:
+        # La marca se toma de ARTI (igual que el stock): el texto de marca de la venta puede
+        # cambiar y dejar semanas recientes fuera sin avisar.
+        if "id_producto" in mapa:
             where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+        elif "marca" in mapa:
+            where += f" AND {_marca_sql(mapa)} IN UNNEST(@marcas)"
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY {grupos}"
 
 
@@ -388,6 +391,7 @@ class Diagnostico:
     mapeos: dict[str, dict[str, str]] = field(default_factory=dict)
     tiendas: list = field(default_factory=list)
     regla_introduccion: str = ""
+    venta_hasta: str | None = None
 
 
 def construir_entradas(

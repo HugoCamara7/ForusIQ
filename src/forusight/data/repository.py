@@ -253,6 +253,28 @@ class BigQueryRepository:
         return guardar_aprobacion_github(run_id, df, usuario, getattr(self, "secrets", None))
 
 
+#: Días máximos entre la última venta y el corte de stock para que el sugerido tenga sentido.
+DIAS_MAX_SIN_VENTA = 7
+
+
+def verificar_venta_reciente(ventas: pd.DataFrame, foto: dt.date, diag) -> None:
+    """Sin venta de las últimas semanas el motor ve 'tiendas sin venta' y el sugerido no
+    tiene sentido: se detiene y dice hasta qué fecha llega la tabla de ventas."""
+    if "ultima_venta" not in ventas or ventas.empty:
+        return
+    ultima = pd.to_datetime(ventas["ultima_venta"]).max()
+    if pd.isna(ultima):
+        return
+    diag.venta_hasta = ultima.date().isoformat()
+    if ultima.date() < foto - dt.timedelta(days=DIAS_MAX_SIN_VENTA):
+        raise ValueError(
+            f"La tabla de ventas sólo llega hasta el {ultima:%d/%m/%Y} y el stock es del "
+            f"{foto:%d/%m/%Y}: faltan las últimas semanas de venta y el sugerido no tendría "
+            "sentido. Revisa que la tabla de ventas esté actualizada (o apunta `ventas_table` "
+            "a la tabla con la venta del día)."
+        )
+
+
 class FuentesRepository(BigQueryRepository):
     """Lee directo de las tablas de Forus con los secrets de Catálogo Control Center.
 
@@ -464,6 +486,7 @@ class FuentesRepository(BigQueryRepository):
             {"fecha_foto": foto},
         )
         ventas = q("ventas", F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas))
+        verificar_venta_reciente(ventas, foto, diag)
 
         maestros = {}
         for fuente in ("tiendas", "cadena"):
