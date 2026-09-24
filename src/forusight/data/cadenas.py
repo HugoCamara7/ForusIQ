@@ -2,9 +2,9 @@
 
 Reglas (en este orden):
   1. **Tienda → nombre y cadena**: maestro `maestro_tiendas_table` de BigQuery; si una tienda
-     no está ahí, el catálogo de tiendas de los reportes de Neogística
-     (`config/tiendas_neogistica.csv`). La cadena es la columna `cadena` del maestro o, si no
-     viene, el prefijo del nombre (HP JOCKEY → HP), como los nombra Neogística.
+     no está ahí, el catálogo de tiendas de los reportes de distribución de Forus
+     (`config/tiendas_forus.csv`). La cadena es la columna `cadena` del maestro o, si no
+     viene, el prefijo del nombre (HP JOCKEY → HP), como en los reportes de distribución.
   2. **Sólo reciben tiendas identificadas** (con cadena conocida). Una bodega eComm o un
      código que no está en ningún maestro no recibe nada.
   3. **Qué se puede introducir en cada tienda**: el maestro `maestro_cadena_table`
@@ -26,8 +26,8 @@ CONFIG = Path(__file__).resolve().parents[1] / "config"
 
 @lru_cache(maxsize=1)
 def catalogo_tiendas() -> pd.DataFrame:
-    """55 tiendas de los reportes de Neogística: código, nombre, centro comercial, zona, cadena."""
-    return pd.read_csv(CONFIG / "tiendas_neogistica.csv", dtype=str)
+    """55 tiendas de los reportes de distribución: código, nombre, centro comercial, zona, cadena."""
+    return pd.read_csv(CONFIG / "tiendas_forus.csv", dtype=str)
 
 
 @lru_cache(maxsize=1)

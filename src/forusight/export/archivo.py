@@ -1,4 +1,4 @@
-"""Archivo de distribución con el formato operativo de Neogística.
+"""Archivo de distribución con el formato operativo de distribución de Forus.
 
 Referencia: reporte "534 - Sugerido de Distribución (Extendido)" (Hoja1): cabecera de 6
 filas (Empresa / Reporte / Fecha), encabezado en la fila 7 con autofiltro y una fila por
@@ -101,7 +101,7 @@ def construir_tabla(
     cd_id: str = "320",
     cantidad: pd.Series | None = None,
 ) -> pd.DataFrame:
-    """Detalle del motor → tabla con columnas Neogística (sólo las que tienen dato)."""
+    """Detalle del motor → tabla con columnas del archivo (sólo las que tienen dato)."""
     d = detalle.copy()
     if cantidad is not None:
         d["cantidad"] = cantidad.reindex(d.index).fillna(0).astype(int)
@@ -250,13 +250,13 @@ def resumen_por_tienda(tabla: pd.DataFrame) -> pd.DataFrame:
 
 
 def nombre_archivo(fecha: pd.Timestamp) -> str:
-    return f"{pd.Timestamp(fecha):%Y%m%d}_Reporte_Distribucion_Forus_Peru_Forusight.xlsx"
+    return f"{pd.Timestamp(fecha):%Y%m%d}_Distribucion_Forusight.xlsx"
 
 
-def a_excel_neogistica(
+def a_excel_forusight(
     tabla: pd.DataFrame,
     fecha: pd.Timestamp,
-    reporte: str = "Sugerido de Distribución CD 320 (Forusight)",
+    reporte: str = "Archivo Forusight · Distribución CD 320",
 ) -> bytes:
     import xlsxwriter
 

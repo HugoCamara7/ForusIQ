@@ -99,13 +99,13 @@ Sin `[app_auth]` la app sólo abre en **modo demo** (datos sintéticos); con Big
 
 ## Conexión a las tablas de Forus
 
-Flujo: **BigQuery → análisis de necesidad → distribución CD 320 → match maestros → archivo
-formato Neogística**.
+Flujo: **BigQuery → análisis de necesidad → distribución CD 320 → match tiendas/cadenas →
+Archivo Forusight**.
 
 | Dato | Clave en `[bigquery]` | Uso |
 |---|---|---|
 | Maestro de productos | `table` (ARTI del Catálogo; `product_master_table` suele ser EAN y se descarta sola) | SKU `CODINT_MA`, modelo-color `CODMOD_MA`-`CODCOL_MA`, talla, marca, género |
-| Stock | `stock_table` (por defecto `stg_pe_central_stock_bi`) | **sólo el último corte**: tienda = `stock_tiendas`; CD 320 = `stock_tiendas + stock_bodega` |
+| Stock | `stock_table` (por defecto `stg_pe_central_stock_bi`) | **último corte** (cierre de ayer de este año; el corte del año pasado se descarta): tienda = `stock_tiendas`; CD 320 = `stock_tiendas + stock_bodega` |
 | Venta | `ventas_table` (**obligatoria**) | 12 semanas cerradas + semana en curso |
 | Maestro tiendas | `maestro_tiendas_table` | código tienda → nombre, centro comercial, zona, cadena |
 | Maestro cadena | `maestro_cadena_table` | código modelo → cadena: un modelo sólo se **introduce** en tiendas de su cadena |
@@ -116,12 +116,13 @@ vendió y hoy está en 0 → **quiebre** (falta de stock); tiene stock y no vend
 venta**; sin stock ni venta → **nunca tuvo** (sólo se envía con afinidad y cadena válidas).
 
 La cadena de una tienda sale del maestro o, si no la trae, del prefijo del nombre (HP, HPK,
-RKF, CLB, …), como en los reportes de Neogística.
+RKF, CLB, …). Si una tienda no está en el maestro se usa el catálogo de 55 tiendas de
+`config/tiendas_forus.csv`; la matriz marca × cadena está en `config/cadenas.yaml`.
 
-## Archivo formato Neogística
+## Archivo Forusight
 
-Página **Exportación → Descargar archivo formato Neogística**. Referencia: reporte "534 -
-Sugerido de Distribución (Extendido)": cabecera Empresa/Reporte/Fecha, encabezado en la fila 7
+Página **Exportación → Descargar archivo Forusight** (`AAAAMMDD_Distribucion_Forusight.xlsx`).
+Sigue el formato operativo del reporte "534 - Sugerido de Distribución (Extendido)": cabecera Empresa/Reporte/Fecha, encabezado en la fila 7
 con autofiltro, mismos nombres, orden, colores y formatos. Versión **resumida**: sólo columnas
 con dato real (no se inventan costos, clases de demanda, backorder…) y filas con actividad
 (stock, venta, envío o pendiente). Incluye una hoja **Resumen** por tienda. Motivos:

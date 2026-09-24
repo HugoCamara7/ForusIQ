@@ -11,7 +11,7 @@ from forusight.data.github_store import GitHubStore, config_github
 from forusight.data.repository import SinAlmacenamiento, guardar_aprobacion_github
 from forusight.data.synthetic import generar
 from forusight.engine.pipeline import ejecutar
-from forusight.export.neogistica import a_excel_neogistica, construir_tabla, nombre_archivo
+from forusight.export.archivo import a_excel_forusight, construir_tabla, nombre_archivo
 from tests.builders import params
 
 #: Encabezado real de "534 - Sugerido de Distribución (Extendido)" (sin las 12 semanas).
@@ -137,7 +137,7 @@ def test_cantidad_aprobada_reemplaza_la_propuesta(corrida):
 
 def test_excel_con_cabecera_y_estilo_neogistica(corrida):
     t = _tabla(corrida)
-    x = a_excel_neogistica(t, pd.Timestamp("2026-09-23"))
+    x = a_excel_forusight(t, pd.Timestamp("2026-09-23"))
     wb = openpyxl.load_workbook(io.BytesIO(x))
     ws = wb["Hoja1"]
     assert ws["A3"].value == "Empresa:" and ws["B3"].value == "Forus Peru"
@@ -150,7 +150,7 @@ def test_excel_con_cabecera_y_estilo_neogistica(corrida):
     assert celda.fill.fgColor.rgb.endswith("C2C567") and celda.font.color.rgb.endswith("FF0000")
     assert ws.max_row == 7 + len(t)
     assert "Resumen" in wb.sheetnames
-    assert nombre_archivo(pd.Timestamp("2026-09-23")).startswith("20260923_Reporte_Distribucion")
+    assert nombre_archivo(pd.Timestamp("2026-09-23")) == "20260923_Distribucion_Forusight.xlsx"
 
 
 def test_config_github_reutiliza_ticketing_del_catalogo():
