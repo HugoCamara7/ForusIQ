@@ -400,12 +400,18 @@ def test_sin_corte_de_este_anio_no_usa_el_del_anio_pasado():
         FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
 
 
-def test_venta_desactualizada_detiene_la_corrida():
+def test_venta_atrasada_no_detiene_la_corrida_y_corre_la_ventana():
     fake = _FakeBQ()
-    ventas = fake.datos["ventas"]
-    fake.datos["ventas"] = ventas.assign(ultima_venta=(CORTE - pd.Timedelta(days=40)).date())
-    with pytest.raises(ValueError, match="sólo llega hasta"):
-        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+    ultima = (CORTE - pd.Timedelta(days=40)).date()  # tabla de ventas atrasada ~6 semanas
+    fake.datos["ventas"] = fake.datos["ventas"].assign(ultima_venta=ultima)
+    repo = FuentesRepository(client=fake, secrets=SECRETS)
+    repo.cargar_entradas(CORTE)
+    consultas = [c for c in fake.consultas if c[0] == "ventas"]
+    assert len(consultas) == 2  # se repite con la ventana que termina en la última venta
+    lunes = ultima - pd.Timedelta(days=ultima.weekday())
+    assert consultas[1][2]["hasta_foto"] == lunes
+    assert repo.ultimo_diagnostico.corte_venta == lunes.isoformat()
+    assert repo.ultimo_diagnostico.venta_hasta == ultima.isoformat()
 
 
 def test_venta_filtra_marca_por_arti_y_trae_ultima_fecha():

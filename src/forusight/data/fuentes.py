@@ -392,6 +392,7 @@ class Diagnostico:
     tiendas: list = field(default_factory=list)
     regla_introduccion: str = ""
     venta_hasta: str | None = None
+    corte_venta: str | None = None
 
 
 def construir_entradas(

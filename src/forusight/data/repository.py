@@ -257,22 +257,19 @@ class BigQueryRepository:
 DIAS_MAX_SIN_VENTA = 7
 
 
-def verificar_venta_reciente(ventas: pd.DataFrame, foto: dt.date, diag) -> None:
-    """Sin venta de las últimas semanas el motor ve 'tiendas sin venta' y el sugerido no
-    tiene sentido: se detiene y dice hasta qué fecha llega la tabla de ventas."""
+def corte_por_venta(ventas: pd.DataFrame, foto: dt.date, diag) -> dt.date | None:
+    """Si la tabla de ventas está atrasada respecto al stock, devuelve el lunes de la semana
+    de la última venta: la ventana de 12 semanas termina ahí (semanas completas con venta)
+    en vez de contar como 0 las semanas que la tabla todavía no trae."""
     if "ultima_venta" not in ventas or ventas.empty:
-        return
+        return None
     ultima = pd.to_datetime(ventas["ultima_venta"]).max()
     if pd.isna(ultima):
-        return
+        return None
     diag.venta_hasta = ultima.date().isoformat()
-    if ultima.date() < foto - dt.timedelta(days=DIAS_MAX_SIN_VENTA):
-        raise ValueError(
-            f"La tabla de ventas sólo llega hasta el {ultima:%d/%m/%Y} y el stock es del "
-            f"{foto:%d/%m/%Y}: faltan las últimas semanas de venta y el sugerido no tendría "
-            "sentido. Revisa que la tabla de ventas esté actualizada (o apunta `ventas_table` "
-            "a la tabla con la venta del día)."
-        )
+    if ultima.date() >= foto - dt.timedelta(days=DIAS_MAX_SIN_VENTA):
+        return None
+    return (ultima - pd.Timedelta(days=ultima.weekday())).date()
 
 
 class FuentesRepository(BigQueryRepository):
@@ -485,8 +482,15 @@ class FuentesRepository(BigQueryRepository):
             F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
             {"fecha_foto": foto},
         )
-        ventas = q("ventas", F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas))
-        verificar_venta_reciente(ventas, foto, diag)
+        sql_v = F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas)
+        ventas = q("ventas", sql_v)
+        corte_v = corte_por_venta(ventas, foto, diag)
+        if corte_v is not None:  # venta atrasada: 12 semanas completas hasta la última venta
+            fecha_corte = pd.Timestamp(corte_v)
+            base.update(F.ventana(fecha_corte, semanas))
+            base["hasta_foto"] = corte_v
+            diag.corte_venta = corte_v.isoformat()
+            ventas = q("ventas", sql_v)
 
         maestros = {}
         for fuente in ("tiendas", "cadena"):
