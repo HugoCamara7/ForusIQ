@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pandas as pd
 import streamlit as st
@@ -24,64 +25,139 @@ from forusight.data.fuentes import leer_stock_cd_archivo
 from forusight.data.repository import BigQueryRepository, FuentesRepository, SyntheticRepository
 from forusight.engine.pipeline import EngineInputs, EngineResult, ejecutar
 
-SECRETS = leer_st_secrets() or {}
-SETTINGS = cargar_settings(SECRETS)
 FUENTES = {"synthetic": "Demo", "bigquery": "BigQuery", "mart": "MART"}
+_TTL = cargar_settings(leer_st_secrets() or {}).cache_ttl_seconds
+
+
+def secretos() -> dict:
+    """Se leen en cada ejecución: un cambio en los secrets se toma sin reiniciar."""
+    return leer_st_secrets() or {}
+
+
+def ajustes():
+    return cargar_settings(secretos())
+
+
+def __getattr__(nombre: str):
+    # `from app.components.estado import SETTINGS` en las páginas: siempre valor fresco.
+    if nombre == "SECRETS":
+        return secretos()
+    if nombre == "SETTINGS":
+        return ajustes()
+    raise AttributeError(nombre)
+
+
+def huella_config() -> str:
+    """Huella de la configuración que afecta a los datos (sin credenciales).
+
+    Va en la clave de caché: si cambian tablas, mapeos, marcas o la cuenta, la caché se
+    invalida sola en vez de servir datos de la configuración anterior.
+    """
+    s = secretos()
+    cuenta = dict(s.get("gcp_service_account", {}) or {})
+    relevante = {
+        "bigquery": s.get("bigquery", {}),
+        "forusight": s.get("forusight", {}),
+        "cuenta": cuenta.get("client_email", ""),
+    }
+    return hashlib.sha1(json.dumps(relevante, sort_keys=True, default=str).encode()).hexdigest()[
+        :12
+    ]
 
 
 def fuente_por_defecto() -> str:
-    if "data_source" in dict(SECRETS.get("forusight", {}) or {}):
-        return SETTINGS.data_source
-    return "bigquery" if bigquery_habilitado(SECRETS) else SETTINGS.data_source
+    s, cfg = secretos(), ajustes()
+    if "data_source" in dict(s.get("forusight", {}) or {}):
+        return cfg.data_source
+    return "bigquery" if bigquery_habilitado(s) else cfg.data_source
 
 
 def fuentes_disponibles() -> list[str]:
     out = ["synthetic"]
     if st.session_state.get("sin_login"):
         return out  # sin login nunca se leen datos reales
-    if bigquery_habilitado(SECRETS):
+    if bigquery_habilitado(secretos()):
         out.append("bigquery")
-    if SETTINGS.data_source == "mart":
+    if ajustes().data_source == "mart":
         out.append("mart")
     return out
 
 
-@st.cache_resource(show_spinner=False)
-def repositorio(fuente: str):
+@st.cache_resource(show_spinner=False, ttl=_TTL, max_entries=4)
+def _repositorio(fuente: str, huella: str):
+    s, cfg = secretos(), ajustes()
     if fuente == "bigquery":
-        return FuentesRepository(settings=SETTINGS, secrets=SECRETS)
+        return FuentesRepository(settings=cfg, secrets=s)
     if fuente == "mart":
-        return BigQueryRepository(settings=SETTINGS)
+        return BigQueryRepository(settings=cfg)
     return SyntheticRepository()
 
 
-@st.cache_data(ttl=SETTINGS.cache_ttl_seconds, show_spinner="Leyendo marcas de ARTI…")
+def repositorio(fuente: str):
+    return _repositorio(fuente, huella_config())
+
+
+@st.cache_data(ttl=_TTL, show_spinner="Leyendo marcas de ARTI…", max_entries=8)
+def _marcas_arti(fuente: str, huella: str) -> pd.DataFrame:
+    return _repositorio(fuente, huella).marcas_disponibles()
+
+
 def marcas_arti(fuente: str) -> pd.DataFrame:
-    return repositorio(fuente).marcas_disponibles()
+    return _marcas_arti(fuente, huella_config())
 
 
-@st.cache_data(ttl=SETTINGS.cache_ttl_seconds, show_spinner="Leyendo datos…", max_entries=4)
-def cargar_entradas(
+# cache_resource: los DataFrames se comparten sin copiarse (mucho más rápido que
+# cache_data, que los serializa en cada lectura). Las páginas nunca los modifican en sitio.
+@st.cache_resource(ttl=_TTL, show_spinner="Leyendo datos…", max_entries=4)
+def _cargar_entradas(
     fuente: str,
+    huella: str,
     fecha_corte: str,
-    cd_bytes: bytes | None = None,
-    cd_nombre: str = "",
-    marcas: tuple[str, ...] | None = None,
+    cd_bytes: bytes | None,
+    cd_nombre: str,
+    marcas: tuple[str, ...] | None,
 ) -> tuple[EngineInputs, dict]:
     cd = leer_stock_cd_archivo(cd_bytes, cd_nombre) if cd_bytes else None
-    repo = repositorio(fuente)
+    repo = _repositorio(fuente, huella)
     inputs = repo.cargar_entradas(
         pd.Timestamp(fecha_corte),
         stock_cd_archivo=cd,
         marcas=list(marcas) if marcas is not None else None,
     )
     diag = getattr(repo, "ultimo_diagnostico", None)
-    return inputs, (diag.__dict__ if diag is not None else {})
+    return inputs, (dict(diag.__dict__) if diag is not None else {})
 
 
-@st.cache_data(
-    ttl=SETTINGS.cache_ttl_seconds, show_spinner="Calculando distribución…", max_entries=8
-)
+def cargar_entradas(
+    fuente: str,
+    fecha_corte: str,
+    cd_bytes: bytes | None = None,
+    cd_nombre: str = "",
+    marcas: tuple[str, ...] | None = None,
+):
+    return _cargar_entradas(fuente, huella_config(), fecha_corte, cd_bytes, cd_nombre, marcas)
+
+
+@st.cache_resource(ttl=_TTL, show_spinner="Calculando distribución…", max_entries=8)
+def _correr_motor(
+    fuente: str,
+    huella: str,
+    fecha_corte: str,
+    params_json: str,
+    cd_bytes: bytes | None,
+    cd_nombre: str,
+    marcas: tuple[str, ...] | None,
+) -> tuple[EngineResult, dict]:
+    params = EngineParams.model_validate_json(params_json)
+    inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
+    firma = hashlib.sha1(
+        "|".join([params_json, fuente, huella, cd_nombre, ",".join(marcas or ())]).encode()
+        + (cd_bytes or b"")
+    ).hexdigest()[:8]
+    run_id = f"{fecha_corte.replace('-', '')}-{firma}"
+    return ejecutar(inputs, params, fecha_corte, run_id=run_id, cd_id=ajustes().cd_id), diag
+
+
 def correr_motor(
     fuente: str,
     fecha_corte: str,
@@ -89,15 +165,16 @@ def correr_motor(
     cd_bytes: bytes | None = None,
     cd_nombre: str = "",
     marcas: tuple[str, ...] | None = None,
-) -> tuple[EngineResult, dict]:
-    params = EngineParams.model_validate_json(params_json)
-    inputs, diag = cargar_entradas(fuente, fecha_corte, cd_bytes, cd_nombre, marcas)
-    huella = hashlib.sha1(
-        "|".join([params_json, fuente, cd_nombre, ",".join(marcas or ())]).encode()
-        + (cd_bytes or b"")
-    ).hexdigest()[:8]
-    run_id = f"{fecha_corte.replace('-', '')}-{huella}"
-    return ejecutar(inputs, params, fecha_corte, run_id=run_id, cd_id=SETTINGS.cd_id), diag
+):
+    return _correr_motor(
+        fuente, huella_config(), fecha_corte, params_json, cd_bytes, cd_nombre, marcas
+    )
+
+
+def limpiar_cache() -> None:
+    """Botón «Actualizar datos»: vuelve a leer BigQuery en la próxima corrida."""
+    for f in (_cargar_entradas, _correr_motor, _marcas_arti, _repositorio):
+        f.clear()
 
 
 def lunes_actual() -> pd.Timestamp:
@@ -108,7 +185,7 @@ def lunes_actual() -> pd.Timestamp:
 def inicializar() -> None:
     ss = st.session_state
     if "params" not in ss:
-        ss.params = load_params(SETTINGS.params_path)
+        ss.params = load_params(ajustes().params_path)
     ss.setdefault("fuente", fuente_por_defecto())
     ss.setdefault("fecha_corte", lunes_actual().date())
     ss.setdefault("resultado", None)
@@ -173,10 +250,10 @@ def _selector_marcas() -> None:
     opciones = [str(m) for m in df["marca"].dropna()]
     if not opciones:
         st.warning("ARTI no devolvió marcas: revisa la tabla en la página Conexión.")
-        marcas_arti.clear()  # no dejar el vacío en caché
+        _marcas_arti.clear()  # no dejar el vacío en caché
         return
     if ss.marcas is None:
-        pedidas = [m.upper() for m in SETTINGS.marcas]
+        pedidas = [m.upper() for m in ajustes().marcas]
         ss.marcas = [m for m in opciones if m in pedidas] or [
             m for m in opciones if any(p[:5] in m for p in pedidas)
         ][:1]
@@ -191,7 +268,7 @@ def _selector_marcas() -> None:
 def barra_lateral() -> None:
     ss = st.session_state
     with st.sidebar:
-        sidebar_brand(f"Reposición CD {SETTINGS.cd_id}")
+        sidebar_brand(f"Reposición CD {ajustes().cd_id}")
         html(f'<div class="sb-user"><b>{usuario_actual()}</b> · {rol_actual()}</div>', sidebar=True)
         opciones = fuentes_disponibles()
         if ss.fuente not in opciones:
@@ -219,6 +296,14 @@ def barra_lateral() -> None:
             try:
                 ejecutar_corrida()
             except Exception as exc:  # errores de datos/credenciales visibles al usuario
+                st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+        if ss.fuente != "synthetic" and st.button(
+            "Actualizar datos", width="stretch", help="Vuelve a leer BigQuery (ignora la caché)"
+        ):
+            limpiar_cache()
+            try:
+                ejecutar_corrida()
+            except Exception as exc:
                 st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
         res = ss.resultado
         if res is not None:

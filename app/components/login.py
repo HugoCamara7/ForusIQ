@@ -51,7 +51,7 @@ def requerir_login(modo_demo: bool) -> bool:
         with st.container(key="login_form_area"), st.form("login_form"):
             usuario = st.text_input("Correo electrónico", placeholder="nombre.apellido@forus.pe")
             clave = st.text_input("Contraseña", type="password", placeholder="********")
-            entrar = st.form_submit_button("Ingresar", type="primary")
+            entrar = st.form_submit_button("Ingresar", type="primary", width="stretch")
         html('<div class="login-note">Sistema exclusivo para personal autorizado</div>')
     html("""
     <div class="login-foot">
