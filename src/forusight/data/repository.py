@@ -454,6 +454,7 @@ class FuentesRepository(BigQueryRepository):
             mapeos={k: v[0] for k, v in mapas.items()},
             marcas=marcas,
             tablas={k: v for k, v in tablas.items() if v},
+            fuente_venta=tablas["ventas"],
         )
 
         def q(nombre: str, sql: str, extra: dict | None = None) -> pd.DataFrame:

@@ -28,6 +28,7 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "dia",
         "fecha_dia",
         "fec_doc",
+        "fecha_corte",  # tablas *_bi (como stg_pe_central_stock_bi)
     ],
     "tienda_cod": [
         "cod_tienda",
@@ -48,6 +49,11 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "cantidad_vendida",
         "und",
         "cant_venta",
+        "venta_unidades",
+        "unidades_venta",
+        "cantidad_venta",
+        "venta_tiendas",
+        "venta_und",
     ],
     "id_producto": [
         "id_producto",

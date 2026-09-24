@@ -428,3 +428,11 @@ def test_sql_revisar_venta_compara_tabla_y_marca():
     assert "AS ultima_tabla" in resumen and "AS ultima_marca" in resumen
     assert "IN UNNEST(@marcas)" in resumen and "@ultima_marca" in muestra
     assert "SELECT *" not in (resumen + muestra).upper()
+
+
+def test_mapeo_de_una_tabla_de_venta_bi():
+    cols = ["fecha_corte", "id_producto", "conca", "talla", "codigo_tienda", "venta_tiendas"]
+    m = M.mapear(cols, M.ALIAS_VENTAS)
+    assert m["fecha"] == "fecha_corte" and m["unidades"] == "venta_tiendas"
+    assert m["tienda_cod"] == "codigo_tienda" and M.faltantes("ventas", m) == []
+    assert "unidades" not in M.mapear(["fecha", "venta_soles"], M.ALIAS_VENTAS)
