@@ -36,6 +36,8 @@ def test_rutas_por_mall():
     assert CAL.dias_de_mall(cal.loc["97", "mall"]) == "MA,VI"  # Salaverry
     assert CAL.dias_de_mall(cal.loc["7", "mall"]) == "MA"  # Chacarilla
     assert CAL.dias_de_mall(cal.loc["61", "mall"]) == "LU,MI,VI"  # provincia
+    assert cal.loc["61", "revision_dias"] == 2.33  # Cusco: 3 despachos por semana
+    assert set(cal.loc[["143", "152", "129"], "mall"]) == {"La Molina"}  # misma ruta
     assert CAL.mall_de("CC MEGAPLAZA") == "Mega Plaza"
     assert CAL.mall_de("", "PROVINCIA") == "Provincia"
     assert CAL.mall_de("HP NUEVA") == ""
