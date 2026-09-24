@@ -152,7 +152,23 @@ ALIAS_STOCK: dict[str, list[str]] = {
     "stock_tienda": ["stock_tiendas", "stock_tienda", "stock", "unidades_stock"],
     "stock_bodega": ["stock_bodega"],
     "transito": ["stock_transito", "transito", "en_transito", "cant_transito"],
+    # CD 320: disponible (ya sin reservas) y cada reserva por separado.
+    "disponible": ["disponible", "stock_disponible"],
+    "reserva_pedidos": ["reserva_pedidos"],
+    "reserva_retail": ["reserva_retail"],
+    "reserva_wholesale": ["reserva_wholesale"],
+    "reserva_multicanal": ["reserva_multicanal"],
+    "reserva_ecommerce": ["reserva_ecommerce"],
 }
+
+#: Reservas del CD en stock_bi (se descuentan en la opción «tiendas+bodega-reservas»).
+RESERVAS = (
+    "reserva_pedidos",
+    "reserva_retail",
+    "reserva_wholesale",
+    "reserva_multicanal",
+    "reserva_ecommerce",
+)
 
 FUENTES = {
     "ventas": ALIAS_VENTAS,

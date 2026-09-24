@@ -552,7 +552,8 @@ def comparar_stock_cd(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compara el stock del CD de BigQuery (por componente) con el «Stock en CD» del reporte.
 
-    Devuelve (resumen por opción, detalle por SKU). Opciones: tiendas+bodega, tiendas, bodega.
+    Devuelve (resumen por opción, detalle por SKU). Opciones: disponible,
+    tiendas+bodega-reservas, tiendas+bodega, tiendas y bodega (las que traiga stock_bi).
     """
     from forusight.data.fuentes import sku_canonico
 
@@ -564,12 +565,13 @@ def comparar_stock_cd(
     comunes = r.index.intersection(b.index)
     det = pd.DataFrame({"reporte": r.reindex(comunes)})
     det["tiendas+bodega"] = b["fisico"].reindex(comunes).fillna(0)
-    for comp in ("tiendas", "bodega"):
+    for comp in ("disponible", "tiendas+bodega-reservas", "tiendas", "bodega"):
         col = f"cd_stock_{comp}"
         if col in b:
             det[comp] = b[col].reindex(comunes).fillna(0)
     filas = []
-    for op in [c for c in ("tiendas+bodega", "tiendas", "bodega") if c in det]:
+    opciones = ("disponible", "tiendas+bodega-reservas", "tiendas+bodega", "tiendas", "bodega")
+    for op in [c for c in opciones if c in det]:
         filas.append(
             {
                 "opcion": op,

@@ -28,6 +28,22 @@ def test_calendario_de_los_reportes():
     assert CAL.dia_semana("2026-09-24") == "JU"
 
 
+def test_rutas_por_dia():
+    cal = CAL.calendario().set_index("codigo_tienda")
+    assert cal.loc["44", "dias"] == "MA,JU"  # Plaza Norte: martes y jueves
+    assert cal.loc["97", "dias"] == "MA,VI"  # Salaverry: martes y viernes
+    assert cal.loc["7", "dias"] == "MA" and cal.loc["30", "dias"] == "MA"
+    assert cal.loc["61", "dias"] == "LU,MI,VI"  # provincia
+    assert CAL.dias_por_ruta("HP MEGA PLAZA") == "MA,JU"
+    assert CAL.dias_por_ruta("CLB HUALLAGA") == "MA"
+    assert CAL.dias_por_ruta("HP AREQUIPA") == "LU,MI,VI"
+    assert CAL.dias_por_ruta("HP NUEVA") == ""
+    dim = pd.DataFrame({"tienda_id": ["900", "901"], "nombre": ["HP MEGA PLAZA", "HP NUEVA"]})
+    t = CAL.aplicar(dim, "2026-09-22", params(), None).set_index("tienda_id")  # martes
+    assert t.loc["900", "recibe_hoy"] and t.loc["900", "revision_dias"] == 3.5
+    assert t.loc["901", "recibe_hoy"]  # sin ruta ni calendario: cualquier día
+
+
 def test_solo_reciben_las_tiendas_que_reponen_ese_dia():
     e = _escenario()
     p = params()

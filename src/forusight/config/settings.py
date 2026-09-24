@@ -216,9 +216,16 @@ class NivelPrioridad(_Section):
 
 
 class StockCdParams(_Section):
-    """Qué parte del stock del CD 320 se reparte a tiendas (stock_bi trae dos columnas)."""
+    """Qué parte del stock del CD 320 se reparte a tiendas.
 
-    componentes: str = Field("tiendas+bodega", pattern="^(tiendas\\+bodega|tiendas|bodega)$")
+    ``disponible`` es la columna de stock_bi ya sin reservas; si la tabla no la trae se usa
+    tiendas+bodega.
+    """
+
+    componentes: str = Field(
+        "disponible",
+        pattern="^(disponible|tiendas\\+bodega-reservas|tiendas\\+bodega|tiendas|bodega)$",
+    )
 
 
 class RecepcionParams(_Section):

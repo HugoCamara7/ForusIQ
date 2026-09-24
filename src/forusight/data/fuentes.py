@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from forusight.data.bq_client import validar_columna, validar_tabla
+from forusight.data.mapeo import RESERVAS
 
 TABLA_ARTI = "forus-analitica-prod-datalake.bronze.stg_pe_central_arti"
 TABLA_STOCK = "forus-analitica-prod-datalake.bronze.stg_pe_central_stock_bi"
@@ -91,6 +92,14 @@ COLUMNAS_CONOCIDAS = {
         "CONCAT_TIENDA",
         "stock_tiendas",
         "stock_bodega",
+        "reserva_pedidos",
+        "reserva_retail",
+        "reserva_wholesale",
+        "reserva_multicanal",
+        "reserva_ecommerce",
+        "disponible",
+        "transito",
+        "valorizado",
     ],
     TABLA_ARTI: [
         "CODINT_MA",
@@ -311,7 +320,7 @@ def sql_stock_foto(
     ]
     if "tienda_nombre" in mapa:
         sel.append(f"ANY_VALUE(CAST({_c(mapa, 'tienda_nombre')} AS STRING)) AS tienda_nombre")
-    for campo in ("stock_tienda", "stock_bodega", "transito"):
+    for campo in ("stock_tienda", "stock_bodega", "transito", "disponible", *RESERVAS):
         if campo in mapa:
             sel.append(f"SUM(COALESCE(SAFE_CAST({_c(mapa, campo)} AS FLOAT64), 0)) AS {campo}")
     where = f"DATE({f}) = @fecha_foto"
@@ -546,7 +555,8 @@ def construir_entradas(
         stock_cd = stock_cd_archivo.loc[stock_cd_archivo["sku"].isin(skus)].copy()
         diag.notas.append("Stock CD desde el archivo subido (disponible y reservas).")
     else:
-        g = f.loc[en_cd].groupby("sku", as_index=False)[["stock_tienda", "stock_bodega"]].sum()
+        cols = ["stock_tienda", "stock_bodega"] + [c for c in ("disponible", *RESERVAS) if c in f]
+        g = f.loc[en_cd].groupby("sku", as_index=False)[cols].sum()
         stock_cd = pd.DataFrame(
             {
                 "sku": g["sku"],
@@ -558,6 +568,14 @@ def construir_entradas(
                 "cd_stock_bodega": g["stock_bodega"].clip(lower=0),
             }
         )
+        reservas = [c for c in RESERVAS if c in g]
+        if reservas:
+            stock_cd["cd_stock_reservas"] = g[reservas].clip(lower=0).sum(axis=1)
+            stock_cd["cd_stock_tiendas+bodega-reservas"] = (
+                stock_cd["fisico"] - stock_cd["cd_stock_reservas"]
+            ).clip(lower=0)
+        if "disponible" in g:
+            stock_cd["cd_stock_disponible"] = g["disponible"].clip(lower=0)
         if stock_cd.empty:
             diag.notas.append(
                 f"La foto de stock no trae filas de la bodega {cd} para estas marcas."
@@ -675,7 +693,7 @@ def construir_entradas(
         stock_tienda=st,
         stock_cd=stock_cd[
             ["sku", "fisico", "reservado", "comprometido"]
-            + [c for c in ("cd_stock_tiendas", "cd_stock_bodega") if c in stock_cd]
+            + [c for c in stock_cd.columns if c.startswith("cd_stock_")]
         ],
         dim_producto=dim,
         dim_tienda=dim_t,

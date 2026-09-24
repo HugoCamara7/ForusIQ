@@ -148,6 +148,10 @@ def test_stock_cd_por_componente_y_comparacion_con_reporte():
     assert preparar_cd(cd, p)["disponible"].tolist() == [30, 5]
     p.stock_cd.componentes = "tiendas"
     assert preparar_cd(cd, p)["disponible"].tolist() == [10, 5]
+    # la columna «disponible» de stock_bi (ya sin reservas) es la opción por defecto
+    p.stock_cd.componentes = "disponible"
+    cd["cd_stock_disponible"] = [12.0, 4.0]
+    assert preparar_cd(cd, p)["disponible"].tolist() == [12, 4]
     rep, _ = R.leer_reporte(
         _excel(
             [_fila("8", "HP JOCKEY", "1", **{R.CD: 10}), _fila("8", "HP JOCKEY", "2", **{R.CD: 5})]

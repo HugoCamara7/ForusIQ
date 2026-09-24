@@ -49,7 +49,13 @@ def widgets(modelo: BaseModel, prefijo: str) -> dict:
 
 #: Campos de texto con valores cerrados (se eligen en el formulario).
 OPCIONES = {
-    "componentes": ["tiendas+bodega", "tiendas", "bodega"],
+    "componentes": [
+        "disponible",
+        "tiendas+bodega-reservas",
+        "tiendas+bodega",
+        "tiendas",
+        "bodega",
+    ],
     "redondeo_nivel": ["cercano", "arriba"],
 }
 

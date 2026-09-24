@@ -112,5 +112,5 @@ calendario:                     # días de reposición por tienda (config/calend
   leadtime_dias_defecto: 3.0
   revision_dias_defecto: 2.3
 
-stock_cd:                       # qué parte del CD 320 se reparte (stock_bi: stock_tiendas y stock_bodega)
-  componentes: tiendas+bodega   # "tiendas+bodega", "tiendas" o "bodega" (compáralo en Conexión)
+stock_cd:                       # qué parte del CD 320 se reparte a tiendas
+  componentes: disponible       # disponible | tiendas+bodega-reservas | tiendas+bodega | tiendas | bodega (compáralo en Conexión)

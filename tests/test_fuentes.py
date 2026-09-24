@@ -469,3 +469,30 @@ def test_mapeo_de_ft_pe_venta_retail():
     assert m["marca"] == "marca" and M.faltantes("ventas", m) == []
     sql = F.sql_ventas(F.TABLA_VENTA_RETAIL, m, "p.d.arti", M.mapear(COLS_ARTI, M.ALIAS_ARTI), True)
     assert "`fecmov_lv`" in sql and "`unidades_venta`" in sql and "`nlocal_lv`" in sql
+
+
+def test_stock_bi_con_disponible_y_reservas():
+    cols = [
+        "id_producto",
+        "conca",
+        "codigo_tienda",
+        "stock_tiendas",
+        "stock_bodega",
+        "reserva_pedidos",
+        "reserva_retail",
+        "reserva_wholesale",
+        "reserva_multicanal",
+        "disponible",
+        "transito",
+        "talla",
+        "fecha_corte",
+        "valorizado",
+        "reserva_ecommerce",
+    ]
+    s = M.mapear(cols, M.ALIAS_STOCK)
+    assert s["disponible"] == "disponible" and s["transito"] == "transito"
+    assert all(s[r] == r for r in M.RESERVAS)
+    assert M.faltantes("stock", s) == []
+    a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
+    sql = F.sql_stock_foto("p.d.s", s, "p.d.arti", a, True)
+    assert "AS disponible" in sql and "AS reserva_ecommerce" in sql

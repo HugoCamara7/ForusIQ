@@ -157,9 +157,9 @@ if st.button("Revisar venta"):
 st.divider()
 st.subheader("Comparar stock del CD con el reporte")
 st.caption(
-    "El CD 320 trae dos columnas en stock_bi (stock_tiendas y stock_bodega). Sube el reporte "
-    "de distribución del día en la barra lateral y compara qué parte coincide con su «Stock en "
-    "CD» (el disponible para repartir)."
+    "stock_bi trae para el CD 320 stock_tiendas, stock_bodega, las reservas (pedidos, retail, "
+    "wholesale, multicanal, e-commerce) y el disponible. Sube el reporte del día en la barra "
+    "lateral y compara qué opción coincide con su «Stock en CD»."
 )
 if st.button("Comparar stock del CD", disabled=not st.session_state.get("reporte")):
     ss = st.session_state
