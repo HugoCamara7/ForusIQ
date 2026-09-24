@@ -39,6 +39,8 @@ SIN_PENDIENTE, STOCK_CD, DISTRIBUCION = "Sin Reposición Pendiente", "Stock CD",
 
 
 def _num(s: pd.Series) -> pd.Series:
+    if not isinstance(s, pd.Series | pd.DataFrame):  # columna ausente: valor por defecto
+        return float(s or 0)
     return pd.to_numeric(s, errors="coerce").fillna(0.0)
 
 
@@ -295,7 +297,15 @@ def entradas_desde_reporte(df: pd.DataFrame):
             "stock_transito": pos - _num(t[FISICO]),
         }
     )
-    sem = inferir_exposicion(v, stock, [pd.Timestamp(w) for w in wk])
+    mc_de_sku = pd.Series(
+        (
+            t.get("Código Modelo", t["sku"]).astype("string")
+            + "-"
+            + t.get("Código Color", pd.Series("", index=t.index)).astype("string").fillna("")
+        ).to_numpy(),
+        index=t["sku"].to_numpy(),
+    )
+    sem = inferir_exposicion(v, stock, [pd.Timestamp(w) for w in wk], mc_de_sku)
     prod = t.drop_duplicates("sku")
     modelo = prod.get("Código Modelo", prod["sku"]).astype("string")
     color = prod.get("Código Color", pd.Series("", index=prod.index)).astype("string").fillna("")

@@ -150,17 +150,30 @@ def _correr_motor(
     cd_nombre: str,
     marcas: tuple[str, ...] | None,
     pend_csv: str = "",
+    dia_reposicion: str = "",
 ) -> tuple[EngineResult, dict]:
+    from dataclasses import replace
+
+    from forusight.data import calendario as CAL
     from forusight.data import pendientes as PEND
 
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
     pend = _pend_df(pend_csv)
     inputs = PEND.aplicar_a_entradas(inputs, pend)
-    diag = {**diag, "pendientes": _resumen_pend(pend)}
+    dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
+    dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
+    inputs = replace(inputs, dim_tienda=dt)
+    diag = {
+        **diag,
+        "pendientes": _resumen_pend(pend),
+        "dia_reposicion": dia,
+        "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
+        "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
+    }
     firma = hashlib.sha1(
         "|".join(
-            [params_json, fuente, huella, cd_nombre, ",".join(marcas or ()), pend_csv]
+            [params_json, fuente, huella, cd_nombre, ",".join(marcas or ()), pend_csv, dia]
         ).encode()
         + (cd_bytes or b"")
     ).hexdigest()[:8]
@@ -177,9 +190,18 @@ def correr_motor(
     cd_nombre: str = "",
     marcas: tuple[str, ...] | None = None,
     pend_csv: str = "",
+    dia_reposicion: str = "",
 ):
     return _correr_motor(
-        fuente, huella_config(), fecha_corte, params_json, cd_bytes, cd_nombre, marcas, pend_csv
+        fuente,
+        huella_config(),
+        fecha_corte,
+        params_json,
+        cd_bytes,
+        cd_nombre,
+        marcas,
+        pend_csv,
+        dia_reposicion,
     )
 
 
@@ -365,6 +387,7 @@ def ejecutar_corrida() -> EngineResult:
         cd[1],
         marcas,
         pendientes_csv(),
+        pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
@@ -524,6 +547,13 @@ def barra_lateral() -> None:
                         "Datos", opciones, default=ss.fuente, format_func=FUENTES.get
                     )
                     or ss.fuente
+                )
+            if not ss.get("reporte"):
+                ss.dia_reposicion = st.date_input(
+                    "Día de reposición",
+                    value=ss.get("dia_reposicion") or pd.Timestamp.today().date(),
+                    format="DD/MM/YYYY",
+                    help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
             archivos_p = st.file_uploader(
                 "Envíos aún no recibidos (opcional)",

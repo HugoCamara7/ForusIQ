@@ -382,11 +382,19 @@ def _sku_desde_llave(df: pd.DataFrame, dim: pd.DataFrame) -> pd.Series:
     return llave.map(mapa)
 
 
-def inferir_exposicion(ventas: pd.DataFrame, stock: pd.DataFrame, semanas: list) -> pd.DataFrame:
+def inferir_exposicion(
+    ventas: pd.DataFrame,
+    stock: pd.DataFrame,
+    semanas: list,
+    mc_de_sku: pd.Series | None = None,
+) -> pd.DataFrame:
     """Días con stock por semana SIN historial de stock (ver docstring del módulo).
 
     ``ventas``: semana_inicio, tienda_id, sku, unidades (semanas cerradas).
     ``stock``: tienda_id, sku, stock_disponible (foto actual). ``semanas``: lunes cerrados.
+    ``mc_de_sku``: sku → modelo-color. Si viene, una talla con stock que todavía no vendió se
+    considera expuesta desde la primera venta del modelo en la tienda (un modelo nuevo se
+    mide desde que llegó, no las 12 semanas).
     Devuelve semana_inicio, tienda_id, sku, unidades, dias_con_stock (0 o 7).
     """
     llave = ["tienda_id", "sku"]
@@ -396,15 +404,23 @@ def inferir_exposicion(ventas: pd.DataFrame, stock: pd.DataFrame, semanas: list)
     pares = pd.DataFrame(index=rango.index.union(st.index[st > 0])).reset_index()
     pares = pares.join(rango, on=llave).join(st.rename("stock"), on=llave)
     pares["stock"] = pares["stock"].fillna(0)
+    pares["primera_mc"] = pd.NaT
+    if mc_de_sku is not None and len(vv):
+        mc = mc_de_sku[~mc_de_sku.index.duplicated()]
+        v_mc = vv.assign(_mc=vv["sku"].map(mc)).dropna(subset=["_mc"])
+        primera_mc = v_mc.groupby(["tienda_id", "_mc"])["semana_inicio"].min()
+        claves = pd.MultiIndex.from_arrays([pares["tienda_id"], pares["sku"].map(mc)])
+        pares["primera_mc"] = primera_mc.reindex(claves).to_numpy()
     grid = pares.merge(pd.DataFrame({"semana_inicio": pd.to_datetime(semanas)}), how="cross")
     tiene = grid["stock"] > 0
     vendio = grid["primera"].notna()
+    desde_mc = grid["primera_mc"].isna() | (grid["semana_inicio"] >= grid["primera_mc"])
     expuesta = np.select(
         [vendio & tiene, vendio & ~tiene, ~vendio & tiene],
         [
             grid["semana_inicio"] >= grid["primera"],
             (grid["semana_inicio"] >= grid["primera"]) & (grid["semana_inicio"] <= grid["ultima"]),
-            True,
+            desde_mc,
         ],
         False,
     )
@@ -518,7 +534,7 @@ def construir_entradas(
     v["unidades"] = v["unidades"].clip(lower=0)
     en_curso = v.loc[v["semana_inicio"] >= corte]
     cerradas = v.loc[v["semana_inicio"] < corte]
-    sem = inferir_exposicion(cerradas, st, lunes)
+    sem = inferir_exposicion(cerradas, st, lunes, dim.set_index("sku")["modelo_color_id"])
     # la semana en curso viaja aparte del análisis (Demanda Periodo Actual en el archivo)
     en_curso = en_curso.assign(dias_con_stock=0)
     diag.notas.append(

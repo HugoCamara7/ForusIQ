@@ -20,6 +20,9 @@ if res is not None:
         st.stop()
     cantidad = cantidad_aprobada()
     tabla = tabla_archivo(res, entradas, ss.params, SETTINGS.cd_id, cantidad)
+    if tabla.empty:
+        st.info("Ninguna tienda repone en el día elegido: no hay filas para el archivo.")
+        st.stop()
     envio = tabla["Cantidad Pedida Final [un]"] > 0
     kpi_row(
         [

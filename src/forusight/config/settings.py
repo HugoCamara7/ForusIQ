@@ -64,6 +64,8 @@ class DisponibilidadParams(_Section):
 
 
 class DemandaParams(_Section):
+    #: Peso de la venta propia de la talla en su pronóstico (0 = sólo modelo × curva).
+    peso_venta_propia_talla: float = Field(0.5, ge=0, le=1)
     exposicion_minima: float = Field(0.3, gt=0, le=1)
     tope_correccion: float = Field(2.0, ge=1)
     pesos_bloques: list[float] = Field(default_factory=lambda: [0.5, 0.3, 0.2])
@@ -120,6 +122,10 @@ class CoberturaParams(_Section):
     seguridad_semanas: SeguridadSemanas = Field(default_factory=SeguridadSemanas)
     #: z del stock de seguridad por talla (0 = sin nivel por talla, sólo curva del MC).
     seguridad_z_talla: float = Field(0.5, ge=0, le=3)
+    #: Redondeo del nivel máximo por talla: "arriba" (siempre sube) o "cercano" (al entero).
+    redondeo_nivel: str = Field("cercano", pattern="^(arriba|cercano)$")
+    #: Multiplica la demanda de la talla al fijar el nivel (calibración contra el reporte).
+    factor_demanda_nivel: float = Field(1.0, gt=0, le=5)
     umbral_sobrestock_semanas: float = Field(12.0, gt=0)
     por_categoria: dict[str, CoberturaCategoria] = Field(default_factory=dict)
 
@@ -156,6 +162,8 @@ class ExhibicionParams(_Section):
     #: Reposición: cada talla de un modelo-color que la tienda vende mantiene este mínimo
     #: (reponer lo vendido: si una talla se vendió y quedó en 0, vuelve 1).
     minimo_por_talla_activa: int = Field(1, ge=0)
+    #: Modelo agotado en la tienda (0 en todas las tallas) sin venta en 4 semanas: no se repone.
+    no_reponer_modelo_agotado_sin_venta_reciente: bool = True
     minimo_por_categoria: dict[str, int] = Field(default_factory=dict)
     tallas_core_default: list[str] = Field(default_factory=list)
     tallas_core_por_genero: dict[str, list[str]] = Field(default_factory=dict)
@@ -184,6 +192,27 @@ class PrioridadTiendasParams(_Section):
     cadenas_liquidadoras: list[str] = Field(default_factory=lambda: ["DH", "SE", "FB"])
     factor_cobertura_liquidadora: float = Field(0.75, gt=0, le=1.0)
     importancia_liquidadora: float = Field(0.0, ge=0, le=1.0)
+    #: Prioridad por venta de config/prioridad_tiendas.csv (A, B, C).
+    niveles: dict[str, NivelPrioridad] = Field(
+        default_factory=lambda: {
+            "A": NivelPrioridad(factor_cobertura=1.25, importancia=1.0),
+            "B": NivelPrioridad(factor_cobertura=1.0),
+            "C": NivelPrioridad(factor_cobertura=0.9, importancia=0.25),
+        }
+    )
+
+
+class CalendarioParams(_Section):
+    """Días de reposición por tienda (config/calendario_tiendas.csv)."""
+
+    aplicar: bool = True
+    leadtime_dias_defecto: float = Field(3.0, ge=0, le=30)
+    revision_dias_defecto: float = Field(2.3, gt=0, le=30)
+
+
+class NivelPrioridad(_Section):
+    factor_cobertura: float = Field(1.0, gt=0, le=4.0)
+    importancia: float | None = Field(None, ge=0, le=1.0)  # None = según su venta
 
 
 class RecepcionParams(_Section):
@@ -244,6 +273,7 @@ class EngineParams(_Section):
     asignacion: AsignacionParams = Field(default_factory=AsignacionParams)
     prioridad_tiendas: PrioridadTiendasParams = Field(default_factory=PrioridadTiendasParams)
     recepcion: RecepcionParams = Field(default_factory=RecepcionParams)
+    calendario: CalendarioParams = Field(default_factory=CalendarioParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

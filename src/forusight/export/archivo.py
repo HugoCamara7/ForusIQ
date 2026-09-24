@@ -154,6 +154,9 @@ def construir_tabla(
             * 7
         )
     )
+    if "leadtime_dias" in tien:  # calendario: lead time y revisión propios de cada tienda
+        lead = d["tienda_id"].map(tien["leadtime_dias"]).fillna(lead)
+        revision = d["tienda_id"].map(tien["revision_dias"]).fillna(revision)
     posicion = d["stock_tienda"] + d["stock_transito"]
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
     almacenamiento = d["motivo_codigo"].eq("NO_TOPE_TIENDA") | d["motivo_parcial"].eq(

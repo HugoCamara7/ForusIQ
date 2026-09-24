@@ -65,15 +65,27 @@ def marcar_prioridad(tiendas: pd.DataFrame, params: EngineParams) -> pd.DataFram
         else pd.Series(pd.NA, index=tiendas.index, dtype="string")
     )
     cadena = cadena.fillna(nombre.str.split().str[0])
+    # Prioridad por venta (A, B, C) del maestro de la marca; manda sobre el patrón de nombre.
+    nivel = (
+        tiendas["prioridad"].astype("string").str.strip().str.upper()
+        if "prioridad" in tiendas
+        else pd.Series(pd.NA, index=tiendas.index, dtype="string")
+    )
+    con_nivel = nivel.notna() & nivel.isin(list(p.niveles))
+    prio = np.where(con_nivel, nivel.eq("A").fillna(False), prio)
     liq = cadena.isin([str(c).strip().upper() for c in p.cadenas_liquidadoras]) & ~prio
-    tiendas["tienda_prioritaria"] = prio.to_numpy(dtype=bool)
+    tiendas["tienda_prioritaria"] = np.asarray(prio, dtype=bool)
     tiendas["tienda_liquidadora"] = liq.to_numpy(dtype=bool)
     imp = pd.to_numeric(tiendas["importancia_comercial"], errors="coerce").fillna(0.5)
-    imp = np.where(prio, np.maximum(imp, p.importancia), imp)
+    imp = np.where(prio & ~con_nivel, np.maximum(imp, p.importancia), imp)
+    factor = np.select([prio, liq], [p.factor_cobertura, p.factor_cobertura_liquidadora], 1.0)
+    for n, cfg in p.niveles.items():
+        es = (con_nivel & nivel.eq(n)).fillna(False).to_numpy(dtype=bool)
+        factor = np.where(es, cfg.factor_cobertura, factor)
+        if cfg.importancia is not None:
+            imp = np.where(es, cfg.importancia, imp)
     tiendas["importancia_comercial"] = np.where(liq, p.importancia_liquidadora, imp)
-    tiendas["factor_cobertura_tienda"] = np.select(
-        [prio, liq], [p.factor_cobertura, p.factor_cobertura_liquidadora], 1.0
-    )
+    tiendas["factor_cobertura_tienda"] = factor
     return tiendas
 
 

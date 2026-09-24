@@ -34,10 +34,12 @@ cobertura:                      # PENDIENTE (h, i)
   lead_time_semanas: 1.0
   ciclo_revision_semanas: 1.0
   seguridad_semanas:
-    alta: 1.0
-    media: 0.75
-    baja: 0.5
-  seguridad_z_talla: 0.5         # nivel por talla = ⌈demanda·cobertura + z·√(demanda·cobertura)⌉
+    alta: 0.0                   # la seguridad va en z·√(demanda·cobertura) por talla
+    media: 0.0                  # (calibrado con el reporte del 24/09)
+    baja: 0.0
+  seguridad_z_talla: 0.5         # nivel por talla = redondeo(demanda·cobertura + z·√(demanda·cobertura))
+  redondeo_nivel: cercano       # "cercano" (calibrado con el reporte del 24/09) o "arriba"
+  factor_demanda_nivel: 1.0
   umbral_sobrestock_semanas: 12.0
   por_categoria: {}             # ej.: {"SANDALIA": {"lead_time_semanas": 1.5, "seguridad_semanas": {"alta": 1.5}}}
 
@@ -96,6 +98,16 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
   cadenas_liquidadoras: ["DH", "SE", "FB"]  # outlets: sin introducciones, últimas en el reparto
   factor_cobertura_liquidadora: 0.75
   importancia_liquidadora: 0.0
+  niveles:                      # prioridad por venta (config/prioridad_tiendas.csv)
+    A: {factor_cobertura: 1.25, importancia: 1.0}
+    B: {factor_cobertura: 1.0}
+    C: {factor_cobertura: 0.9, importancia: 0.25}
 
 recepcion:                      # envíos aprobados que aún no llegan (no están en el corte de stock)
   dias_pendiente: 3             # aprobaciones de los últimos 3 días se descuentan del CD (L-M-V)
+
+calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
+  aplicar: true                 # en un día sólo reciben las tiendas que reponen ese día
+                                # (una tienda sin días en el calendario recibe cualquier día)
+  leadtime_dias_defecto: 3.0
+  revision_dias_defecto: 2.3

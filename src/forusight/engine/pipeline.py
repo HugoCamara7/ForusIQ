@@ -113,6 +113,8 @@ class EngineResult:
 def topes_por_tienda(dim_tienda: pd.DataFrame, params: EngineParams) -> dict[str, int]:
     default = params.tope_tienda.max_unidades_por_tienda
     tope = dim_tienda["max_unidades_corrida"].fillna(default)
+    if "recibe_hoy" in dim_tienda:  # calendario: hoy no le toca reponer
+        tope = tope.where(dim_tienda["recibe_hoy"].fillna(True).astype(bool), 0)
     return dict(zip(dim_tienda["tienda_id"], tope.astype("int64"), strict=True))
 
 
@@ -144,7 +146,10 @@ def ejecutar(
     mc = estimar_demanda(mc, base.semanal, similares, params)
     mc = calcular_afinidad(mc, base.semanal, params)
     mc = mc.merge(
-        base.tiendas[["tienda_id", "factor_cobertura_tienda", "tienda_liquidadora"]],
+        base.tiendas[
+            ["tienda_id", "factor_cobertura_tienda", "tienda_liquidadora"]
+            + [c for c in ("leadtime_dias", "revision_dias") if c in base.tiendas]
+        ],
         on="tienda_id",
         how="left",
     )
@@ -158,6 +163,11 @@ def ejecutar(
         mc[KEY_MC + ["dias_12s"]].rename(columns={"dias_12s": "dias_12s_mc"}), on=KEY_MC, how="left"
     )
     det = asignar_codigos(det, params)
+    if "recibe_hoy" in base.tiendas:  # el resultado sólo lista las tiendas que reponen hoy
+        hoy = set(
+            base.tiendas.loc[base.tiendas["recibe_hoy"].fillna(True).astype(bool), "tienda_id"]
+        )
+        det = det.loc[det["tienda_id"].isin(hoy)]
     det["motivo_texto"] = generar_textos(det, params, cd_id)
     det["run_id"] = run_id
     det = det.rename(

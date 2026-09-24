@@ -30,6 +30,7 @@ NO_SIN_REFERENCIA = "NO_SIN_REFERENCIA"
 NO_AFINIDAD_BAJA = "NO_AFINIDAD_BAJA"
 NO_INTRODUCCION = "NO_INTRODUCCION"
 NO_TALLA_NUNCA_TUVO = "NO_TALLA_NUNCA_TUVO"
+NO_MODELO_AGOTADO = "NO_MODELO_AGOTADO"
 NO_SOBRESTOCK = "NO_SOBRESTOCK"
 NO_SIN_NECESIDAD = "NO_SIN_NECESIDAD"
 
@@ -59,6 +60,14 @@ def calcular_objetivo_mc(mc: pd.DataFrame, params: EngineParams) -> pd.DataFrame
         columns=["categoria", "rotacion", "cobertura_semanas", "umbral_sobrestock"],
     )
     mc = mc.merge(cob, on=["categoria", "rotacion"], how="left")
+    if "revision_dias" in mc:  # cobertura de la tienda = su lead time + su período de revisión
+        seg = mc["rotacion"].map(
+            lambda r: getattr(
+                params.cobertura.seguridad_semanas, r, params.cobertura.seguridad_semanas.media
+            )
+        )
+        propia = (mc["leadtime_dias"] + mc["revision_dias"]) / 7 + seg
+        mc["cobertura_semanas"] = propia.where(mc["revision_dias"].notna(), mc["cobertura_semanas"])
     if "factor_cobertura_tienda" in mc:  # tiendas prioritarias (Jockey) sostienen más stock
         mc["cobertura_semanas"] = mc["cobertura_semanas"] * mc["factor_cobertura_tienda"].fillna(
             1.0
@@ -96,6 +105,7 @@ def calcular_objetivo_mc(mc: pd.DataFrame, params: EngineParams) -> pd.DataFrame
 
 
 MC_A_SKU = [
+    "semanas_expuestas",
     "demanda_semanal",
     "fuente_demanda",
     "factor_tendencia",
@@ -126,11 +136,25 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
         np.where(repone, params.exhibicion.minimo_por_talla_activa, 0),
     )
     out["demanda_sku"] = out["demanda_semanal"] * out["share_talla"]
+    # Pronóstico de la talla: mezcla la demanda del modelo repartida por la curva con la venta
+    # propia de la talla sobre las semanas que el modelo estuvo en la tienda (calibrado con el
+    # reporte del 24/09: error medio 0,126 vs 0,131 y mismo nivel promedio).
+    w = params.demanda.peso_venta_propia_talla
+    if w > 0 and "semanas_expuestas" in out:
+        propia = out["venta_12s"].fillna(0) / out["semanas_expuestas"].clip(lower=1).fillna(1)
+        usa = repone & out["estado_sku"].ne(NUNCA_TUVO)
+        out["demanda_sku"] = np.where(
+            usa, (1 - w) * out["demanda_sku"] + w * propia, out["demanda_sku"]
+        )
     # Nivel máximo por talla (como el reporte de distribución de Forus): demanda de la talla
     # en la cobertura + stock de seguridad z·√(demanda·cobertura), redondeado hacia arriba.
-    ciclo = (out["demanda_sku"] * out["cobertura_semanas"]).fillna(0).clip(lower=0)
-    z = params.cobertura.seguridad_z_talla
-    nivel_talla = np.where(repone & (z > 0), np.ceil(ciclo + z * np.sqrt(ciclo) - 1e-9), 0)
+    cob = params.cobertura
+    ciclo = (out["demanda_sku"] * cob.factor_demanda_nivel * out["cobertura_semanas"]).fillna(0)
+    ciclo = ciclo.clip(lower=0)
+    z = cob.seguridad_z_talla
+    bruto = ciclo + z * np.sqrt(ciclo)
+    redondeado = np.ceil(bruto - 1e-9) if cob.redondeo_nivel == "arriba" else np.floor(bruto + 0.5)
+    nivel_talla = np.where(repone & (z > 0), redondeado, 0)
     objetivo = np.maximum.reduce([minimo, out["objetivo_curva"].to_numpy(), nivel_talla])
     # MC en sobrestock: no se sube la cobertura, pero la talla vacía vuelve a su mínimo.
     sobre = out["bloqueo_mc"].eq(NO_SOBRESTOCK).to_numpy()
@@ -138,6 +162,26 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     # Reposición = reponer lo vendido / anticipar: nunca llenar una talla que la tienda no tuvo
     # ni vendió (aunque la curva del modelo la incluya).
     talla_nueva = (repone & out["estado_sku"].eq(NUNCA_TUVO)).to_numpy() & (objetivo > 0)
+    # Modelo que se agotó en la tienda (0 en todas sus tallas, sin tránsito) y no vendió en las
+    # últimas 4 semanas: salió de la tienda; como en el reporte, no se repone.
+    g = out.groupby(KEY_MC, sort=False)
+    pos_mc = (
+        (out["stock_disponible"] + out["stock_transito"])
+        .groupby([out[c] for c in KEY_MC], sort=False)
+        .transform("sum")
+    )
+    v4_mc = g["venta_4s"].transform("sum")
+    agotado = (
+        (
+            repone
+            & (pos_mc <= 0)
+            & (v4_mc <= 0)
+            & params.exhibicion.no_reponer_modelo_agotado_sin_venta_reciente
+        ).to_numpy()
+        & (objetivo > 0)
+        & ~talla_nueva
+    )
+    objetivo = np.where(agotado, 0, objetivo)
     out["stock_objetivo"] = np.where(talla_nueva, 0, objetivo).astype("int64")
 
     pos = out["stock_disponible"] + out["stock_transito"]
@@ -150,7 +194,11 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     out["motivo_bloqueo"] = np.where(
         bloqueada,
         out["bloqueo_mc"],
-        np.where(talla_nueva, NO_TALLA_NUNCA_TUVO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
+        np.where(
+            talla_nueva,
+            NO_TALLA_NUNCA_TUVO,
+            np.where(agotado, NO_MODELO_AGOTADO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
+        ),
     )
 
     # Curva rota: MC activo que ya está en la tienda y le faltan tallas core.

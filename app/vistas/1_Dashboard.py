@@ -97,6 +97,23 @@ elif diag.get("fuente_venta"):
     tabla_v = str(diag["fuente_venta"]).split(".")[-1]
     hasta = _fecha(diag.get("venta_hasta"))
     meta.append(f"Venta: {tabla_v}" + (f" hasta {hasta}" if hasta else ""))
+if diag.get("dia_reposicion"):
+    from forusight.data.calendario import dia_semana
+
+    nombres = {
+        "LU": "lunes",
+        "MA": "martes",
+        "MI": "miércoles",
+        "JU": "jueves",
+        "VI": "viernes",
+        "SA": "sábado",
+        "DO": "domingo",
+    }
+    meta.append(
+        f"Reposición del {nombres[dia_semana(diag['dia_reposicion'])]} "
+        f"{_fecha(diag['dia_reposicion'])}: {diag.get('tiendas_hoy', 0)} de "
+        f"{diag.get('tiendas_total', 0)} tiendas"
+    )
 pend_d = diag.get("pendientes") or {}
 if pend_d.get("unidades"):
     meta.append(f"Descontados {pend_d['unidades']:,} u. aún no recibidas")
