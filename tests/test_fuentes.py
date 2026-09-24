@@ -317,13 +317,42 @@ def test_maestro_de_cadena_limita_introducciones():
     assert intro.empty  # HP2 no tiene cadena y HP1 es de otra cadena: no se introduce
 
 
-def test_maestros_opcionales():
+def test_sin_maestros_usa_catalogo_neogistica_y_matriz_marca_cadena():
     sec = {"bigquery": {k: v for k, v in SECRETS["bigquery"].items() if "maestro" not in k}}
     fake = _FakeBQ()
+    # 999: código sin maestro ni catálogo (p. ej. bodega eComm); 2: RKF JOCKEY (no vende HP)
+    extra = fake.datos["stock_foto"].query("tienda_cod == '008'").assign(tienda_cod="999")
+    rkf = fake.datos["stock_foto"].query("tienda_cod == '008'").assign(tienda_cod="2")
+    fake.datos["stock_foto"] = pd.concat([fake.datos["stock_foto"], extra, rkf])
     repo = FuentesRepository(client=fake, secrets=sec)
     inp = repo.cargar_entradas(CORTE)
-    assert inp.permitidos is None
-    assert any("Sin maestro modelo→cadena" in n for n in repo.ultimo_diagnostico.notas)
+    dt = inp.dim_tienda.set_index("tienda_id")
+    assert (
+        dt.loc["8", "nombre"] == "HP JOCKEY"
+        and dt.loc["8", "origen_tienda"] == "catalogo Neogística"
+    )
+    assert dt.loc["2", "cadena"] == "RKF" and dt.loc["12", "zona"] == "PROVINCIA"
+    assert not dt.loc["999", "activa"] and pd.isna(dt.loc["999", "cadena"])  # no recibe
+    tiendas_intro = set(inp.permitidos["tienda_id"])
+    assert "2" not in tiendas_intro  # RKF no vende HUSH PUPPIES
+    assert {"8", "12"} <= tiendas_intro
+    notas = " ".join(repo.ultimo_diagnostico.notas)
+    assert "matriz marca × cadena" in notas and "999" in notas
+    res = ejecutar(inp, params(afinidad={"umbral_introduccion": 0.0}), CORTE, run_id="R")
+    d = res.detalle
+    assert d.query("tienda_id == '999'")["cantidad"].sum() == 0
+    assert d.loc[d["es_introduccion"] & d["tienda_id"].eq("2"), "cantidad"].sum() == 0
+
+
+def test_matriz_marca_cadena_de_neogistica():
+    from forusight.data import cadenas as CAD
+
+    m = CAD.marcas_por_cadena()
+    assert "HUSH PUPPIES" in m["HP"] and "HUSH PUPPIES" in m["FB"]
+    assert "HUSH PUPPIES" not in m["RKF"] and m["CLB"] == {"COLUMBIA"} and m["VANS"] == {"VANS"}
+    cat = CAD.catalogo_tiendas()
+    assert len(cat) == 55 and set(cat["cadena"]) == set(m)
+    assert CAD.marcas_por_cadena({"AZ": ["azaleia"]}) == {"AZ": {"AZALEIA"}}
 
 
 def test_arti_salta_la_tabla_de_ean_del_catalogo():

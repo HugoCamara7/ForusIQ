@@ -87,9 +87,10 @@ def texto(s: pd.Series) -> pd.Series:
 
 
 def sku_canonico(s: pd.Series) -> pd.Series:
-    """Igual que `sku_sql`: mayúsculas, sin `.0`, sin ceros a la izquierda si es numérico."""
-    t = texto(s).str.upper()
-    return t.str.replace(r"^0+(\d)", r"\1", regex=True)
+    """Igual que `sku_sql`: mayúsculas, sin `.0` final, sin ceros a la izquierda si es numérico."""
+    t = texto(s).str.upper().str.replace(r"[.]0+$", "", regex=True)
+    numerico = t.str.fullmatch(r"\d+").fillna(False).astype(bool)
+    return t.where(~numerico, t.str.replace(r"^0+(\d)", r"\1", regex=True))
 
 
 def talla_orden(tallas: pd.Series) -> pd.Series:
@@ -381,15 +382,8 @@ class Diagnostico:
     marcas: list[str] = field(default_factory=list)
     tablas: dict[str, str] = field(default_factory=dict)
     mapeos: dict[str, dict[str, str]] = field(default_factory=dict)
-
-
-def cadena_de_tienda(dim_t: pd.DataFrame) -> pd.Series:
-    """Cadena de cada tienda: columna del maestro o, si no hay, el prefijo del nombre
-    (HP JOCKEY → HP), que es como la nombra Neogística."""
-    pref = dim_t["nombre"].astype("string").str.strip().str.split().str[0].str.upper()
-    if "cadena" in dim_t:
-        return dim_t["cadena"].astype("string").str.strip().str.upper().fillna(pref)
-    return pref
+    tiendas: list = field(default_factory=list)
+    regla_introduccion: str = ""
 
 
 def construir_entradas(
@@ -404,6 +398,7 @@ def construir_entradas(
     semanas: int = 13,
     tiendas_m: pd.DataFrame | None = None,
     cadena_m: pd.DataFrame | None = None,
+    marcas_por_cadena: dict | None = None,
 ):
     """DataFrames crudos de las consultas → EngineInputs (contratos canónicos)."""
     from forusight.engine.pipeline import EngineInputs
@@ -498,23 +493,47 @@ def construir_entradas(
             "max_unidades_corrida": np.nan,
         }
     )
+    # Tienda → nombre / cadena: maestro de BigQuery y, si falta, catálogo Neogística.
+    from forusight.data import cadenas as CAD
+
+    cat = CAD.catalogo_tiendas().rename(
+        columns={"codigo_tienda": "tienda_cod", "nombre_tienda": "tienda_nombre"}
+    )
+    fuentes_t = []
     if tiendas_m is not None and len(tiendas_m):
-        m = tiendas_m.copy()
+        fuentes_t.append(("maestro", tiendas_m))
+    fuentes_t.append(("catalogo Neogística", cat))
+    dim_t["origen_tienda"] = pd.NA
+    for c in ("centro_comercial", "zona", "cadena"):
+        dim_t[c] = pd.NA
+    for origen, tabla in fuentes_t:
+        m = tabla.copy()
         m["tienda_id"] = m["tienda_cod"].map(codigo_tienda)
         m = m.drop_duplicates("tienda_id").set_index("tienda_id")
-        dim_t["nombre"] = dim_t["tienda_id"].map(m["tienda_nombre"]).fillna(dim_t["nombre"])
+        falta = dim_t["origen_tienda"].isna() & dim_t["tienda_id"].isin(m.index)
+        dim_t.loc[falta, "nombre"] = dim_t.loc[falta, "tienda_id"].map(m["tienda_nombre"])
         for c in ("centro_comercial", "zona", "cadena"):
             if c in m:
-                dim_t[c] = dim_t["tienda_id"].map(m[c])
-        sin = sorted(set(ids) - set(m.index))
-        if sin:
-            diag.notas.append(
-                f"{len(sin)} tiendas no están en el maestro de tiendas: " + ", ".join(sin[:20])
-            )
-    dim_t["cadena"] = cadena_de_tienda(dim_t)
+                dim_t.loc[falta, c] = dim_t.loc[falta, "tienda_id"].map(m[c])
+        dim_t.loc[falta, "origen_tienda"] = origen
+    identificada = dim_t["origen_tienda"].notna()
+    dim_t["cadena"] = dim_t["cadena"].astype("string").str.strip().str.upper()
+    dim_t["cadena"] = dim_t["cadena"].where(
+        dim_t["cadena"].notna() & dim_t["cadena"].ne(""), CAD.prefijo(dim_t["nombre"])
+    )
+    dim_t.loc[~identificada, "cadena"] = pd.NA
+    # Sólo reciben tiendas identificadas: bodegas eComm u otros códigos quedan fuera.
+    sin_id = dim_t.loc[~identificada, "tienda_id"].tolist()
+    if sin_id:
+        dim_t.loc[~identificada, "activa"] = False
+        diag.notas.append(
+            f"{len(sin_id)} códigos de tienda sin maestro ni catálogo no reciben "
+            f"(bodegas u otros): {', '.join(sin_id[:15])}" + ("…" if len(sin_id) > 15 else "")
+        )
 
-    # --- elegibilidad por cadena (maestro modelo → cadena): limita las introducciones
-    permitidos = None
+    # --- qué se puede INTRODUCIR en cada tienda (la reposición no se restringe)
+    matriz = CAD.marcas_por_cadena(marcas_por_cadena)
+    cm = None
     if cadena_m is not None and len(cadena_m):
         cm = (
             pd.DataFrame(
@@ -526,20 +545,21 @@ def construir_entradas(
             .dropna()
             .drop_duplicates()
         )
-        permitidos = dim_t[["tienda_id", "cadena"]].merge(cm, on="cadena")[
-            ["tienda_id", "modelo_id"]
-        ]
-        sin_cadena = set(dim["modelo_id"]) - set(cm["modelo_id"])
-        diag.notas.append(
-            f"Maestro modelo→cadena: {len(permitidos):,} pares tienda×modelo "
-            f"habilitados; {len(sin_cadena)} modelos sin cadena (sólo reposición, "
-            "no se introducen)."
+    permitidos, regla = CAD.pares_permitidos(dim_t, dim, cm, matriz)
+    diag.regla_introduccion = regla
+    sin_matriz = sorted(set(dim_t.loc[identificada, "cadena"].dropna()) - set(matriz))
+    diag.notas.append(
+        f"Introducciones por {regla}: {len(permitidos):,} pares tienda×modelo "
+        "habilitados."
+        + (
+            f" Cadenas sin marcas definidas: {', '.join(sin_matriz)}."
+            if sin_matriz and cm is None
+            else ""
         )
-    else:
-        diag.notas.append(
-            "Sin maestro modelo→cadena: los modelos pueden introducirse en "
-            "cualquier tienda que cumpla la afinidad."
-        )
+    )
+    diag.tiendas = dim_t[
+        ["tienda_id", "nombre", "cadena", "centro_comercial", "zona", "origen_tienda", "activa"]
+    ].to_dict("records")
     diag.filas.update(
         {
             "productos": len(dim),

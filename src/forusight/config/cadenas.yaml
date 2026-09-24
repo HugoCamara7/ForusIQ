@@ -1,0 +1,19 @@
+# Marcas que vende cada cadena (prefijo del nombre de tienda, como en Neogística).
+# Fuente: reportes "534 - Sugerido de Distribución (Extendido)" del 02, 03 y 07/09/2026
+# (todas las combinaciones marca × cadena presentes). Se usa para decidir en qué tiendas
+# se puede INTRODUCIR un modelo cuando no hay maestro modelo → cadena.
+# Para agregar una cadena o marca (p. ej. AZALEIA) edita este archivo o usa
+# [forusight.marcas_por_cadena] en los secrets.
+marcas_por_cadena:
+  BSOUL: [BSOUL]
+  CLB: [COLUMBIA]
+  DH: [ACCESORIOS HP, BSOUL, COLUMBIA, HUSH PUPPIES, HUSH PUPPIES KIDS, KEDS, NORSEG,
+       NORSEG SAFETY, PATAGONIA, ROCKFORD, VANS]
+  FB: [ACCESORIOS HP, BSOUL, COLUMBIA, HUSH PUPPIES, HUSH PUPPIES KIDS, KEDS, NORSEG,
+       NORSEG SAFETY, ROCKFORD, SOREL, VANS]
+  HP: [ACCESORIOS HP, HUSH PUPPIES, HUSH PUPPIES KIDS, KEDS, ROCKFORD]
+  HPK: [ACCESORIOS HP, COLUMBIA, HUSH PUPPIES, HUSH PUPPIES KIDS, PATAGONIA, VANS]
+  PAT: [PATAGONIA]
+  RKF: [ACCESORIOS HP, COLUMBIA, MOUNTAIN HARDWEAR, NORSEG, PATAGONIA, ROCKFORD, SOREL]
+  SE: [ACCESORIOS HP, BSOUL, COLUMBIA, HUSH PUPPIES, HUSH PUPPIES KIDS, KEDS, NORSEG, ROCKFORD]
+  VANS: [VANS]

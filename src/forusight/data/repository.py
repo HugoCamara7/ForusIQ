@@ -490,6 +490,7 @@ class FuentesRepository(BigQueryRepository):
             semanas=semanas,
             tiendas_m=maestros.get("tiendas"),
             cadena_m=maestros.get("cadena"),
+            marcas_por_cadena=self.settings.marcas_por_cadena,
         )
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag

@@ -29,7 +29,7 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-forusight = ["config/*.yaml", "data/queries/*.sql"]
+forusight = ["config/*.yaml", "config/*.csv", "data/queries/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

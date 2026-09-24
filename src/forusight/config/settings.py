@@ -38,6 +38,12 @@ class AppSettings(BaseSettings):
     tiendas_excluidas: list[str] = Field(default_factory=list)
     #: Semanas de historia a leer (12 de análisis + 1 de margen).
     semanas_historia: int = 13
+    #: Reemplaza la matriz marca × cadena de config/cadenas.yaml (p. ej. para sumar AZALEIA).
+    marcas_por_cadena: dict[str, list[str]] | None = None
+    #: Proyecto/dataset opcional para guardar aprobaciones en GitHub (ver github_store).
+    github_repository: str | None = None
+    github_token: str | None = None
+    github_branch: str | None = None
 
 
 # --------------------------------------------------------------------------- params
