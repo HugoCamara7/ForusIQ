@@ -327,10 +327,7 @@ def test_sin_maestros_usa_catalogo_neogistica_y_matriz_marca_cadena():
     repo = FuentesRepository(client=fake, secrets=sec)
     inp = repo.cargar_entradas(CORTE)
     dt = inp.dim_tienda.set_index("tienda_id")
-    assert (
-        dt.loc["8", "nombre"] == "HP JOCKEY"
-        and dt.loc["8", "origen_tienda"] == "catalogo Neogística"
-    )
+    assert dt.loc["8", "nombre"] == "HP JOCKEY" and dt.loc["8", "origen_tienda"] == "catálogo Forus"
     assert dt.loc["2", "cadena"] == "RKF" and dt.loc["12", "zona"] == "PROVINCIA"
     assert not dt.loc["999", "activa"] and pd.isna(dt.loc["999", "cadena"])  # no recibe
     tiendas_intro = set(inp.permitidos["tienda_id"])
@@ -380,4 +377,24 @@ def test_tabla_de_venta_ilegible_da_error_con_sugerencias():
     fake.columnas = columnas
     fake.tablas_del_dataset = lambda p, d, patron="": ["stg_pe_reporteria_ventas_tablon_v2"]
     with pytest.raises(ValueError, match="stg_pe_reporteria_ventas_tablon_v2"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+
+
+def test_stock_usa_el_ultimo_corte_y_descarta_el_del_anio_pasado():
+    fake = _FakeBQ()
+    hoy = (CORTE + pd.Timedelta(days=1)).date()
+    fake.datos["cortes"] = pd.DataFrame(
+        {"fecha_corte": [(CORTE - pd.Timedelta(days=364)).date(), hoy], "filas": [9, 9]}
+    )
+    FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+    foto = next(p for n, _, p in fake.consultas if n == "stock_foto")
+    assert foto["fecha_foto"] == hoy
+
+
+def test_sin_corte_de_este_anio_no_usa_el_del_anio_pasado():
+    fake = _FakeBQ()
+    fake.datos["cortes"] = pd.DataFrame(
+        {"fecha_corte": [(CORTE - pd.Timedelta(days=364)).date()], "filas": [9]}
+    )
+    with pytest.raises(ValueError, match="corte de este año"):
         FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)

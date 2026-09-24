@@ -450,9 +450,13 @@ class FuentesRepository(BigQueryRepository):
                 "marca en la barra lateral (se listan las que existen en ARTI)."
             )
         cortes = q("cortes", F.sql_cortes(tablas["stock"], m_s))
-        if cortes.empty:
-            raise ValueError("La tabla de stock no tiene cortes en las últimas 3 semanas.")
-        foto = pd.to_datetime(cortes["fecha_corte"]).max().date()
+        # Último corte = cierre de ayer de este año (el del año pasado queda fuera).
+        foto = pd.to_datetime(cortes["fecha_corte"]).max().date() if len(cortes) else None
+        if foto is None or foto < pd.Timestamp(fecha_corte).date() - dt.timedelta(days=21):
+            raise ValueError(
+                "La tabla de stock no tiene un corte de este año cerca de la semana elegida"
+                + (f" (el último es {foto:%d/%m/%Y})." if foto else ".")
+            )
         diag.fecha_foto = foto.isoformat()
         stock = q(
             "stock_foto",

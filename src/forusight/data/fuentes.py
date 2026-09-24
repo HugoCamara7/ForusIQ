@@ -215,7 +215,11 @@ def sql_ventas(
 
 
 def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
-    """Fechas de corte recientes (sólo lee la columna de fecha): se usa la última."""
+    """Fechas de corte del último año (sólo lee la columna de fecha).
+
+    La tabla trae el cierre del día anterior de este año y el del mismo día del año pasado:
+    se usa la fecha más reciente (este año) y la del año pasado se descarta.
+    """
     f = _c(mapa, "fecha")
     return (
         f"SELECT DATE({f}) AS fecha_corte, COUNT(1) AS filas\nFROM {_t(tabla)}\n"
@@ -493,7 +497,7 @@ def construir_entradas(
             "max_unidades_corrida": np.nan,
         }
     )
-    # Tienda → nombre / cadena: maestro de BigQuery y, si falta, catálogo Neogística.
+    # Tienda → nombre / cadena: maestro de BigQuery y, si falta, catálogo Forus.
     from forusight.data import cadenas as CAD
 
     cat = CAD.catalogo_tiendas().rename(
@@ -502,7 +506,7 @@ def construir_entradas(
     fuentes_t = []
     if tiendas_m is not None and len(tiendas_m):
         fuentes_t.append(("maestro", tiendas_m))
-    fuentes_t.append(("catalogo Neogística", cat))
+    fuentes_t.append(("catálogo Forus", cat))
     dim_t["origen_tienda"] = pd.NA
     for c in ("centro_comercial", "zona", "cadena"):
         dim_t[c] = pd.NA
@@ -586,6 +590,6 @@ def ventana(fecha_corte: pd.Timestamp, semanas: int) -> dict[str, dt.date]:
     return {
         "desde": corte - dt.timedelta(weeks=semanas),
         "hasta": corte,
-        "desde_foto": corte - dt.timedelta(days=21),
+        "desde_foto": corte - dt.timedelta(days=400),
         "hasta_foto": max(corte + dt.timedelta(days=7), dt.date.today() + dt.timedelta(days=1)),
     }
