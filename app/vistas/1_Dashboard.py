@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import streamlit as st
 from app.components.archivo import boton_archivo
@@ -15,6 +16,7 @@ from app.components.ui import (
     stepper,
 )
 
+from forusight.engine import disponibilidad as DISP
 from forusight.engine.reasons import DESCRIPCION_CODIGOS
 
 ss = st.session_state
@@ -144,23 +146,49 @@ with c1, st.container(key="card_tiendas"):
     ]
     html(ranking(filas) if filas else "<p>Ninguna tienda recibe en esta corrida.</p>")
 with c2:
-    with st.container(key="card_cobertura"):
-        section("Cobertura", "Cuánto de lo que falta se cubre", "target")
-        uso = (
-            r["unidades_a_distribuir"] / r["stock_cd_disponible"] if r["stock_cd_disponible"] else 0
+    with st.container(key="card_disponibilidad"):
+        section(
+            "Disponibilidad de tallas",
+            "SKU disponibles / SKU activos; la talla que el CD no tiene no resta",
+            "target",
         )
-        html(
-            medidor(
-                "Necesidad cubierta",
-                r["fill_rate"],
-                f"{r['unidades_a_distribuir']:,} de {r['necesidad_total']:,} unidades",
+        k = DISP.kpis(det)
+        if k.get("activos"):
+            meta = f"meta {DISP.META:.0%} · mínimo {DISP.MINIMO:.0%}"
+            html(
+                medidor(
+                    "Hoy",
+                    k["simple_antes"],
+                    f"{k['activos']:,} SKU activos · ponderada por venta {k['ponderada_antes']:.1%}"
+                    f" · {meta}",
+                )
+                + medidor(
+                    "Después del envío",
+                    k["simple_despues"],
+                    f"ponderada por venta {k['ponderada_despues']:.1%} · quiebre "
+                    f"{1 - k['simple_despues']:.1%} · {meta}",
+                )
             )
-            + medidor(
-                "Stock del CD usado",
-                uso,
-                f"{r['unidades_a_distribuir']:,} de {r['stock_cd_disponible']:,} unidades",
+            if k["wos_despues"] == k["wos_despues"]:  # no NaN
+                st.caption(
+                    f"Semanas de cobertura (WOS): {k['wos_antes']:.1f} hoy → "
+                    f"{k['wos_despues']:.1f} después del envío"
+                )
+        if tiene_cadena:
+            pt = DISP.por_tienda(det).merge(
+                det[["tienda_id", "cadena"]].drop_duplicates("tienda_id"), on="tienda_id"
             )
-        )
+            pc = pt.groupby("cadena").apply(
+                lambda g: pd.Series(
+                    {
+                        "a": np.average(g["disp_antes"], weights=g["flujo"] + 1),
+                        "d": np.average(g["disp_despues"], weights=g["flujo"] + 1),
+                    }
+                ),
+                include_groups=False,
+            )
+            filas = [(c, f"{x.a:.1%}", f"{x.d:.1%}") for c, x in pc.sort_index().iterrows()]
+            html(mini_tabla(filas, ["Cadena", "Hoy", "Después"], num={1, 2}))
     with st.container(key="card_cadenas"):
         section(f"Por {etiqueta}", "Cómo se reparte el envío", "grid")
         por_c = env.groupby(grupo, as_index=False)["cantidad"].sum().nlargest(10, "cantidad")
