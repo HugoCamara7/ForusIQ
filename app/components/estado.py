@@ -196,7 +196,7 @@ def _entradas_reporte(
     from forusight.data import reporte as R
 
     df, fecha = _leer_reporte(contenido)
-    df = R.filtrar_marcas(df, list(marcas) if marcas else None)
+    df = R.solo_revision(R.filtrar_marcas(df, list(marcas) if marcas else None))
     if df.empty:
         raise ValueError("El reporte no tiene filas para las marcas elegidas.")
     wk = R.semanas(df)

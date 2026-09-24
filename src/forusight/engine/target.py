@@ -29,6 +29,7 @@ NO_SIN_DEMANDA = "NO_SIN_DEMANDA"
 NO_SIN_REFERENCIA = "NO_SIN_REFERENCIA"
 NO_AFINIDAD_BAJA = "NO_AFINIDAD_BAJA"
 NO_INTRODUCCION = "NO_INTRODUCCION"
+NO_TALLA_NUNCA_TUVO = "NO_TALLA_NUNCA_TUVO"
 NO_SOBRESTOCK = "NO_SOBRESTOCK"
 NO_SIN_NECESIDAD = "NO_SIN_NECESIDAD"
 
@@ -133,7 +134,11 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     objetivo = np.maximum.reduce([minimo, out["objetivo_curva"].to_numpy(), nivel_talla])
     # MC en sobrestock: no se sube la cobertura, pero la talla vacía vuelve a su mínimo.
     sobre = out["bloqueo_mc"].eq(NO_SOBRESTOCK).to_numpy()
-    out["stock_objetivo"] = np.where(sobre, minimo, objetivo).astype("int64")
+    objetivo = np.where(sobre, minimo, objetivo)
+    # Reposición = reponer lo vendido / anticipar: nunca llenar una talla que la tienda no tuvo
+    # ni vendió (aunque la curva del modelo la incluya).
+    talla_nueva = (repone & out["estado_sku"].eq(NUNCA_TUVO)).to_numpy() & (objetivo > 0)
+    out["stock_objetivo"] = np.where(talla_nueva, 0, objetivo).astype("int64")
 
     pos = out["stock_disponible"] + out["stock_transito"]
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos)).astype("int64")
@@ -143,7 +148,9 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     out["necesidad"] = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
     out["tope_sku_aplicado"] = ~bloqueada & (bruta > tope)
     out["motivo_bloqueo"] = np.where(
-        bloqueada, out["bloqueo_mc"], np.where(bruta == 0, NO_SIN_NECESIDAD, "")
+        bloqueada,
+        out["bloqueo_mc"],
+        np.where(talla_nueva, NO_TALLA_NUNCA_TUVO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
     )
 
     # Curva rota: MC activo que ya está en la tienda y le faltan tallas core.

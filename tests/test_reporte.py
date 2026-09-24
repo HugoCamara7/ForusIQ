@@ -24,7 +24,7 @@ def _fila(centro, nombre, sku, **kw):
         "Nombre Centro": nombre,
         R.GRUPO: "Revision de stock",
         "Reposición Bloqueada": "NO",
-        **{s: 0 for s in SEMANAS},
+        **{s: 1 for s in SEMANAS},  # la tienda vende la talla
         "Demanda Periodo Actual": 0,
         R.PRONOSTICO: 0.5,
         R.ROP: 1,
@@ -65,24 +65,26 @@ def test_lee_reporte_y_regla_de_necesidad():
         _fila("12", "HP CHICLAYO", "1", **{R.FISICO: 2, R.POSICION: 2, R.MAX: 3, R.ROP: 1}),  # 0
         _fila("22", "HP TRUJILLO", "2", **{R.MAX: 7, R.ROP: 3, R.UE: 6}),  # 7 → 1 empaque = 6
         _fila("43", "HP SAN MIGUEL 2", "2", **{R.GRUPO: "Carga Pedidos", R.P: 4, R.MAX: None}),
+        # talla que la tienda nunca tuvo ni vendió: no se llena la curva
+        _fila("44", "HP PLAZA NORTE", "2", **{s: 0 for s in SEMANAS}),
     ]
     df, fecha = R.leer_reporte(_excel(filas))
-    assert fecha == pd.Timestamp("2026-09-23") and df[R.CENTRO].tolist() == ["8", "12", "22", "43"]
-    assert R.necesidad(df).tolist() == [2, 0, 6, 4]
+    assert fecha == pd.Timestamp("2026-09-23")
+    assert df[R.CENTRO].tolist() == ["8", "12", "22", "43", "44"]
+    assert R.necesidad(df).tolist() == [2, 0, 6, 0, 0]  # la carga manual no es reposición
+    assert R.solo_revision(df)[R.CENTRO].tolist() == ["8", "12", "22", "44"]
     assert R.corte(df) == pd.Timestamp("2026-09-21")
 
 
-def test_cd_escaso_prioridad_jockey_y_carga_pendiente():
+def test_cd_escaso_prioridad_jockey():
     filas = [
         _fila("12", "HP CHICLAYO", "1", **{R.CD: 1}),
         _fila("8", "HP JOCKEY", "1", **{R.CD: 1}),
-        _fila("43", "HP SAN MIGUEL 2", "2", **{R.GRUPO: "Carga Pedidos", R.P: 3, R.MAX: None}),
     ]
     df, _ = R.leer_reporte(_excel(filas))
     out = R.distribuir(df, ["JOCKEY"], R.PRIORIDAD_FORUSIGHT).set_index(R.CENTRO)
     assert out.loc["8", R.Q] == 1 and out.loc["12", R.Q] == 0
     assert out.loc["12", R.MOT] == R.STOCK_CD
-    assert out.loc["43", R.Q] == 0 and out.loc["43", R.MOT] == R.DISTRIBUCION
 
 
 def test_igual_al_reporte_respeta_sus_decisiones_y_archivo_mismo_formato():

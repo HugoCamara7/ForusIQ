@@ -123,8 +123,19 @@ def es_revision(df: pd.DataFrame) -> pd.Series:
     return df[GRUPO].astype("string").fillna("").str.contains("Revision de stock")
 
 
+def nunca_tuvo(df: pd.DataFrame) -> pd.Series:
+    """Talla que la tienda no vendió en 12 semanas (ni en la semana en curso) y no tiene stock
+    ni en camino: reponerla sería llenar una curva que nunca tuvo."""
+    wk = semanas(df)
+    venta = df[wk].apply(_num).sum(axis=1) if wk else pd.Series(0.0, index=df.index)
+    venta = venta + _num(df.get("Demanda Periodo Actual", 0))
+    return (venta <= 0) & (_num(df[FISICO]) <= 0) & (posicion(df) <= 0)
+
+
 def necesidad(df: pd.DataFrame) -> pd.Series:
-    """Necesidad por la regla del reporte (revisión de stock) o la carga manual indicada."""
+    """Necesidad de reposición (Revisión de stock): reponer lo vendido y anticipar hasta el nivel
+    máximo. Las cargas manuales no son reposición (0) y una talla que la tienda nunca tuvo ni
+    vendió no se repone (0)."""
     pos = posicion(df)
     maximo = pd.to_numeric(df[MAX], errors="coerce")
     rop = pd.to_numeric(df[ROP], errors="coerce")
@@ -133,15 +144,13 @@ def necesidad(df: pd.DataFrame) -> pd.Series:
     empaques = np.where(bruta > 0, np.maximum(np.floor(bruta / ue + 0.5), 1), 0)
     revision = empaques * ue
     bloqueada = df.get("Reposición Bloqueada", pd.Series("NO", index=df.index)).astype(str).eq("SI")
-    carga_indicada = _num(df.get(Q, 0)) + _num(df.get(P, 0))
-    rev = es_revision(df).to_numpy() & ~bloqueada.to_numpy()
-    nec = np.where(rev, revision, 0)
-    # Carga manual: la cantidad indicada; mixta (carga + revisión): revisión + carga, que el
-    # reporte informa sumadas en cantidad + pendiente.
-    mixta = rev & es_mixta(df).to_numpy()
-    nec = np.where(mixta, np.maximum(nec, carga_indicada), nec)
-    nec = np.where(es_carga(df), carga_indicada, nec)
-    return pd.Series(nec, index=df.index).astype("int64")
+    rev = es_revision(df).to_numpy() & ~bloqueada.to_numpy() & ~nunca_tuvo(df).to_numpy()
+    return pd.Series(np.where(rev, revision, 0), index=df.index).astype("int64")
+
+
+def solo_revision(df: pd.DataFrame) -> pd.DataFrame:
+    """Sólo filas de reposición (Grupo Requerimiento con «Revision de stock»)."""
+    return df.loc[es_revision(df)].reset_index(drop=True)
 
 
 def filtrar_marcas(df: pd.DataFrame, marcas: list[str] | None) -> pd.DataFrame:
@@ -202,20 +211,14 @@ def distribuir(
     fijo = np.zeros(len(out), dtype=bool)
     if criterio == IGUAL_REPORTE:
         # Capacidad de la tienda y cargas manuales: decisión del reporte.
-        mixta = es_mixta(out).to_numpy() & pide
         p_rep = _num(df.get(P, 0)).to_numpy()
         # SKU racionado por el reporte: envió menos que la necesidad sin dejar pendiente.
         racionado = (
             pide & (q_rep < nec.to_numpy()) & (p_rep == 0) & mot_rep.eq(SIN_PENDIENTE).to_numpy()
         )
-        fijo = (
-            (mot_rep.eq("Almacenamiento").to_numpy() & pide)
-            | (carga & (q_rep > 0))
-            | mixta
-            | racionado
-        )
+        fijo = (mot_rep.eq("Almacenamiento").to_numpy() & pide) | racionado
         nec = pd.Series(np.where(racionado, q_rep, nec), index=out.index).astype("int64")
-        cant[fijo] = np.minimum(q_rep[fijo], np.maximum(nec.to_numpy()[fijo], q_rep[fijo]))
+        cant[fijo] = np.minimum(q_rep[fijo], nec.to_numpy()[fijo])
     ndp = _num(out.get("Nivel de Disponibilidad Planificado [%]", 0))
     orden = pd.DataFrame(
         {
@@ -392,6 +395,7 @@ def resultado_desde_reporte(dist: pd.DataFrame, run_id: str, fecha_corte, cd_id:
         [
             (q > 0) & (fisico <= 0) & (v12 > 0),
             q > 0,
+            (nec <= 0) & nunca_tuvo(d).to_numpy(),
             nec <= 0,
             mot.eq("Almacenamiento"),
             mot.eq(DISTRIBUCION),
@@ -400,6 +404,7 @@ def resultado_desde_reporte(dist: pd.DataFrame, run_id: str, fecha_corte, cd_id:
         [
             "ENVIO_QUIEBRE",
             "ENVIO_REPOSICION",
+            "NO_TALLA_NUNCA_TUVO",
             "NO_SIN_NECESIDAD",
             "NO_ALMACENAMIENTO",
             "PEND_DISTRIBUCION",

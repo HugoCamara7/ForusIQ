@@ -97,3 +97,18 @@ def test_liquidadora_ultima_en_el_reparto_y_sin_introducciones():
     por_t = d.groupby("tienda_id")["cantidad"].sum()
     assert por_t["T2"] < por_t["T1"]
     assert d[(d["tienda_id"] == "T2") & d["sku"].isin(nuevo)]["cantidad"].sum() == 0
+
+
+def test_no_se_llena_una_talla_que_la_tienda_nunca_tuvo_ni_vendio():
+    e = Escenario()
+    skus = e.modelo("A-NEG", tallas=("37", "38", "39", "40"))
+    e.tienda("T1", nombre="HP JOCKEY")
+    e.venta_constante("T1", skus[:3], unidades=2)  # la talla 40 nunca se vendió aquí
+    for s in skus[:3]:
+        e.stock_tienda("T1", s, 0)
+    for s in skus:
+        e.stock_cd(s, 20)
+    d = ejecutar(e.inputs(), params(), CORTE).detalle.set_index("sku")
+    assert d.loc[skus[3], "cantidad"] == 0
+    assert d.loc[skus[3], "motivo_codigo"] == "NO_TALLA_NUNCA_TUVO"
+    assert (d.loc[skus[:3], "cantidad"] > 0).all()  # lo vendido sí se repone
