@@ -77,6 +77,14 @@ meta = [f"Semana {_fecha(r['fecha_corte'])}"]
 if diag.get("fecha_foto"):
     meta.append(f"Stock al {_fecha(diag['fecha_foto'])}")
 meta += list(diag.get("marcas") or [])
+if entradas is not None and getattr(entradas, "reporte", None) is not None:
+    from forusight.data.reporte import coincidencia
+
+    meta.append(
+        f"Coincide con el reporte: {coincidencia(entradas.reporte, res.detalle)['pct_filas']:.1%}"
+    )
+elif diag.get("corte_venta"):
+    meta.append(f"Venta hasta {_fecha(diag.get('venta_hasta'))}")
 hero(
     f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
     f"Distribución sugerida desde el CD {r['cd_id']}: "

@@ -34,6 +34,10 @@ def _excel(run_id: str, aprob: str, _res, _entradas, _params, cd_id: str, _canti
 
 
 def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
+    if getattr(entradas, "reporte", None) is not None:  # corrida sobre el reporte del día
+        from forusight.data.reporte import tabla_para_archivo
+
+        return tabla_para_archivo(entradas.reporte, res.detalle, cantidad)
     return construir_tabla(
         res.detalle,
         entradas.ventas,

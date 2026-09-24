@@ -81,10 +81,13 @@ class EngineInputs:
     dim_tienda: pd.DataFrame
     #: Opcional: pares (tienda_id, modelo_id) donde se puede INTRODUCIR un modelo.
     permitidos: pd.DataFrame | None = None
+    #: Opcional: reporte de distribución del día usado como base (filas originales).
+    reporte: pd.DataFrame | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
             permitidos=self.permitidos,
+            reporte=self.reporte,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),

@@ -1,7 +1,7 @@
 import streamlit as st
 from app.components.archivo import boton_archivo, cantidad_aprobada, tabla_archivo
 from app.components.estado import SETTINGS, entradas_de_la_corrida, resultado_o_aviso
-from app.components.ui import hero, kpi_row
+from app.components.ui import hero, kpi_row, section
 
 from forusight.export.excel import a_csv, a_excel
 
@@ -44,6 +44,29 @@ if res is not None:
         + " El archivo trae la hoja de distribución y una hoja Resumen por tienda."
     )
     boton_archivo("archivo_exportacion")
+
+    if getattr(entradas, "reporte", None) is not None:
+        from forusight.data.reporte import coincidencia
+
+        c = coincidencia(entradas.reporte, res.detalle)
+        section("Comparación con el reporte del día", "Cantidad a enviar, fila por fila", "check")
+        kpi_row(
+            [
+                (
+                    "Coincidencia",
+                    f"{c['pct_filas']:.2%}",
+                    f"{c['filas_iguales']:,} de {c['filas']:,} filas",
+                    "check-circle",
+                ),
+                ("Unidades reporte", f"{c['unidades_reporte']:,}", "cantidad original", "file"),
+                (
+                    "Unidades Forusight",
+                    f"{c['unidades_forusight']:,}",
+                    "cantidad recalculada",
+                    "truck",
+                ),
+            ]
+        )
 
     st.dataframe(tabla.loc[envio], hide_index=True, width="stretch", height=420)
 

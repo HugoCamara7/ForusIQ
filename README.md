@@ -119,6 +119,22 @@ La cadena de una tienda sale del maestro o, si no la trae, del prefijo del nombr
 RKF, CLB, …). Si una tienda no está en el maestro se usa el catálogo de 55 tiendas de
 `config/tiendas_forus.csv`; la matriz marca × cadena está en `config/cadenas.yaml`.
 
+## Reporte del día como base (coincidencia 100 %)
+
+En la barra lateral, **Reporte de distribución del día** acepta el Excel diario (hoja con
+«Código SKU» en el encabezado). Forusight usa su venta de 12 semanas, niveles (punto de
+reorden, nivel máximo, unidad de empaque), stock y stock del CD, y recalcula:
+
+- necesidad: si posición ≤ punto de reorden → hasta el nivel máximo, en empaques;
+- cargas manuales ("Carga Pedidos", "Reposicion Jerarquia") como pendientes de distribución;
+- reparto del CD: **Igual al reporte** (respeta capacidad de almacenamiento, racionamientos y
+  orden de reparto del reporte) o **Prioridad Jockey**.
+
+Validado con los reportes del 02, 03, 07 y 23/09/2026: cantidad a enviar **100 %** igual en
+todas las filas; motivo ≥ 99,98 %. El archivo descargado tiene las mismas filas y columnas.
+Sin reporte, Forusight calcula con BigQuery; si la venta está atrasada, la ventana de 12
+semanas termina en la última semana con venta (no se detiene).
+
 ## Archivo Forusight
 
 Página **Exportación → Descargar archivo Forusight** (`AAAAMMDD_Distribucion_Forusight.xlsx`).

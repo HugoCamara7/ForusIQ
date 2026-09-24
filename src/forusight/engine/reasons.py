@@ -40,6 +40,8 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     NO_CD_INSUFICIENTE: "El CD no alcanza; se priorizó a otras tiendas",
     NO_TOPE_TIENDA: "Tope de unidades de la tienda alcanzado",
     NO_MULTIPLO_ENVIO: "Necesidad menor al múltiplo de envío",
+    "PEND_DISTRIBUCION": "Carga manual pendiente de distribución",
+    "NO_ALMACENAMIENTO": "La tienda no tiene capacidad de almacenamiento",
 }
 
 

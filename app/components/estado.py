@@ -157,7 +157,8 @@ def _correr_motor(
         + (cd_bytes or b"")
     ).hexdigest()[:8]
     run_id = f"{fecha_corte.replace('-', '')}-{firma}"
-    return ejecutar(inputs, params, fecha_corte, run_id=run_id, cd_id=ajustes().cd_id), diag
+    corte = diag.get("corte_venta") or fecha_corte  # venta atrasada: su última semana completa
+    return ejecutar(inputs, params, corte, run_id=run_id, cd_id=ajustes().cd_id), diag
 
 
 def correr_motor(
@@ -173,9 +174,80 @@ def correr_motor(
     )
 
 
+# ------------------------------------------------------------------ reporte del día como base
+
+
+@st.cache_resource(show_spinner="Leyendo el reporte…", max_entries=2)
+def _leer_reporte(contenido: bytes) -> tuple[pd.DataFrame, pd.Timestamp | None]:
+    from forusight.data import reporte as R
+
+    return R.leer_reporte(contenido)
+
+
+def marcas_reporte(contenido: bytes) -> list[str]:
+    df, _ = _leer_reporte(contenido)
+    return sorted(df["Marca"].dropna().astype(str).str.strip().unique()) if "Marca" in df else []
+
+
+@st.cache_resource(show_spinner="Preparando datos…", max_entries=4)
+def _entradas_reporte(
+    contenido: bytes, marcas: tuple[str, ...] | None
+) -> tuple[EngineInputs, dict]:
+    from forusight.data import reporte as R
+
+    df, fecha = _leer_reporte(contenido)
+    df = R.filtrar_marcas(df, list(marcas) if marcas else None)
+    if df.empty:
+        raise ValueError("El reporte no tiene filas para las marcas elegidas.")
+    wk = R.semanas(df)
+    diag = {
+        "fecha_foto": (fecha or pd.Timestamp.today()).date().isoformat(),
+        "fuente_venta": "reporte del día",
+        "venta_hasta": (pd.Timestamp(max(wk)) + pd.Timedelta(days=6)).date().isoformat()
+        if wk
+        else None,
+        "marcas": list(marcas or []),
+        "tiendas": [],
+        "notas": [],
+    }
+    inp = R.entradas_desde_reporte(df)
+    diag["tiendas"] = inp.dim_tienda[
+        ["tienda_id", "nombre", "cadena", "centro_comercial", "zona", "origen_tienda", "activa"]
+    ].to_dict("records")
+    return inp, diag
+
+
+@st.cache_resource(show_spinner="Calculando distribución…", max_entries=6)
+def _correr_reporte(
+    contenido: bytes, marcas: tuple[str, ...] | None, criterio: str, params_json: str
+) -> tuple[EngineResult, dict]:
+    from forusight.data import reporte as R
+
+    params = EngineParams.model_validate_json(params_json)
+    inp, diag = _entradas_reporte(contenido, marcas)
+    dist = R.distribuir(inp.reporte, params.prioridad_tiendas.patrones, criterio)
+    firma = hashlib.sha1(
+        contenido[:4096]
+        + len(contenido).to_bytes(8, "big")
+        + criterio.encode()
+        + ",".join(marcas or ()).encode()
+        + params_json.encode()
+    ).hexdigest()[:8]
+    corte = R.corte(inp.reporte)
+    run_id = f"{corte:%Y%m%d}-{firma}"
+    return R.resultado_desde_reporte(dist, run_id, corte, ajustes().cd_id, params), diag
+
+
 def limpiar_cache() -> None:
     """Botón «Actualizar datos»: vuelve a leer BigQuery en la próxima corrida."""
-    for f in (_cargar_entradas, _correr_motor, _marcas_arti, _repositorio):
+    for f in (
+        _cargar_entradas,
+        _correr_motor,
+        _marcas_arti,
+        _repositorio,
+        _entradas_reporte,
+        _correr_reporte,
+    ):
         f.clear()
 
 
@@ -195,11 +267,21 @@ def inicializar() -> None:
     ss.setdefault("aprobacion", None)
     ss.setdefault("cd_archivo", None)
     ss.setdefault("marcas", None)
+    ss.setdefault("reporte", None)  # (bytes, nombre) del reporte de distribución del día
+    ss.setdefault("criterio", "reporte")
     app_styles()
 
 
 def ejecutar_corrida() -> EngineResult:
     ss = st.session_state
+    if ss.get("reporte"):
+        marcas = tuple(ss.get("marcas_reporte") or ()) or None
+        res, diag = _correr_reporte(ss.reporte[0], marcas, ss.criterio, ss.params.model_dump_json())
+        if ss.resultado is None or ss.resultado.run_id != res.run_id:
+            ss.aprobacion = None
+        ss.resultado, ss.diagnostico = res, diag
+        ss.ultima_carga = ("reporte", ss.reporte[0], marcas)
+        return res
     cd = ss.get("cd_archivo") or (None, "")
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
     if ss.fuente == "bigquery" and ss.get("marcas") is not None and not ss.marcas:
@@ -228,7 +310,11 @@ def ejecutar_corrida() -> EngineResult:
 def entradas_de_la_corrida() -> EngineInputs | None:
     """Entradas de la última corrida (desde la caché: no vuelve a leer BigQuery)."""
     carga = st.session_state.get("ultima_carga")
-    return cargar_entradas(*carga)[0] if carga else None
+    if not carga:
+        return None
+    if carga[0] == "reporte":
+        return _entradas_reporte(carga[1], carga[2])[0]
+    return cargar_entradas(*carga)[0]
 
 
 def resultado_o_aviso() -> EngineResult | None:
@@ -267,6 +353,25 @@ def _selector_marcas() -> None:
     )
 
 
+def _selector_marcas_reporte() -> None:
+    ss = st.session_state
+    try:
+        opciones = marcas_reporte(ss.reporte[0])
+    except Exception as exc:
+        st.error(f"No se pudo leer el reporte.\n\n{exc}")
+        ss.reporte = None
+        return
+    pedidas = [m.upper() for m in ajustes().marcas]
+    previas = [m for m in (ss.get("marcas_reporte") or []) if m in opciones]
+    ss.marcas_reporte = st.multiselect(
+        "Marca",
+        opciones,
+        default=previas or [m for m in opciones if m.upper() in pedidas],
+        placeholder="Todas las marcas",
+        help="Vacío = todas las marcas del reporte",
+    )
+
+
 def barra_lateral() -> None:
     """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
@@ -277,14 +382,39 @@ def barra_lateral() -> None:
         opciones = fuentes_disponibles()
         if ss.fuente not in opciones:
             ss.fuente = opciones[0]
-        if ss.fuente == "bigquery":
-            _selector_marcas()
-        ss.fecha_corte = st.date_input(
-            "Semana (lunes)",
-            value=ss.fecha_corte,
-            format="DD/MM/YYYY",
-            help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
+        archivo_rep = st.file_uploader(
+            "Reporte de distribución del día",
+            type=["xlsx"],
+            key="reporte_uploader",
+            help="Opcional. Con el reporte del día, Forusight usa su venta, niveles y stock del "
+            "CD y entrega el mismo archivo recalculado.",
         )
+        ss.reporte = (archivo_rep.getvalue(), archivo_rep.name) if archivo_rep else None
+        if ss.reporte:
+            _selector_marcas_reporte()
+            ss.criterio = (
+                st.segmented_control(
+                    "Cuando el CD no alcanza",
+                    ["reporte", "forusight"],
+                    default=ss.criterio,
+                    format_func={
+                        "reporte": "Igual al reporte",
+                        "forusight": "Prioridad Jockey",
+                    }.get,
+                    help="«Igual al reporte» reproduce la distribución del reporte. «Prioridad "
+                    "Jockey» reparte el CD escaso primero a las tiendas Jockey.",
+                )
+                or ss.criterio
+            )
+        else:
+            if ss.fuente == "bigquery":
+                _selector_marcas()
+            ss.fecha_corte = st.date_input(
+                "Semana (lunes)",
+                value=ss.fecha_corte,
+                format="DD/MM/YYYY",
+                help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
+            )
         if st.button(
             "Ejecutar corrida",
             type="primary",

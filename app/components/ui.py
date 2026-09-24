@@ -291,7 +291,7 @@ def app_styles() -> None:
     .meter-bar i {{ display:block; height:100%; border-radius:6px;
         background:linear-gradient(90deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
     .meter small {{ font-size:11.5px; color:var(--text-muted); font-weight:650; }}
-    .stack-row {{ display:grid; grid-template-columns:70px 1fr 64px; gap:10px; align-items:center;
+    .stack-row {{ display:grid; grid-template-columns:96px 1fr 64px; gap:10px; align-items:center;
         font-size:12.5px; margin-bottom:8px; }}
     .stack-row .lbl {{ font-weight:850; color:#0B1B46; }}
     .stack-row .tot {{ text-align:right; color:var(--text-muted); font-weight:750; }}
