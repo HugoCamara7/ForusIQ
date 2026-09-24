@@ -87,3 +87,13 @@ def test_modo_demo_no_expone_bigquery_aunque_haya_secrets(monkeypatch):
     assert app.session_state.fuente == "synthetic"
     with pytest.raises(ValueError, match="Could not find a navigation page"):
         app.switch_page("app/vistas/6_Conexion.py")
+
+
+def test_dashboard_con_aprobacion_en_curso(monkeypatch):
+    import pandas as pd
+
+    app = _app(monkeypatch)
+    app.sidebar.button[0].click().run()
+    app.session_state["aprobacion"] = pd.DataFrame({"cantidad_aprobada": [1]})
+    app.switch_page("app/vistas/1_Dashboard.py").run()
+    assert not app.exception, app.exception

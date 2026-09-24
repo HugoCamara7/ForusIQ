@@ -105,7 +105,7 @@ hero(
     eyebrow="Dashboard",
     meta=meta,
 )
-stepper(FLUJO, 5 if ss.get("aprobacion") else 4)
+stepper(FLUJO, 5 if ss.get("aprobacion_confirmada") == res.run_id else 4)
 _, zona_boton = st.columns([3, 1])
 with zona_boton:
     boton_archivo("archivo_dashboard")
