@@ -459,3 +459,13 @@ def test_mapeo_de_una_tabla_de_hechos_de_venta():
         "id_producto": "cod_sku",
         "unidades": "cantidad_unidades",
     }
+
+
+def test_mapeo_de_ft_pe_venta_retail():
+    cols = F.COLUMNAS_CONOCIDAS[F.TABLA_VENTA_RETAIL]
+    m = M.mapear(cols, M.ALIAS_VENTAS)
+    assert m["fecha"] == "fecmov_lv" and m["tienda_cod"] == "nlocal_lv"
+    assert m["id_producto"] == "codpro_df" and m["unidades"] == "unidades_venta"
+    assert m["marca"] == "marca" and M.faltantes("ventas", m) == []
+    sql = F.sql_ventas(F.TABLA_VENTA_RETAIL, m, "p.d.arti", M.mapear(COLS_ARTI, M.ALIAS_ARTI), True)
+    assert "`fecmov_lv`" in sql and "`unidades_venta`" in sql and "`nlocal_lv`" in sql

@@ -20,6 +20,7 @@ MAPPING_PATH = Path(__file__).resolve().parents[3] / "data" / "bq_mapping.json"
 #: Venta (tabla `ventas_table`). Alias tomados de Repo Control Center.
 ALIAS_VENTAS: dict[str, list[str]] = {
     "fecha": [
+        "fecmov_lv",  # silver.ft_pe_venta_retail
         "fecha",
         "fecha_venta",
         "fec_venta",
@@ -33,6 +34,7 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "fecha_corte",  # tablas *_bi (como stg_pe_central_stock_bi)
     ],
     "tienda_cod": [
+        "nlocal_lv",  # silver.ft_pe_venta_retail (número de local)
         "cod_tienda",
         "codigo_tienda",
         "tienda",
@@ -64,6 +66,7 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "cantidad_neta",
     ],
     "id_producto": [
+        "codpro_df",  # silver.ft_pe_venta_retail (código interno = CODINT_MA)
         "id_producto",
         "idproducto",
         "sku",

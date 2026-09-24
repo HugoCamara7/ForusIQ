@@ -40,7 +40,48 @@ TABLAS_POR_DEFECTO = {"arti": TABLA_ARTI, "stock": TABLA_STOCK}
 
 #: Esquemas conocidos (Catálogo / Reassign Control Center). Sólo se usan si
 #: INFORMATION_SCHEMA no responde (p. ej. la cuenta no tiene permiso de metadatos).
+#: Venta retail (tabla de hechos). Columnas informadas por Forus.
+TABLA_VENTA_RETAIL = "forus-analitica-prod-datalake.silver.ft_pe_venta_retail"
+
 COLUMNAS_CONOCIDAS = {
+    TABLA_VENTA_RETAIL: [
+        "origen_data",
+        "id_canal_bi",
+        "tipo_venta",
+        "nlocal_lv",
+        "nombre_tienda",
+        "cadena_sitio",
+        "tipdoc_lv",
+        "nrodoc_lv",
+        "terminal_lv",
+        "transac_lv",
+        "fecmov_lv",
+        "nroped_lv",
+        "rutcli_lv",
+        "nombre_cliente",
+        "region",
+        "comuna",
+        "id_sitio",
+        "oc_cliente",
+        "numero_sg",
+        "codpro_df",
+        "codean_df",
+        "marca",
+        "clase",
+        "genero",
+        "modelo",
+        "color",
+        "cod_modelo",
+        "cod_color",
+        "talla",
+        "hora_pago",
+        "unidades_venta",
+        "venta_total_sin_iva",
+        "venta_total_con_iva",
+        "shipping",
+        "monto_cupon_descuento",
+        "costo",
+    ],
     TABLA_STOCK: [
         "fecha_corte",
         "id_producto",
