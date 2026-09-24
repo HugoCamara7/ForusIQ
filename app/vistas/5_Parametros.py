@@ -37,9 +37,21 @@ def widgets(modelo: BaseModel, prefijo: str) -> dict:
                     etiqueta, value=v, step=0.05, format="%.3f", key=k, help=campo.description
                 )
             )
+        elif isinstance(v, str) and nombre in OPCIONES:
+            ops = OPCIONES[nombre]
+            valores[nombre] = st.selectbox(
+                etiqueta, ops, index=ops.index(v) if v in ops else 0, key=k
+            )
         else:
             valores[nombre] = v
     return valores
+
+
+#: Campos de texto con valores cerrados (se eligen en el formulario).
+OPCIONES = {
+    "componentes": ["tiendas+bodega", "tiendas", "bodega"],
+    "redondeo_nivel": ["cercano", "arriba"],
+}
 
 
 tab_form, tab_yaml = st.tabs(["Formulario", "YAML avanzado"])

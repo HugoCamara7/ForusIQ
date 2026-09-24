@@ -155,6 +155,60 @@ if st.button("Revisar venta"):
         st.error(explicar_error(exc))
 
 st.divider()
+st.subheader("Comparar stock del CD con el reporte")
+st.caption(
+    "El CD 320 trae dos columnas en stock_bi (stock_tiendas y stock_bodega). Sube el reporte "
+    "de distribución del día en la barra lateral y compara qué parte coincide con su «Stock en "
+    "CD» (el disponible para repartir)."
+)
+if st.button("Comparar stock del CD", disabled=not st.session_state.get("reporte")):
+    ss = st.session_state
+    from app.components.estado import _leer_reporte
+
+    from forusight.data import reporte as R
+
+    try:
+        rep, _ = _leer_reporte(ss.reporte[0])
+        marcas = tuple(ss.get("marcas_reporte") or ss.get("marcas") or ()) or None
+        rep = R.filtrar_marcas(rep, list(marcas) if marcas else None)
+        entradas_bq, _ = cargar_entradas(
+            "bigquery", pd.Timestamp(ss.fecha_corte).date().isoformat(), None, "", marcas
+        )
+        ss.comparacion_cd = R.comparar_stock_cd(entradas_bq.stock_cd, rep)
+    except Exception as exc:
+        st.error(explicar_error(exc))
+
+if st.session_state.get("comparacion_cd"):
+    ss = st.session_state
+    resumen, detalle = ss.comparacion_cd
+    st.dataframe(
+        resumen,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "opcion": "Stock CD de BigQuery",
+            "sku_iguales": st.column_config.ProgressColumn(
+                "SKU iguales al reporte", format="percent", min_value=0, max_value=1
+            ),
+            "unidades_bigquery": "Unidades BigQuery",
+            "unidades_reporte": "Unidades reporte",
+            "sku_con_mas_stock": "SKU con más stock",
+            "sku_con_menos_stock": "SKU con menos stock",
+        },
+    )
+    mejor = resumen.iloc[0]["opcion"] if len(resumen) else None
+    st.caption(f"Hoy se reparte: «{ss.params.stock_cd.componentes}».")
+    if (
+        mejor
+        and mejor != ss.params.stock_cd.componentes
+        and st.button(f"Usar «{mejor}» como stock del CD", type="primary")
+    ):
+        ss.params.stock_cd.componentes = mejor
+        st.success(f"Listo: el CD se reparte con «{mejor}». Guárdalo en Parámetros.")
+    with st.expander("Detalle por SKU"):
+        st.dataframe(detalle, hide_index=True, width="stretch")
+
+st.divider()
 st.subheader("Prueba de lectura")
 st.caption(
     f"Lee los datos para la semana y la marca elegidas en la barra lateral, con dry run y "

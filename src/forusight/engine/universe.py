@@ -41,8 +41,11 @@ class Base:
     cd: pd.DataFrame  # stock CD por SKU con disponible
 
 
-def preparar_cd(stock_cd: pd.DataFrame) -> pd.DataFrame:
+def preparar_cd(stock_cd: pd.DataFrame, params: EngineParams | None = None) -> pd.DataFrame:
     cd = stock_cd[["sku", "fisico", "reservado", "comprometido"]].copy()
+    comp = params.stock_cd.componentes if params is not None else "tiendas+bodega"
+    if comp != "tiendas+bodega" and f"cd_stock_{comp}" in stock_cd:
+        cd["fisico"] = stock_cd[f"cd_stock_{comp}"].fillna(0).to_numpy()
     cd["disponible"] = np.floor(
         np.maximum(cd["fisico"] - cd["reservado"] - cd["comprometido"], 0.0)
     ).astype("int64")
@@ -107,7 +110,7 @@ def construir_base(
     prod = dim_producto[PROD_COLS].copy()
     tiendas = marcar_prioridad(dim_tienda.loc[dim_tienda["activa"]].copy(), params)
     activas = set(tiendas["tienda_id"])
-    cd = preparar_cd(stock_cd)
+    cd = preparar_cd(stock_cd, params)
     cd = cd.loc[cd["sku"].isin(set(prod["sku"]))]
 
     # --- venta semanal en la ventana, sólo tiendas activas y SKUs conocidos

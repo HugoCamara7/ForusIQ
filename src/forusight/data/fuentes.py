@@ -553,6 +553,9 @@ def construir_entradas(
                 "fisico": (g["stock_tienda"] + g["stock_bodega"]).clip(lower=0),
                 "reservado": 0.0,
                 "comprometido": 0.0,
+                # componentes, para elegir qué parte del CD se reparte (Parámetros → stock_cd)
+                "cd_stock_tiendas": g["stock_tienda"].clip(lower=0),
+                "cd_stock_bodega": g["stock_bodega"].clip(lower=0),
             }
         )
         if stock_cd.empty:
@@ -670,7 +673,10 @@ def construir_entradas(
             ["semana_inicio", "tienda_id", "sku", "unidades", "dias_con_stock"]
         ],
         stock_tienda=st,
-        stock_cd=stock_cd[["sku", "fisico", "reservado", "comprometido"]],
+        stock_cd=stock_cd[
+            ["sku", "fisico", "reservado", "comprometido"]
+            + [c for c in ("cd_stock_tiendas", "cd_stock_bodega") if c in stock_cd]
+        ],
         dim_producto=dim,
         dim_tienda=dim_t,
         permitidos=permitidos,

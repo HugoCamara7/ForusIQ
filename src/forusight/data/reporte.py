@@ -545,3 +545,40 @@ def coincidencia(reporte: pd.DataFrame, detalle: pd.DataFrame) -> dict:
         "unidades_reporte": int(q_rep.sum()),
         "unidades_forusight": int(q_fs.sum()),
     }
+
+
+def comparar_stock_cd(
+    stock_cd: pd.DataFrame, reporte: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compara el stock del CD de BigQuery (por componente) con el «Stock en CD» del reporte.
+
+    Devuelve (resumen por opción, detalle por SKU). Opciones: tiendas+bodega, tiendas, bodega.
+    """
+    from forusight.data.fuentes import sku_canonico
+
+    rep = reporte.drop_duplicates(SKU)
+    r = pd.Series(
+        _num(rep[CD]).to_numpy(), index=sku_canonico(rep[SKU].astype("string")).to_numpy()
+    )
+    b = stock_cd.set_index("sku")
+    comunes = r.index.intersection(b.index)
+    det = pd.DataFrame({"reporte": r.reindex(comunes)})
+    det["tiendas+bodega"] = b["fisico"].reindex(comunes).fillna(0)
+    for comp in ("tiendas", "bodega"):
+        col = f"cd_stock_{comp}"
+        if col in b:
+            det[comp] = b[col].reindex(comunes).fillna(0)
+    filas = []
+    for op in [c for c in ("tiendas+bodega", "tiendas", "bodega") if c in det]:
+        filas.append(
+            {
+                "opcion": op,
+                "sku_iguales": float((det[op] == det["reporte"]).mean()) if len(det) else 0.0,
+                "unidades_bigquery": int(det[op].sum()),
+                "unidades_reporte": int(det["reporte"].sum()),
+                "sku_con_mas_stock": int((det[op] > det["reporte"]).sum()),
+                "sku_con_menos_stock": int((det[op] < det["reporte"]).sum()),
+            }
+        )
+    resumen = pd.DataFrame(filas).sort_values("sku_iguales", ascending=False).reset_index(drop=True)
+    return resumen, det.reset_index(names="sku")

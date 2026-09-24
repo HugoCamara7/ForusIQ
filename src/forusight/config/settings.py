@@ -215,6 +215,12 @@ class NivelPrioridad(_Section):
     importancia: float | None = Field(None, ge=0, le=1.0)  # None = según su venta
 
 
+class StockCdParams(_Section):
+    """Qué parte del stock del CD 320 se reparte a tiendas (stock_bi trae dos columnas)."""
+
+    componentes: str = Field("tiendas+bodega", pattern="^(tiendas\\+bodega|tiendas|bodega)$")
+
+
 class RecepcionParams(_Section):
     """Envíos aprobados que todavía no llegan a la tienda (no están en el corte de stock)."""
 
@@ -274,6 +280,7 @@ class EngineParams(_Section):
     prioridad_tiendas: PrioridadTiendasParams = Field(default_factory=PrioridadTiendasParams)
     recepcion: RecepcionParams = Field(default_factory=RecepcionParams)
     calendario: CalendarioParams = Field(default_factory=CalendarioParams)
+    stock_cd: StockCdParams = Field(default_factory=StockCdParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

@@ -129,3 +129,30 @@ def test_leer_aprobacion_csv_y_github():
     assert usados == ["R1_20260923_120000.csv"]  # la última aprobación de R1; R0 es vieja
     assert p["cantidad"].sum() == 5
     assert isinstance(GitHubStore, type)
+
+
+def test_stock_cd_por_componente_y_comparacion_con_reporte():
+    from forusight.engine.universe import preparar_cd
+
+    cd = pd.DataFrame(
+        {
+            "sku": ["1", "2"],
+            "fisico": [30.0, 5.0],
+            "reservado": 0.0,
+            "comprometido": 0.0,
+            "cd_stock_tiendas": [10.0, 5.0],
+            "cd_stock_bodega": [20.0, 0.0],
+        }
+    )
+    p = params()
+    assert preparar_cd(cd, p)["disponible"].tolist() == [30, 5]
+    p.stock_cd.componentes = "tiendas"
+    assert preparar_cd(cd, p)["disponible"].tolist() == [10, 5]
+    rep, _ = R.leer_reporte(
+        _excel(
+            [_fila("8", "HP JOCKEY", "1", **{R.CD: 10}), _fila("8", "HP JOCKEY", "2", **{R.CD: 5})]
+        )
+    )
+    resumen, detalle = R.comparar_stock_cd(cd, rep)
+    assert resumen.iloc[0]["opcion"] == "tiendas" and resumen.iloc[0]["sku_iguales"] == 1.0
+    assert len(detalle) == 2
