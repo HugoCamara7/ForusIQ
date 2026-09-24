@@ -9,7 +9,7 @@ from forusight.data.repository import SinAlmacenamiento
 
 hero(
     "Revisión y aprobación",
-    "Ajusta cantidades si hace falta y aprueba la propuesta que va a Neogística.",
+    "Ajusta cantidades si hace falta y aprueba la propuesta antes de generar el archivo.",
     eyebrow="Aprobación",
 )
 res = resultado_o_aviso()

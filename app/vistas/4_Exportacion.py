@@ -3,13 +3,13 @@ import streamlit as st
 from app.components.estado import SETTINGS, entradas_de_la_corrida, resultado_o_aviso
 from app.components.ui import hero
 
+from forusight.export.archivo import a_excel_forusight, construir_tabla, nombre_archivo
 from forusight.export.excel import a_csv, a_excel
-from forusight.export.neogistica import a_excel_neogistica, construir_tabla, nombre_archivo
 
 hero(
     "Exportación",
-    "Archivo en el formato de los reportes de Neogística, listo para enviar.",
-    eyebrow="Neogística",
+    "Archivo Forusight con la distribución por tienda, modelo y talla, listo para enviar.",
+    eyebrow="Archivo Forusight",
 )
 res = resultado_o_aviso()
 
@@ -53,19 +53,19 @@ if res is not None:
     )
     hoy = pd.Timestamp.today()
     st.download_button(
-        "Descargar archivo formato Neogística",
-        a_excel_neogistica(tabla, hoy),
+        "Descargar archivo Forusight",
+        a_excel_forusight(tabla, hoy),
         file_name=nombre_archivo(hoy),
         type="primary",
         width="stretch",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.caption(
-        "Mismo formato que el reporte de Neogística (Hoja1 + hoja Resumen por tienda). "
+        "Hoja de distribución + hoja Resumen por tienda. "
         "Sólo incluye columnas con dato real y filas con actividad."
     )
 
-    with st.expander("Otros formatos (detalle Forusight con motivo)"):
+    with st.expander("Otros formatos (detalle con motivo)"):
         col = "cantidad"
         det = detalle
         if cantidad is not None:

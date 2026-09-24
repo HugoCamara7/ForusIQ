@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from app.components.icons import icon
 from app.components.login import cerrar_sesion, puede, rol_actual, usuario_actual
-from app.components.ui import app_styles, html, sidebar_brand
+from app.components.ui import app_styles, html
 from forusight.config.settings import EngineParams, load_params
 from forusight.data.bq_client import (
     bigquery_habilitado,
@@ -266,53 +268,87 @@ def _selector_marcas() -> None:
 
 
 def barra_lateral() -> None:
+    """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
+    raiz = Path(__file__).resolve().parents[2] / "assets"
+    st.logo(str(raiz / "forus_logo.png"), size="large", icon_image=str(raiz / "forus_icon.png"))
     with st.sidebar:
-        sidebar_brand(f"Reposición CD {ajustes().cd_id}")
-        html(f'<div class="sb-user"><b>{usuario_actual()}</b> · {rol_actual()}</div>', sidebar=True)
+        html('<div class="sb-sec">Nueva corrida</div>', sidebar=True)
         opciones = fuentes_disponibles()
         if ss.fuente not in opciones:
             ss.fuente = opciones[0]
-        if len(opciones) > 1:
-            ss.fuente = (
-                st.segmented_control("Datos", opciones, default=ss.fuente, format_func=FUENTES.get)
-                or ss.fuente
-            )
         if ss.fuente == "bigquery":
             _selector_marcas()
-        ss.fecha_corte = st.date_input("Semana de corte (lunes)", value=ss.fecha_corte)
-        if ss.fuente == "bigquery":
-            with st.expander("Stock CD con reservas (opcional)"):
-                archivo = st.file_uploader(
-                    "Archivo STOCK CD",
-                    type=["xlsx", "xls", "csv"],
-                    key="cd_uploader",
-                    label_visibility="collapsed",
-                )
-            ss.cd_archivo = (archivo.getvalue(), archivo.name) if archivo else None
+        ss.fecha_corte = st.date_input(
+            "Semana (lunes)",
+            value=ss.fecha_corte,
+            format="DD/MM/YYYY",
+            help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
+        )
         if st.button(
-            "Ejecutar corrida", type="primary", width="stretch", disabled=not puede("ejecutar")
+            "Ejecutar corrida",
+            type="primary",
+            width="stretch",
+            icon=":material/play_arrow:",
+            disabled=not puede("ejecutar"),
         ):
             try:
                 ejecutar_corrida()
             except Exception as exc:  # errores de datos/credenciales visibles al usuario
                 st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
-        if ss.fuente != "synthetic" and st.button(
-            "Actualizar datos", width="stretch", help="Vuelve a leer BigQuery (ignora la caché)"
-        ):
-            limpiar_cache()
-            try:
-                ejecutar_corrida()
-            except Exception as exc:
-                st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+
         res = ss.resultado
         if res is not None:
             diag = ss.get("diagnostico") or {}
-            texto = f"Corrida `{res.run_id}`"
-            if diag.get("fecha_foto"):
-                texto += f" · stock al {diag['fecha_foto']} · venta: {diag.get('fuente_venta')}"
-            st.caption(texto)
+            filas = [
+                ("Corrida", res.run_id.split("-")[-1]),
+                ("Stock al", _ddmm(diag.get("fecha_foto"))),
+                ("Unidades", f"{res.resumen['unidades_a_distribuir']:,}"),
+            ]
+            html(
+                '<div class="sb-run">'
+                + "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in filas if v)
+                + "</div>",
+                sidebar=True,
+            )
+
+        with st.expander("Más opciones", icon=":material/tune:"):
+            if len(opciones) > 1:
+                ss.fuente = (
+                    st.segmented_control(
+                        "Datos", opciones, default=ss.fuente, format_func=FUENTES.get
+                    )
+                    or ss.fuente
+                )
+            if ss.fuente == "bigquery":
+                archivo = st.file_uploader(
+                    "Stock CD con reservas (opcional)",
+                    type=["xlsx", "xls", "csv"],
+                    key="cd_uploader",
+                )
+                ss.cd_archivo = (archivo.getvalue(), archivo.name) if archivo else None
+            if ss.fuente != "synthetic" and st.button(
+                "Volver a leer BigQuery",
+                width="stretch",
+                icon=":material/refresh:",
+                help="Ignora la caché y trae los datos de nuevo",
+            ):
+                limpiar_cache()
+                try:
+                    ejecutar_corrida()
+                except Exception as exc:
+                    st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+
+        html(
+            f'<div class="sb-user">{icon("shield", 14)}<span><b>{usuario_actual()}</b>'
+            f"<br>{rol_actual()}</span></div>",
+            sidebar=True,
+        )
         if ss.get("sin_login"):
-            st.caption(":material/lock_open: Modo demo (datos sintéticos)")
-        elif st.button("Cerrar sesión", width="stretch"):
+            st.caption(":material/lock_open: Modo demo (datos de ejemplo)")
+        elif st.button("Cerrar sesión", width="stretch", icon=":material/logout:", type="tertiary"):
             cerrar_sesion()
+
+
+def _ddmm(fecha) -> str:
+    return pd.Timestamp(fecha).strftime("%d/%m/%Y") if fecha else ""

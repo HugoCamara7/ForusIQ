@@ -175,8 +175,21 @@ def app_styles() -> None:
     .sb-txt span {{ display:block; font-size:11.5px; color:var(--text-muted); font-weight:650; }}
     .sb-sec {{ font-size:10.5px; font-weight:900; letter-spacing:.13em; text-transform:uppercase;
         color:#93A3BC; margin:16px 4px 6px; }}
-    .sb-user {{ display:flex; align-items:center; gap:7px; font-size:12px; color:#475569;
-        padding:8px 10px; margin:6px 0 4px; border-radius:11px; background:#EDF1F8; }}
+    [data-testid="stSidebarHeader"] {{ padding:22px 20px 6px; }}
+    [data-testid="stSidebarHeader"] img[data-testid="stLogo"] {{ height:40px; max-width:190px; }}
+    [data-testid="stSidebarNavItems"] {{ padding-top:6px; }}
+    [data-testid="stSidebarNavSeparator"] {{ margin:8px 12px; }}
+    .sb-run {{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:6px 0 10px; }}
+    .sb-run div {{ background:#FFFFFF; border:1px solid var(--line); border-radius:11px;
+        padding:7px 8px; }}
+    .sb-run span {{ display:block; font-size:9.5px; font-weight:900; letter-spacing:.08em;
+        text-transform:uppercase; color:#93A3BC; }}
+    .sb-run b {{ display:block; font-size:12.5px; font-weight:900; color:#0B1B46; white-space:nowrap;
+        overflow:hidden; text-overflow:ellipsis; }}
+    .sb-user {{ display:flex; align-items:center; gap:9px; font-size:11.5px; color:#64748B;
+        padding:9px 11px; margin:14px 0 2px; border-radius:12px; background:#EDF1F8;
+        line-height:1.35; word-break:break-all; }}
+    .sb-user svg {{ flex:0 0 auto; color:{BRAND_PRIMARY}; }}
     .sb-user b {{ color:#0B1B46; }}
 
     .hero {{ position:relative; overflow:hidden; border-radius:22px; padding:26px 30px;
@@ -212,7 +225,9 @@ def app_styles() -> None:
     .card {{ background:#FFFFFF; border:1px solid var(--line); border-radius:18px; padding:18px 20px;
         box-shadow:0 10px 26px rgba(15,23,42,.05); margin-bottom:14px; }}
     div[class*="st-key-card_"] {{ background:#FFFFFF; border:1px solid var(--line);
-        border-radius:18px; padding:16px 18px 10px; box-shadow:0 10px 26px rgba(15,23,42,.05); }}
+        border-radius:18px; padding:16px 18px 20px; box-shadow:0 10px 26px rgba(15,23,42,.05); }}
+    div[class*="st-key-card_"] [data-testid="stMarkdownContainer"] {{ margin-bottom:0 !important; }}
+    section[data-testid="stSidebar"] button[kind="primary"] p {{ color:#FFFFFF; font-weight:900; }}
 
     .kpis {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px;
         margin-bottom:16px; }}
@@ -255,6 +270,37 @@ def app_styles() -> None:
     .chip-err {{ background:#FEE2E2; border-color:#FECACA; color:#B91C1C; }}
     .chip-idle {{ background:#F1F5F9; border-color:#E2E8F0; color:#64748B; }}
 
+    .rank {{ display:flex; flex-direction:column; gap:7px; }}
+    .rank-row {{ display:grid; grid-template-columns:minmax(90px,38%) 1fr 52px; gap:10px;
+        align-items:center; font-size:12.5px; }}
+    .rank-lbl {{ color:#33415A; font-weight:750; white-space:nowrap; overflow:hidden;
+        text-overflow:ellipsis; }}
+    .rank-lbl small {{ margin-left:6px; padding:1px 6px; border-radius:6px; background:#EEF3FF;
+        color:{BRAND_PRIMARY}; font-size:10px; font-weight:900; }}
+    .rank-bar {{ height:12px; border-radius:0 4px 4px 0; background:#EEF2F8; overflow:hidden; }}
+    .rank-bar i {{ display:block; height:100%; border-radius:0 4px 4px 0;
+        background:linear-gradient(90deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
+    .rank-val {{ text-align:right; font-weight:900; color:#0B1B46;
+        font-variant-numeric:tabular-nums; }}
+    .meter {{ margin:4px 0 16px; }}
+    .meter-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
+    .meter-top b {{ font-size:13px; font-weight:900; color:#0B1B46; }}
+    .meter-top span {{ font-size:24px; font-weight:950; color:#0B1B46; }}
+    .meter-bar {{ height:10px; border-radius:6px; background:#EEF2F8; margin:6px 0 5px;
+        overflow:hidden; }}
+    .meter-bar i {{ display:block; height:100%; border-radius:6px;
+        background:linear-gradient(90deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
+    .meter small {{ font-size:11.5px; color:var(--text-muted); font-weight:650; }}
+    .stack-row {{ display:grid; grid-template-columns:70px 1fr 64px; gap:10px; align-items:center;
+        font-size:12.5px; margin-bottom:8px; }}
+    .stack-row .lbl {{ font-weight:850; color:#0B1B46; }}
+    .stack-row .tot {{ text-align:right; color:var(--text-muted); font-weight:750; }}
+    .stack {{ display:flex; gap:2px; height:16px; border-radius:5px; overflow:hidden; }}
+    .stack i {{ display:block; height:100%; }}
+    .legend {{ display:flex; flex-wrap:wrap; gap:14px; margin:0 0 12px; font-size:12px;
+        color:#33415A; font-weight:750; }}
+    .legend span {{ display:inline-flex; align-items:center; gap:6px; }}
+    .legend i {{ width:10px; height:10px; border-radius:3px; display:inline-block; }}
     table.mini {{ width:100%; border-collapse:collapse; font-size:12.5px; }}
     table.mini th {{ text-align:left; padding:7px 10px; background:#F3F6FB; color:#0B1B46;
         font-weight:900; border-bottom:1px solid var(--line); }}
@@ -284,18 +330,6 @@ def app_styles() -> None:
         padding:10px 14px; }}
     </style>
     """)
-
-
-def sidebar_brand(subtitulo: str = "") -> None:
-    html(
-        f"""
-    <div class="sb-brand">
-        <div class="sb-logo">{forus_logo_html()}</div>
-        <div class="sb-txt"><b>Forusight</b><span>{escape(subtitulo)}</span></div>
-    </div>
-    """,
-        sidebar=True,
-    )
 
 
 # ------------------------------------------------------------------ componentes
@@ -391,3 +425,48 @@ def mini_tabla(
         cuerpo.append("<tr>" + "".join(tds) + "</tr>")
     extra = "<th></th>" if barra is not None else ""
     return f'<table class="mini"><tr>{cab}{extra}</tr>{"".join(cuerpo)}</table>'
+
+
+def ranking(filas: list[tuple[str, float, str]], unidad: str = "u.") -> str:
+    """Barras horizontales en HTML: (etiqueta, valor, etiqueta corta opcional)."""
+    maximo = max((v for _, v, _ in filas), default=0) or 1
+    partes = []
+    for lbl, v, tag in filas:
+        chip = f"<small>{escape(tag)}</small>" if tag else ""
+        partes.append(
+            f'<div class="rank-row" title="{escape(lbl)}: {v:,.0f} {unidad}">'
+            f'<span class="rank-lbl">{escape(lbl)}{chip}</span>'
+            f'<span class="rank-bar"><i style="width:{100 * v / maximo:.1f}%"></i></span>'
+            f'<span class="rank-val">{v:,.0f}</span></div>'
+        )
+    return f'<div class="rank">{"".join(partes)}</div>'
+
+
+def medidor(titulo: str, valor: float, detalle: str) -> str:
+    v = max(0.0, min(1.0, float(valor or 0)))
+    return (
+        f'<div class="meter"><div class="meter-top"><b>{escape(titulo)}</b><span>{v:.0%}</span>'
+        f'</div><div class="meter-bar"><i style="width:{100 * v:.1f}%"></i></div>'
+        f"<small>{escape(detalle)}</small></div>"
+    )
+
+
+def apiladas(grupos: dict[str, dict[str, int]], colores: dict[str, str]) -> str:
+    """Partes de un todo por grupo, orden y color fijos por serie, con leyenda."""
+    ley = "".join(
+        f'<span><i style="background:{c}"></i>{escape(k)}</span>' for k, c in colores.items()
+    )
+    filas = []
+    for g, partes in grupos.items():
+        tot = sum(partes.values()) or 1
+        seg = "".join(
+            f'<i title="{escape(g)} · {escape(k)}: {partes.get(k, 0):,} ({partes.get(k, 0) / tot:.0%})" '
+            f'style="width:{100 * partes.get(k, 0) / tot:.2f}%;background:{c}"></i>'
+            for k, c in colores.items()
+            if partes.get(k, 0)
+        )
+        filas.append(
+            f'<div class="stack-row"><span class="lbl">{escape(g)}</span>'
+            f'<span class="stack">{seg}</span><span class="tot">{tot:,}</span></div>'
+        )
+    return f'<div class="legend">{ley}</div>{"".join(filas)}'
