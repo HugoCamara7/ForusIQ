@@ -113,6 +113,7 @@ if diag.get("dia_reposicion"):
         f"Reposición del {nombres[dia_semana(diag['dia_reposicion'])]} "
         f"{_fecha(diag['dia_reposicion'])}: {diag.get('tiendas_hoy', 0)} de "
         f"{diag.get('tiendas_total', 0)} tiendas"
+        + (f" · rutas: {', '.join(diag['malls_hoy'])}" if diag.get("malls_hoy") else "")
     )
 pend_d = diag.get("pendientes") or {}
 if pend_d.get("unidades"):

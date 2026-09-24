@@ -1,60 +1,60 @@
-codigo_tienda,nombre_tienda,leadtime_dias,revision_dias,dias,confirmado,fuente
-2,RKF JOCKEY,3.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-7,HP CHACARILLA,,7.0,MA,si,Forus (período oficial) + rutas por día
-8,HP JOCKEY,3.0,2.33,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-12,HP CHICLAYO,6.0,2.33,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-16,HP LARCOMAR,5.0,3.5,"LU,JU",si,Forus (período oficial) + rutas por día
-18,HPK JOCKEY,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-21,SE SURCO,3.0,7.0,JU,si,reportes + rutas por día
-22,HP TRUJILLO,5.0,2.33,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-23,HP CHORRILLOS,4.0,7.0,JU,si,Forus (período oficial) + rutas por día
-26,RKF CUSCO,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-29,RKF TRUJILLO,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-30,HP PLAZA ANGAMOS,,7.0,MA,si,Forus (período oficial) + rutas por día
-31,RKF AREQUIPA,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-37,HP PIURA 2,6.0,2.33,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-43,HP SAN MIGUEL 2,6.0,3.5,"LU,JU",si,Forus (período oficial) + rutas por día
-44,HP PLAZA NORTE,4.0,3.5,"MA,JU",si,Forus (período oficial) + rutas por día
-46,HPK PLAZA NORTE,4.0,3.5,"MA,JU",si,reportes + rutas por día
-52,RKF LARCOMAR 2,4.0,3.5,"LU,JU",si,reportes + rutas por día
-58,CLB CAJAMARCA,5.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-59,CLB JOCKEY PLAZA,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-60,RKF CUSCO 2,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-61,HP CUSCO,6.0,3.5,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-88,DH AEROPUERTO 2,1.0,7.0,MI,si,reportes + rutas por día
-95,FB OVALO PAPAL TRUJILLO,3.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-97,HP SALAVERRY 2,,3.5,"MA,VI",si,Forus (período oficial) + rutas por día
-111,DH LURIN,1.0,7.0,MI,si,reportes + rutas por día
-112,CLB LARCOMAR,6.0,3.5,"LU,JU",si,reportes + rutas por día
-113,CLB PLAZA NORTE,3.0,3.5,"MA,JU",si,reportes + rutas por día
-114,CLB SAN MIGUEL,3.0,3.5,"LU,JU",si,reportes + rutas por día
-115,CLB CAYMA,5.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-116,HP CAYMA,6.0,2.33,"LU,MI,VI",si,Forus (período oficial) + rutas por día
-117,PAT CUSCO,6.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-118,CLB CUSCO,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-122,PAT LARCOMAR,5.0,3.5,"LU,JU",si,reportes + rutas por día
-126,CLB PIURA,3.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-128,CLB CUSCO PLAZA,5.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-129,HP LA MOLINA,2.0,7.0,MI,si,Forus (período oficial) + rutas por día
-130,RKF LA MOLINA,2.0,7.0,MI,si,reportes + rutas por día
-131,CLB CHICLAYO,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-132,CLB ICA,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-133,RKF ASIA 2,2.0,7.0,MI,si,reportes + rutas por día
-137,BSOUL JOCKEY PLAZA,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-138,BSOUL LA MOLINA,5.0,7.0,MI,si,reportes + rutas por día
-139,CLB LA MOLINA,2.0,7.0,MI,si,reportes + rutas por día
-140,CLB HUANCAYO,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-141,CLB PORONGOCHE,5.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-142,CLB MALL DEL SUR,2.5,7.0,MI,si,reportes + rutas por día
-143,CLB PARQUE LA MOLINA,2.5,7.0,MI,si,reportes + rutas por día
-146,CLB MINKA,3.0,7.0,MI,si,reportes + rutas por día
-147,RKF CAYMA,3.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-148,RKF ICA,4.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-149,VANS PLAZA NORTE,2.0,3.5,"MA,JU",si,reportes + rutas por día
-150,VANS JOCKEY PLAZA,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-152,VANS PARQUE LA MOLINA,2.5,7.0,MI,si,reportes + rutas por día
-153,VANS SAN MIGUEL,3.0,3.5,"LU,JU",si,reportes + rutas por día
-155,VANS TRUJILLO,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-156,VANS PIURA,3.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-157,VANS CHICLAYO,2.0,2.33,"LU,MI,VI",si,reportes + rutas por día
-159,FB MINKA,3.0,7.0,MI,si,reportes + rutas por día
+codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
+2,RKF JOCKEY,Jockey Plaza,3.0,2.33,reportes
+7,HP CHACARILLA,Chacarilla,,7.0,Forus (período oficial)
+8,HP JOCKEY,Jockey Plaza,3.0,2.33,Forus (período oficial)
+12,HP CHICLAYO,Provincia,6.0,2.33,Forus (período oficial)
+16,HP LARCOMAR,Larcomar,5.0,3.5,Forus (período oficial)
+18,HPK JOCKEY,Jockey Plaza,2.0,2.33,reportes
+21,SE SURCO,Surco,3.0,7.0,reportes
+22,HP TRUJILLO,Provincia,5.0,2.33,Forus (período oficial)
+23,HP CHORRILLOS,Chorrillos,4.0,7.0,Forus (período oficial)
+26,RKF CUSCO,Provincia,4.0,2.33,reportes
+29,RKF TRUJILLO,Provincia,4.0,2.33,reportes
+30,HP PLAZA ANGAMOS,Plaza Angamos,,7.0,Forus (período oficial)
+31,RKF AREQUIPA,Provincia,4.0,2.33,reportes
+37,HP PIURA 2,Provincia,6.0,2.33,Forus (período oficial)
+43,HP SAN MIGUEL 2,Plaza San Miguel,6.0,3.5,Forus (período oficial)
+44,HP PLAZA NORTE,Plaza Norte,4.0,3.5,Forus (período oficial)
+46,HPK PLAZA NORTE,Plaza Norte,4.0,3.5,reportes
+52,RKF LARCOMAR 2,Larcomar,4.0,3.5,reportes
+58,CLB CAJAMARCA,Provincia,5.0,2.33,reportes
+59,CLB JOCKEY PLAZA,Jockey Plaza,2.0,2.33,reportes
+60,RKF CUSCO 2,Provincia,4.0,2.33,reportes
+61,HP CUSCO,Provincia,6.0,3.5,Forus (período oficial)
+88,DH AEROPUERTO 2,Aeropuerto,1.0,7.0,reportes
+95,FB OVALO PAPAL TRUJILLO,Provincia,3.0,2.33,reportes
+97,HP SALAVERRY 2,Real Plaza Salaverry,,3.5,Forus (período oficial)
+111,DH LURIN,Lurín,1.0,7.0,reportes
+112,CLB LARCOMAR,Larcomar,6.0,3.5,reportes
+113,CLB PLAZA NORTE,Plaza Norte,3.0,3.5,reportes
+114,CLB SAN MIGUEL,Plaza San Miguel,3.0,3.5,reportes
+115,CLB CAYMA,Provincia,5.0,2.33,reportes
+116,HP CAYMA,Provincia,6.0,2.33,Forus (período oficial)
+117,PAT CUSCO,Provincia,6.0,2.33,reportes
+118,CLB CUSCO,Provincia,4.0,2.33,reportes
+122,PAT LARCOMAR,Larcomar,5.0,3.5,reportes
+126,CLB PIURA,Provincia,3.0,2.33,reportes
+128,CLB CUSCO PLAZA,Provincia,5.0,2.33,reportes
+129,HP LA MOLINA,La Molina,2.0,7.0,Forus (período oficial)
+130,RKF LA MOLINA,La Molina,2.0,7.0,reportes
+131,CLB CHICLAYO,Provincia,4.0,2.33,reportes
+132,CLB ICA,Provincia,4.0,2.33,reportes
+133,RKF ASIA 2,Asia,2.0,7.0,reportes
+137,BSOUL JOCKEY PLAZA,Jockey Plaza,2.0,2.33,reportes
+138,BSOUL LA MOLINA,La Molina,5.0,7.0,reportes
+139,CLB LA MOLINA,La Molina,2.0,7.0,reportes
+140,CLB HUANCAYO,Provincia,4.0,2.33,reportes
+141,CLB PORONGOCHE,Provincia,5.0,2.33,reportes
+142,CLB MALL DEL SUR,Mall del Sur,2.5,7.0,reportes
+143,CLB PARQUE LA MOLINA,La Molina,2.5,7.0,reportes
+146,CLB MINKA,Minka,3.0,7.0,reportes
+147,RKF CAYMA,Provincia,3.0,2.33,reportes
+148,RKF ICA,Provincia,4.0,2.33,reportes
+149,VANS PLAZA NORTE,Plaza Norte,2.0,3.5,reportes
+150,VANS JOCKEY PLAZA,Jockey Plaza,2.0,2.33,reportes
+152,VANS PARQUE LA MOLINA,La Molina,2.5,7.0,reportes
+153,VANS SAN MIGUEL,Plaza San Miguel,3.0,3.5,reportes
+155,VANS TRUJILLO,Provincia,2.0,2.33,reportes
+156,VANS PIURA,Provincia,3.0,2.33,reportes
+157,VANS CHICLAYO,Provincia,2.0,2.33,reportes
+159,FB MINKA,Minka,3.0,7.0,reportes

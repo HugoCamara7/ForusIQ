@@ -170,6 +170,7 @@ def _correr_motor(
         "dia_reposicion": dia,
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
+        "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
     }
     firma = hashlib.sha1(
         "|".join(

@@ -1,16 +1,16 @@
 """Calendario de reposición y prioridad de tiendas.
 
-* ``config/calendario_tiendas.csv`` — por tienda: lead time y período de revisión (días) y
-  los días en que se repone (LU, MA, MI, JU, VI, SA, DO). Derivado de los reportes de
-  distribución (02, 03, 07, 23 y 24/09/2026): período 2,3 días = lunes, miércoles y viernes;
-  3,5 días = lunes y jueves; 7 días = un día por semana.
-* ``config/rutas_dia.csv`` — rutas de despacho por día (hoja de rutas de Forus): qué zona
-  sale cada día (p. ej. Jockey LU/MI/VI, Plaza Norte MA/JU, provincia LU/MI/VI). Manda sobre
-  los días del calendario y cubre por nombre a las tiendas que no están en él.
+* ``config/rutas_mall.csv`` — rutas de despacho de Forus: el camión sale por **mall**, así que
+  todas las tiendas de un mismo centro comercial (de cualquier cadena) reciben los mismos
+  días. Jockey Plaza LU/MI/VI, Larcomar y Plaza San Miguel LU/JU, Plaza Norte y Mega Plaza
+  MA/JU, Salaverry MA/VI, provincia LU/MI/VI, etc.
+* ``config/calendario_tiendas.csv`` — por tienda: su mall, lead time y período de revisión
+  (días). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
+  de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
 * ``config/prioridad_tiendas.csv`` — prioridad por venta (A, B, C) por marca.
 
-En un día dado sólo reciben las tiendas que reponen ese día; la cobertura de cada tienda es
-su lead time + su período de revisión (como el reporte), no un valor fijo.
+En un día dado sólo reciben las tiendas cuyo mall tiene ruta ese día; la cobertura de cada
+tienda es su lead time + su período de revisión (como el reporte), no un valor fijo.
 """
 
 from __future__ import annotations
@@ -37,16 +37,26 @@ def prioridades() -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def rutas() -> pd.DataFrame:
-    return pd.read_csv(CONFIG / "rutas_dia.csv", dtype=str)
+    return pd.read_csv(CONFIG / "rutas_mall.csv", dtype=str)
 
 
-def dias_por_ruta(nombre: str) -> str:
-    """Días de despacho según la ruta cuya zona aparece en el nombre de la tienda ('' si no)."""
-    texto = str(nombre or "").upper()
-    for patron, dias in zip(rutas()["patron"], rutas()["dias"], strict=True):
-        if re.search(rf"\b{re.escape(patron)}\b", texto):
-            return dias
+def mall_de(*textos) -> str:
+    """Mall (ruta) cuyo nombre aparece en alguno de los textos, en orden ('' si ninguno)."""
+    r = rutas()
+    for texto in textos:
+        t = str(texto or "").upper() if not pd.isna(texto) else ""
+        if not t:
+            continue
+        for mall, patrones in zip(r["mall"], r["patrones"], strict=True):
+            if any(re.search(rf"\b{re.escape(p)}\b", t) for p in patrones.split("|")):
+                return mall
     return ""
+
+
+def dias_de_mall(mall: str) -> str:
+    """Días de despacho del mall ('LU,MI,VI'); '' si no tiene ruta."""
+    d = rutas().drop_duplicates("mall").set_index("mall")["dias"]
+    return str(d.get(mall, "")) if mall else ""
 
 
 def dia_semana(fecha) -> str:
@@ -68,14 +78,21 @@ def aplicar(
     out["revision_dias"] = (
         ids.map(cal["revision_dias"]).fillna(c.revision_dias_defecto).astype(float)
     )
-    # Tienda sin días en el calendario: no sabemos cuándo repone → recibe cualquier día.
-    dias = ids.map(cal["dias"]).fillna("").astype(str)
-    nombres = out["nombre"] if "nombre" in out else pd.Series("", index=out.index)
-    por_ruta = pd.Series([dias_por_ruta(n) for n in nombres], index=out.index)
-    dias = dias.where(dias.ne(""), por_ruta)
-    # Revisión de una tienda fuera del calendario: 7 días / despachos por semana de su ruta.
-    sin_cal = ~ids.isin(cal.index) & por_ruta.ne("")
-    out.loc[sin_cal, "revision_dias"] = [round(7 / len(d.split(",")), 2) for d in por_ruta[sin_cal]]
+    # El mall manda: el del calendario; si no, centro comercial, zona o nombre de la tienda.
+    col = lambda n: out[n] if n in out else pd.Series("", index=out.index)  # noqa: E731
+    del_cal = ids.map(cal["mall"]).fillna("").astype(str)
+    out["mall"] = [
+        m or mall_de(cc, z, n)
+        for m, cc, z, n in zip(
+            del_cal, col("centro_comercial"), col("zona"), col("nombre"), strict=True
+        )
+    ]
+    dias = out["mall"].map(dias_de_mall)
+    out["dias_reposicion"] = dias
+    # Revisión de una tienda fuera del calendario: 7 días / despachos por semana de su mall.
+    sin_cal = ~ids.isin(cal.index) & dias.ne("")
+    out.loc[sin_cal, "revision_dias"] = [round(7 / len(d.split(",")), 2) for d in dias[sin_cal]]
+    # Tienda sin mall con ruta: no sabemos cuándo repone → recibe cualquier día.
     out["recibe_hoy"] = [(not d) or (dia in d.split(",")) for d in dias] if c.aplicar else True
     pr = prioridades()
     pedidas = {m.strip().upper() for m in (marcas or [])}

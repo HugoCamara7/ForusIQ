@@ -3,7 +3,9 @@ import streamlit as st
 from app.components.estado import ajustes
 from app.components.ui import chips, hero, html, kpi_row, section
 
+from forusight.config.settings import load_params
 from forusight.data import cadenas as CAD
+from forusight.data import calendario as CAL
 
 ss = st.session_state
 diag = ss.get("diagnostico") or {}
@@ -29,6 +31,10 @@ if res is not None and "tienda_id" in tiendas:
     env = res.detalle.groupby("tienda_id")["cantidad"].sum().rename("unidades")
     tiendas = tiendas.merge(env, on="tienda_id", how="left").fillna({"unidades": 0})
 tiendas = tiendas[tiendas["origen_tienda"].notna()]  # sólo tiendas identificadas
+if "tienda_id" in tiendas and len(tiendas):
+    params = ss.get("params") or load_params(ajustes().params_path)
+    cal_t = CAL.aplicar(tiendas, ss.get("fecha_corte") or pd.Timestamp.today(), params)
+    tiendas = tiendas.assign(mall=cal_t["mall"], dias_reposicion=cal_t["dias_reposicion"])
 
 todas_marcas = sorted({m for ms in matriz.values() for m in ms})
 kpi_row(
@@ -45,7 +51,45 @@ kpi_row(
     ]
 )
 
-tab_m, tab_t = st.tabs(["Marcas por cadena", "Tiendas"])
+tab_m, tab_r, tab_t = st.tabs(["Marcas por cadena", "Rutas por mall", "Tiendas"])
+
+with tab_r:
+    section(
+        "Qué mall sale cada día",
+        "El camión sale por mall: todas las tiendas de un centro comercial reciben el mismo "
+        "día, sin importar la cadena. Sólo reciben las tiendas cuyo mall tiene ruta ese día.",
+        "truck",
+    )
+    rutas = CAL.rutas().drop_duplicates("mall")
+    por_mall = (
+        tiendas.groupby("mall")["nombre"].apply(lambda x: ", ".join(sorted(map(str, x))))
+        if "mall" in tiendas
+        else pd.Series(dtype=str)
+    )
+    nombres = {"LU": "Lunes", "MA": "Martes", "MI": "Miércoles", "JU": "Jueves", "VI": "Viernes"}
+    cab = "".join(f"<th style='text-align:center'>{v}</th>" for v in nombres.values())
+    filas = []
+    for mall, dias in zip(rutas["mall"], rutas["dias"], strict=True):
+        ds = dias.split(",")
+        celdas = "".join(
+            "<td style='text-align:center;color:#16A34A;font-weight:900'>●</td>"
+            if d in ds
+            else "<td style='text-align:center;color:#CBD5E1'>·</td>"
+            for d in nombres
+        )
+        lista = por_mall.get(mall, "")
+        filas.append(
+            f"<tr><td><b>{mall}</b><br><small style='color:#93A3BC'>{lista or '—'}</small>"
+            f"</td>{celdas}</tr>"
+        )
+    html(
+        "<div class='card' style='overflow-x:auto'><table class='mini'><tr><th>Mall</th>"
+        f"{cab}</tr>{''.join(filas)}</table></div>"
+    )
+    if "mall" in tiendas:
+        sin = tiendas.loc[tiendas["mall"].eq(""), "nombre"].astype(str).tolist()
+        if sin:
+            st.caption("Sin mall con ruta (reciben cualquier día): " + ", ".join(sorted(sin)) + ".")
 
 with tab_m:
     section(
@@ -102,7 +146,16 @@ with tab_t:
     vista = tiendas if not elegidas else tiendas[tiendas["cadena"].isin(elegidas)]
     columnas = [
         c
-        for c in ("tienda_id", "nombre", "cadena", "centro_comercial", "zona", "unidades")
+        for c in (
+            "tienda_id",
+            "nombre",
+            "cadena",
+            "mall",
+            "dias_reposicion",
+            "centro_comercial",
+            "zona",
+            "unidades",
+        )
         if c in vista.columns
     ]
     maximo = float(vista["unidades"].max()) if "unidades" in vista and len(vista) else 1.0
@@ -115,6 +168,8 @@ with tab_t:
             "tienda_id": "Código",
             "nombre": "Tienda",
             "cadena": "Cadena",
+            "mall": "Mall (ruta)",
+            "dias_reposicion": "Días de despacho",
             "centro_comercial": "Centro comercial",
             "zona": "Zona",
             "unidades": st.column_config.ProgressColumn(

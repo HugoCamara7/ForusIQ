@@ -23,25 +23,35 @@ def _escenario():
 
 def test_calendario_de_los_reportes():
     cal = CAL.calendario().set_index("codigo_tienda")
-    assert cal.loc["8", "dias"] == "LU,MI,VI" and cal.loc["23", "dias"] == "JU"
+    assert cal.loc["8", "mall"] == "Jockey Plaza" and cal.loc["23", "mall"] == "Chorrillos"
     assert cal.loc["43", "revision_dias"] == 3.5 and cal.loc["129", "revision_dias"] == 7.0
     assert CAL.dia_semana("2026-09-24") == "JU"
 
 
-def test_rutas_por_dia():
+def test_rutas_por_mall():
     cal = CAL.calendario().set_index("codigo_tienda")
-    assert cal.loc["44", "dias"] == "MA,JU"  # Plaza Norte: martes y jueves
-    assert cal.loc["97", "dias"] == "MA,VI"  # Salaverry: martes y viernes
-    assert cal.loc["7", "dias"] == "MA" and cal.loc["30", "dias"] == "MA"
-    assert cal.loc["61", "dias"] == "LU,MI,VI"  # provincia
-    assert CAL.dias_por_ruta("HP MEGA PLAZA") == "MA,JU"
-    assert CAL.dias_por_ruta("CLB HUALLAGA") == "MA"
-    assert CAL.dias_por_ruta("HP AREQUIPA") == "LU,MI,VI"
-    assert CAL.dias_por_ruta("HP NUEVA") == ""
-    dim = pd.DataFrame({"tienda_id": ["900", "901"], "nombre": ["HP MEGA PLAZA", "HP NUEVA"]})
+    # todas las tiendas del mismo mall comparten ruta, sea cual sea la cadena
+    pn = cal.loc[["44", "46", "113", "149"], "mall"]
+    assert set(pn) == {"Plaza Norte"} and CAL.dias_de_mall("Plaza Norte") == "MA,JU"
+    assert CAL.dias_de_mall(cal.loc["97", "mall"]) == "MA,VI"  # Salaverry
+    assert CAL.dias_de_mall(cal.loc["7", "mall"]) == "MA"  # Chacarilla
+    assert CAL.dias_de_mall(cal.loc["61", "mall"]) == "LU,MI,VI"  # provincia
+    assert CAL.mall_de("CC MEGAPLAZA") == "Mega Plaza"
+    assert CAL.mall_de("", "PROVINCIA") == "Provincia"
+    assert CAL.mall_de("HP NUEVA") == ""
+    dim = pd.DataFrame(
+        {
+            "tienda_id": ["900", "901", "902"],
+            "nombre": ["HP NUEVA 1", "HP NUEVA 2", "HP NUEVA 3"],
+            "centro_comercial": ["MEGA PLAZA", None, None],
+            "zona": [None, "PROVINCIA", None],
+        }
+    )
     t = CAL.aplicar(dim, "2026-09-22", params(), None).set_index("tienda_id")  # martes
-    assert t.loc["900", "recibe_hoy"] and t.loc["900", "revision_dias"] == 3.5
-    assert t.loc["901", "recibe_hoy"]  # sin ruta ni calendario: cualquier día
+    assert t.loc["900", "mall"] == "Mega Plaza" and t.loc["900", "recibe_hoy"]
+    assert t.loc["900", "revision_dias"] == 3.5
+    assert t.loc["901", "mall"] == "Provincia" and not t.loc["901", "recibe_hoy"]
+    assert t.loc["902", "recibe_hoy"]  # sin mall con ruta: cualquier día
 
 
 def test_solo_reciben_las_tiendas_que_reponen_ese_dia():
