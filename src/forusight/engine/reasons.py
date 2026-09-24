@@ -33,6 +33,7 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     "NO_SIN_DEMANDA": "Tuvo exposición suficiente y no vendió",
     "NO_SIN_REFERENCIA": "Sin historia ni referencias de venta",
     "NO_AFINIDAD_BAJA": "Afinidad bajo el umbral para introducir",
+    "NO_INTRODUCCION": "Modelo nuevo para la tienda: entra por carga manual",
     "NO_SOBRESTOCK": "Cobertura actual sobre el umbral de sobrestock",
     "NO_SIN_NECESIDAD": "Stock + tránsito cubren el objetivo",
     "NO_CURVA_MINIMA_CD": "El CD no cubre la curva mínima para introducir",
@@ -126,6 +127,11 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
         )
     elif c == "NO_SIN_REFERENCIA":
         t = "No se envía: sin historia en la tienda ni referencias de venta en tiendas similares."
+    elif c == "NO_INTRODUCCION":
+        t = (
+            "No se envía: la tienda nunca tuvo este modelo; los modelos nuevos entran por carga "
+            "manual (Carga Pedidos), no por reposición."
+        )
     elif c == "NO_AFINIDAD_BAJA":
         t = (
             f"No se introduce: afinidad {r['afinidad']:.2f} bajo el umbral {umbral:.2f}, "

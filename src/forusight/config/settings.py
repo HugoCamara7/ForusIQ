@@ -180,6 +180,10 @@ class PrioridadTiendasParams(_Section):
     patrones: list[str] = Field(default_factory=lambda: ["JOCKEY"])
     factor_cobertura: float = Field(1.25, ge=1.0, le=4.0)
     importancia: float = Field(1.0, ge=0, le=1.0)
+    #: Liquidadoras (outlets): sin introducciones, menos cobertura y últimas en el reparto.
+    cadenas_liquidadoras: list[str] = Field(default_factory=lambda: ["DH", "SE", "FB"])
+    factor_cobertura_liquidadora: float = Field(0.75, gt=0, le=1.0)
+    importancia_liquidadora: float = Field(0.0, ge=0, le=1.0)
 
 
 class TopeTiendaParams(_Section):
@@ -196,6 +200,9 @@ class PesosAfinidad(_Section):
 
 
 class AfinidadParams(_Section):
+    #: Introducir modelos que la tienda nunca tuvo. Apagado: como en el reporte de
+    #: distribución, los modelos nuevos entran por carga manual ("Carga Pedidos").
+    introducir_modelos_nuevos: bool = False
     umbral_introduccion: float = Field(0.45, ge=0, le=1)
     penalizacion_sin_venta: float = Field(0.2, ge=0, le=1)
     pesos: PesosAfinidad = Field(default_factory=PesosAfinidad)

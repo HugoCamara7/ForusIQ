@@ -134,6 +134,7 @@ def params(**overrides) -> EngineParams:
     base = EngineParams().model_dump()
     base["exhibicion"]["tallas_core_default"] = ["37", "38", "39"]
     base["exhibicion"]["tallas_core_por_genero"] = {"CABALLERO": ["40", "41", "42"]}
+    base["afinidad"]["introducir_modelos_nuevos"] = True  # los tests de introducción la usan
     for seccion, valores in overrides.items():
         base[seccion].update(valores)
     return EngineParams.model_validate(base)

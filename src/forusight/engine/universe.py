@@ -51,17 +51,29 @@ def preparar_cd(stock_cd: pd.DataFrame) -> pd.DataFrame:
 
 def marcar_prioridad(tiendas: pd.DataFrame, params: EngineParams) -> pd.DataFrame:
     """Tiendas prioritarias (nombre contiene un patrón, p. ej. JOCKEY): importancia máxima y
-    factor de cobertura mayor. El resto conserva su importancia (peso de su venta)."""
+    factor de cobertura mayor. Liquidadoras (cadenas DH, SE, FB): importancia mínima, menos
+    cobertura y sin introducciones. El resto conserva su importancia (peso de su venta)."""
     p = params.prioridad_tiendas
     nombre = tiendas["nombre"].astype("string").str.upper().fillna("")
     prio = pd.Series(False, index=tiendas.index)
     for patron in p.patrones:
         if str(patron).strip():
             prio |= nombre.str.contains(str(patron).strip().upper(), regex=False)
+    cadena = (
+        tiendas["cadena"].astype("string").str.upper()
+        if "cadena" in tiendas
+        else pd.Series(pd.NA, index=tiendas.index, dtype="string")
+    )
+    cadena = cadena.fillna(nombre.str.split().str[0])
+    liq = cadena.isin([str(c).strip().upper() for c in p.cadenas_liquidadoras]) & ~prio
     tiendas["tienda_prioritaria"] = prio.to_numpy(dtype=bool)
+    tiendas["tienda_liquidadora"] = liq.to_numpy(dtype=bool)
     imp = pd.to_numeric(tiendas["importancia_comercial"], errors="coerce").fillna(0.5)
-    tiendas["importancia_comercial"] = np.where(prio, np.maximum(imp, p.importancia), imp)
-    tiendas["factor_cobertura_tienda"] = np.where(prio, p.factor_cobertura, 1.0)
+    imp = np.where(prio, np.maximum(imp, p.importancia), imp)
+    tiendas["importancia_comercial"] = np.where(liq, p.importancia_liquidadora, imp)
+    tiendas["factor_cobertura_tienda"] = np.select(
+        [prio, liq], [p.factor_cobertura, p.factor_cobertura_liquidadora], 1.0
+    )
     return tiendas
 
 

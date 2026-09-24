@@ -65,3 +65,35 @@ def test_jockey_recibe_primero_y_mas_cobertura_con_igual_demanda():
     d = res.detalle.groupby("tienda_id")[["cantidad", "stock_objetivo"]].sum()
     assert d.loc["T1", "cantidad"] > d.loc["T2", "cantidad"]
     assert d.loc["T1", "stock_objetivo"] > d.loc["T2", "stock_objetivo"]
+
+
+def _escenario_intro():
+    e = Escenario()
+    viejo = e.modelo("A-NEG", tallas=("37", "38", "39"))
+    nuevo = e.modelo("B-NEG", tallas=("37", "38", "39"))
+    for t, nombre in (("T1", "HP JOCKEY"), ("T2", "DH LURIN"), ("T3", "HP CHICLAYO")):
+        e.tienda(t, nombre=nombre, importancia=0.5)
+        e.venta_constante(t, viejo, unidades=1)
+        for s in viejo:
+            e.stock_tienda(t, s, 0)
+    e.venta_constante("T3", nuevo, unidades=2)  # el modelo nuevo sólo se vende en T3
+    for s in viejo + nuevo:
+        e.stock_cd(s, 2)  # no alcanza para todas
+    return e, nuevo
+
+
+def test_por_defecto_no_se_introducen_modelos_nuevos():
+    e, nuevo = _escenario_intro()
+    p = params(afinidad={"introducir_modelos_nuevos": False})
+    d = ejecutar(e.inputs(), p, CORTE).detalle
+    intro = d[d["sku"].isin(nuevo) & d["tienda_id"].isin(["T1", "T2"])]
+    assert intro["cantidad"].sum() == 0
+    assert set(intro["motivo_codigo"]) == {"NO_INTRODUCCION"}
+
+
+def test_liquidadora_ultima_en_el_reparto_y_sin_introducciones():
+    e, nuevo = _escenario_intro()
+    d = ejecutar(e.inputs(), params(), CORTE).detalle  # introducciones activadas
+    por_t = d.groupby("tienda_id")["cantidad"].sum()
+    assert por_t["T2"] < por_t["T1"]
+    assert d[(d["tienda_id"] == "T2") & d["sku"].isin(nuevo)]["cantidad"].sum() == 0

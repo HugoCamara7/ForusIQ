@@ -69,6 +69,7 @@ tope_tienda:                    # PENDIENTE (i)
   max_unidades_por_tienda: 600  # por corrida; dim_tienda.max_unidades_corrida lo sobrescribe
 
 afinidad:
+  introducir_modelos_nuevos: false  # los modelos nuevos entran por carga manual (como el reporte)
   umbral_introduccion: 0.45
   penalizacion_sin_venta: 0.2   # factor multiplicativo si TUVO_SIN_VENTA con exposición suficiente
   pesos:
@@ -92,3 +93,6 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
   patrones: ["JOCKEY"]          # texto en el nombre de la tienda (HP JOCKEY, HPK JOCKEY, RKF JOCKEY…)
   factor_cobertura: 1.25        # su stock objetivo es 1.25x el de una tienda normal
   importancia: 1.0              # máxima prioridad al repartir el CD
+  cadenas_liquidadoras: ["DH", "SE", "FB"]  # outlets: sin introducciones, últimas en el reparto
+  factor_cobertura_liquidadora: 0.75
+  importancia_liquidadora: 0.0

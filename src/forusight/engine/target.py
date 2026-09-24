@@ -28,6 +28,7 @@ from forusight.engine.size_curve import repartir_hamilton
 NO_SIN_DEMANDA = "NO_SIN_DEMANDA"
 NO_SIN_REFERENCIA = "NO_SIN_REFERENCIA"
 NO_AFINIDAD_BAJA = "NO_AFINIDAD_BAJA"
+NO_INTRODUCCION = "NO_INTRODUCCION"
 NO_SOBRESTOCK = "NO_SOBRESTOCK"
 NO_SIN_NECESIDAD = "NO_SIN_NECESIDAD"
 
@@ -71,14 +72,23 @@ def calcular_objetivo_mc(mc: pd.DataFrame, params: EngineParams) -> pd.DataFrame
         mc["estado_mc"].eq(EXPOSICION_INSUFICIENTE) & pos.le(0)
     )
     afin_baja = mc["es_introduccion"] & (mc["afinidad"] < params.afinidad.umbral_introduccion)
+    liquidadora = (
+        mc["tienda_liquidadora"].fillna(False).astype(bool)
+        if "tienda_liquidadora" in mc
+        else pd.Series(False, index=mc.index)
+    )
+    sin_intro = mc["es_introduccion"] & (
+        liquidadora | (not params.afinidad.introducir_modelos_nuevos)
+    )
     mc["bloqueo_mc"] = np.select(
         [
+            sin_intro,
             mc["fuente_demanda"].eq(FUENTE_SIN_DEMANDA),
             mc["fuente_demanda"].eq(FUENTE_SIN_REFERENCIA),
             afin_baja,
             mc["sobrestock"],
         ],
-        [NO_SIN_DEMANDA, NO_SIN_REFERENCIA, NO_AFINIDAD_BAJA, NO_SOBRESTOCK],
+        [NO_INTRODUCCION, NO_SIN_DEMANDA, NO_SIN_REFERENCIA, NO_AFINIDAD_BAJA, NO_SOBRESTOCK],
         "",
     )
     return mc
