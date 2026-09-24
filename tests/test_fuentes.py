@@ -419,3 +419,12 @@ def test_venta_filtra_marca_por_arti_y_trae_ultima_fecha():
     v = M.mapear(COLS_VENTAS, M.ALIAS_VENTAS)
     sql = F.sql_ventas("p.d.v", v, "p.d.arti", a, True)
     assert "AS ultima_venta" in sql and "`p.d.arti`" in sql
+
+
+def test_sql_revisar_venta_compara_tabla_y_marca():
+    a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
+    v = M.mapear(COLS_VENTAS, M.ALIAS_VENTAS)
+    resumen, muestra = F.sql_revisar_venta("p.d.v", v, "p.d.arti", a)
+    assert "AS ultima_tabla" in resumen and "AS ultima_marca" in resumen
+    assert "IN UNNEST(@marcas)" in resumen and "@ultima_marca" in muestra
+    assert "SELECT *" not in (resumen + muestra).upper()

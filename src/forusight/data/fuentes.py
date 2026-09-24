@@ -217,6 +217,36 @@ def sql_ventas(
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY {grupos}"
 
 
+def sql_revisar_venta(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+) -> tuple[str, str]:
+    """(resumen, muestra) para saber si la venta está atrasada o si cambió el código.
+
+    resumen: última fecha de TODA la tabla y de la marca (vía ARTI) en los últimos 180 días.
+    muestra: filas posteriores a la última venta de la marca (si existen, la tabla sí está al
+    día y lo que cambió es el código de producto o de tienda).
+    """
+    f = _c(mapa, "fecha")
+    marca = filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti).removeprefix("AND ")
+    marca = marca or "TRUE"
+    resumen = (
+        f"SELECT MAX(DATE({f})) AS ultima_tabla,\n"
+        f"  MAX(IF({marca}, DATE({f}), NULL)) AS ultima_marca,\n"
+        f"  COUNTIF(DATE({f}) >= DATE_SUB(CURRENT_DATE(), INTERVAL 14 DAY)) AS filas_14_dias\n"
+        f"FROM {_t(tabla)}\nWHERE DATE({f}) >= DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY)"
+    )
+    cols = [f"DATE({f}) AS fecha", f"CAST({_c(mapa, 'tienda_cod')} AS STRING) AS tienda"]
+    cols.append(f"CAST({_c(mapa, 'id_producto')} AS STRING) AS producto")
+    if "marca" in mapa:
+        cols.append(f"CAST({_c(mapa, 'marca')} AS STRING) AS marca_venta")
+    cols.append(f"SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64) AS unidades")
+    muestra = (
+        f"SELECT {', '.join(cols)}\nFROM {_t(tabla)}\n"
+        f"WHERE DATE({f}) > @ultima_marca ORDER BY 1 DESC LIMIT 20"
+    )
+    return resumen, muestra
+
+
 def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
     """Fechas de corte del último año (sólo lee la columna de fecha).
 

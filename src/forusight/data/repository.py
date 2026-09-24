@@ -527,6 +527,29 @@ class FuentesRepository(BigQueryRepository):
         self.ultimo_diagnostico = diag
         return entradas
 
+    def revisar_venta(self, marcas: list[str]) -> tuple[dict, pd.DataFrame]:
+        """Última fecha de venta de la tabla y de la marca, y filas posteriores (si hay)."""
+        from forusight.data import fuentes as F
+
+        tablas = self.tablas()
+        mapas = self.mapeos(tablas)
+        if "ventas" not in mapas or "arti" not in mapas:
+            raise ValueError("Falta el mapeo de ventas o de ARTI (revísalo arriba).")
+        m_v, m_a = mapas["ventas"][0], mapas["arti"][0]
+        resumen, muestra = F.sql_revisar_venta(tablas["ventas"], m_v, tablas["arti"], m_a)
+        marcas = [m.strip().upper() for m in marcas if str(m).strip()]
+        params = params_usados(resumen, {"marcas": marcas})
+        r = self.client.query_df(resumen, params, labels={"consulta": "revisar_venta"})
+        info = r.iloc[0].to_dict() if len(r) else {}
+        filas = pd.DataFrame()
+        if info.get("ultima_marca") is not None and not pd.isna(info.get("ultima_marca")):
+            filas = self.client.query_df(
+                muestra,
+                {"ultima_marca": pd.Timestamp(info["ultima_marca"]).date()},
+                labels={"consulta": "revisar_venta_muestra"},
+            )
+        return info, filas
+
     def buscar_tablas(self, patrones: tuple[str, ...] = ("venta", "vta", "sales")) -> pd.DataFrame:
         """Tablas del proyecto del datalake cuyo nombre sugiere venta (INFORMATION_SCHEMA)."""
         from forusight.data.bq_client import validar_identificador

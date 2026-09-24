@@ -130,6 +130,31 @@ if mapas:
         st.code(mapeo.a_toml(snippet), language="toml")
 
 st.divider()
+st.subheader("Revisar la venta")
+st.caption(
+    "Compara la última fecha de venta de toda la tabla con la de la marca elegida. Si la tabla "
+    "tiene venta más reciente que la marca, la tabla está al día y lo que cambió es el código "
+    "de producto o de tienda (se muestran esas filas)."
+)
+if st.button("Revisar venta"):
+    try:
+        info, filas = repo.revisar_venta(list(st.session_state.get("marcas") or []))
+        c = st.columns(3)
+        c[0].metric("Última venta en la tabla", str(info.get("ultima_tabla") or "—"))
+        c[1].metric("Última venta de la marca", str(info.get("ultima_marca") or "—"))
+        c[2].metric("Filas últimos 14 días", f"{int(info.get('filas_14_dias') or 0):,}")
+        if len(filas):
+            st.warning(
+                "La tabla tiene venta posterior a la última de la marca: revisa el código de "
+                "producto/tienda de estas filas."
+            )
+            st.dataframe(filas, hide_index=True, width="stretch")
+        elif info.get("ultima_tabla") == info.get("ultima_marca"):
+            st.info("La tabla completa llega hasta la misma fecha: la tabla está atrasada.")
+    except Exception as exc:
+        st.error(explicar_error(exc))
+
+st.divider()
 st.subheader("Prueba de lectura")
 st.caption(
     f"Lee los datos para la semana y la marca elegidas en la barra lateral, con dry run y "
