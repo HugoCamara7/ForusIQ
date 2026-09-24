@@ -292,11 +292,22 @@ def a_excel_forusight(
                 **({"font_color": "#FF0000"} if c.rojo else {}),
             }
         )
-        ws.set_column(j, j, c.ancho)
+        # El formato de columna pinta también las celdas vacías: sólo se escriben valores.
+        ws.set_column(j, j, c.ancho, fmt)
         ws.write(6, j, nombre, enc)
-        valores = tabla[nombre].astype(object).where(tabla[nombre].notna(), None).tolist()
-        valores = [None if isinstance(x, float) and not np.isfinite(x) else x for x in valores]
-        ws.write_column(7, j, valores, fmt)
+        col = tabla[nombre]
+        if pd.api.types.is_numeric_dtype(col) and not pd.api.types.is_bool_dtype(col):
+            v = pd.to_numeric(col, errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+            escribir = ws.write_number
+            filas = np.flatnonzero(np.isfinite(v))
+            valores = v[filas].tolist()
+        else:
+            v = col.astype(object).where(col.notna(), None).tolist()
+            escribir = ws.write
+            filas = [i for i, x in enumerate(v) if x is not None and x != ""]
+            valores = [v[i] for i in filas]
+        for i, x in zip(filas, valores, strict=True):
+            escribir(7 + int(i), j, x, fmt)
     ws.autofilter(6, 0, 6 + len(tabla), len(tabla.columns) - 1)
 
     rs = wb.add_worksheet("Resumen")

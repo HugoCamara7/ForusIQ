@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from app.components.archivo import boton_archivo
 from app.components.estado import entradas_de_la_corrida
 from app.components.ui import (
     apiladas,
@@ -85,6 +86,9 @@ hero(
     meta=meta,
 )
 stepper(FLUJO, 5 if ss.get("aprobacion") else 4)
+_, zona_boton = st.columns([3, 1])
+with zona_boton:
+    boton_archivo("archivo_dashboard")
 
 quiebres = det.loc[det["estado_mc"] == "QUIEBRE", ["tienda_id", "modelo_color_id"]]
 kpi_row(

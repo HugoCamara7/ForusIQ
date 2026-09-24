@@ -106,7 +106,7 @@ Archivo Forusight**.
 |---|---|---|
 | Maestro de productos | `table` (ARTI del Catálogo; `product_master_table` suele ser EAN y se descarta sola) | SKU `CODINT_MA`, modelo-color `CODMOD_MA`-`CODCOL_MA`, talla, marca, género |
 | Stock | `stock_table` (por defecto `stg_pe_central_stock_bi`) | **último corte** (cierre de ayer de este año; el corte del año pasado se descarta): tienda = `stock_tiendas`; CD 320 = `stock_tiendas + stock_bodega` |
-| Venta | `ventas_table` (**obligatoria**) | 12 semanas cerradas + semana en curso |
+| Venta | `ventas_table` (**obligatoria**) | 12 semanas cerradas + semana en curso; la marca se filtra por ARTI. Si la última venta tiene más de 7 días respecto al stock, la corrida se detiene |
 | Maestro tiendas | `maestro_tiendas_table` | código tienda → nombre, centro comercial, zona, cadena |
 | Maestro cadena | `maestro_cadena_table` | código modelo → cadena: un modelo sólo se **introduce** en tiendas de su cadena |
 | Reservas CD | archivo STOCK CD (opcional) | disponible y reservas |
@@ -197,13 +197,23 @@ del servicio en Cloud Run). Es la opción recomendada en GCP: no hay llaves que 
    nacional), sólo tallas fabricadas, redondeo Hamilton (suma exacta).
 4. **Afinidad** A1–A5 en [0, 1], penalización fuerte a `TUVO_SIN_VENTA`; bajo el umbral no
    se introduce el modelo.
-5. **Objetivo y necesidad**: cobertura = lead time + revisión + seguridad (por categoría y
-   rotación); mínimo de exhibición en tallas core; sobrestock → 0; curva rota → bono.
+5. **Objetivo y necesidad** (nivel máximo por talla, como el reporte de distribución de
+   Forus): cobertura = lead time + revisión + seguridad (por categoría y rotación);
+   nivel de la talla = ⌈demanda·cobertura + z·√(demanda·cobertura)⌉ (`seguridad_z_talla`);
+   **reponer lo vendido**: toda talla de un modelo que la tienda vende queda con ≥ 1
+   (`minimo_por_talla_activa`); tallas en formato Forus (`390` = 39, `075` = 7.5);
+   sobrestock → sólo se rellena la talla vacía; curva rota → bono.
+   **Tiendas prioritarias** (`prioridad_tiendas`, por defecto las JOCKEY): cobertura ×1.25
+   y prioridad máxima cuando el CD no alcanza; el resto se ordena por su demanda.
 6. **Asignación** por SKU: suficiente → cada tienda su necesidad; escaso → etapa 1
    (quiebres hasta el mínimo) y etapa 2 (heap marginal con prioridad recalculada).
    Restricciones duras verificadas con aserción explícita; desempate determinista;
    introducción sólo si el CD cubre la curva mínima.
 7. **Motivos**: código + texto para cada fila, enviada o no.
+
+Validación contra el reporte de distribución del 23/09/2026 (misma venta y stock): la
+necesidad por tienda×SKU coincide en 79% de las filas de HUSH PUPPIES, 86% de COLUMBIA y
+61% de VANS; lo que no coincide son sobre todo cargas manuales ("Carga Pedidos").
 
 Supuestos que conviene validar están marcados como `PENDIENTE` en `params.yaml`.
 

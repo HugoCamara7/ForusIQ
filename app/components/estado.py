@@ -311,6 +311,9 @@ def barra_lateral() -> None:
                 + "</div>",
                 sidebar=True,
             )
+            from app.components.archivo import boton_archivo
+
+            boton_archivo("archivo_barra", en_barra=True)
 
         with st.expander("Más opciones", icon=":material/tune:"):
             if len(opciones) > 1:
