@@ -28,6 +28,8 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "dia",
         "fecha_dia",
         "fec_doc",
+        "fecha_transaccion",
+        "fecha_emision",
         "fecha_corte",  # tablas *_bi (como stg_pe_central_stock_bi)
     ],
     "tienda_cod": [
@@ -39,6 +41,9 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "cod_sucursal",
         "sucursal_codigo",
         "id_tienda",
+        "codigo_local",
+        "id_local",
+        "tienda_id",
     ],
     "unidades": [
         "unidades",
@@ -54,6 +59,9 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "cantidad_venta",
         "venta_tiendas",
         "venta_und",
+        "cantidad_unidades",
+        "unidades_netas",
+        "cantidad_neta",
     ],
     "id_producto": [
         "id_producto",
@@ -63,6 +71,10 @@ ALIAS_VENTAS: dict[str, list[str]] = {
         "codigo_producto",
         "codint_ma",
         "producto_id",
+        "cod_sku",
+        "codigo_sku",
+        "sku_id",
+        "codint",
     ],
     "cod_modelo": ["cod_modelo", "codigo_modelo", "modelo_cod", "cod_mod", "estilo_cod"],
     "cod_color": ["cod_color", "codigo_color", "color_cod"],

@@ -448,3 +448,14 @@ def test_detecta_tabla_de_venta_fuera_de_bigquery():
     assert claves_fuera_de_bigquery(sec) == [
         ("forusight", "ventas_table", "p.bronze.stg_pe_central_ventas_bi")
     ]
+
+
+def test_mapeo_de_una_tabla_de_hechos_de_venta():
+    cols = ["fecha_transaccion", "codigo_local", "cod_sku", "cantidad_unidades", "importe_neto"]
+    m = M.mapear(cols, M.ALIAS_VENTAS)
+    assert m == {
+        "fecha": "fecha_transaccion",
+        "tienda_cod": "codigo_local",
+        "id_producto": "cod_sku",
+        "unidades": "cantidad_unidades",
+    }
