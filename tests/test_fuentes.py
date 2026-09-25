@@ -506,3 +506,22 @@ def test_stock_bi_con_disponible_y_reservas():
     a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
     sql = F.sql_stock_foto("p.d.s", s, "p.d.arti", a, True)
     assert "AS disponible" in sql and "AS reserva_ecommerce" in sql
+
+
+def test_nombre_del_modelo_desde_la_venta_si_arti_no_lo_trae():
+    class Fake(_FakeBQ):
+        def columnas(self, tabla):
+            df = super().columnas(tabla)
+            if tabla == VENTAS_T:
+                df = pd.concat([df, pd.DataFrame({"column_name": ["modelo"]})], ignore_index=True)
+            return df
+
+    fake = Fake()
+    fake.datos["arti"] = fake.datos["arti"].drop(columns=["descripcion"])
+    sku = fake.datos["arti"]["id_producto"].iloc[0]
+    fake.datos["nombres_modelo"] = pd.DataFrame({"id_producto": [sku], "nombre_modelo": ["space"]})
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+    dp = inp.dim_producto.set_index("sku")
+    mc = dp.loc[sku, "modelo_color_id"]
+    assert set(dp.loc[dp["modelo_color_id"] == mc, "descripcion"]) == {"SPACE"}
+    assert "nombres_modelo" in [c[0] for c in fake.consultas]

@@ -286,6 +286,21 @@ def sql_venta_diaria(
     )
 
 
+def sql_nombres_modelo(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+) -> str:
+    """Nombre del modelo por SKU desde la venta (respaldo si ARTI no trae descripción)."""
+    f = _c(mapa, "fecha")
+    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto"
+    if con_marcas:
+        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+    return (
+        f"SELECT {sku_sql(_c(mapa, 'id_producto'))} AS id_producto, "
+        f"ANY_VALUE(CAST({_c(mapa, 'nombre_modelo')} AS STRING)) AS nombre_modelo"
+        f"\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1"
+    )
+
+
 def a_venta_diaria(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
     """Resultado de sql_venta_diaria → fecha, tienda_id, sku, unidades."""
     if df is None or df.empty:

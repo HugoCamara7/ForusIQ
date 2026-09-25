@@ -113,6 +113,8 @@ class EngineResult:
     detalle: pd.DataFrame  # una fila por tienda×SKU evaluada (enviada o no)
     mc: pd.DataFrame  # diagnóstico tienda×modelo-color
     resumen: dict = field(default_factory=dict)
+    #: Tiendas de la corrida con calendario aplicado (mall, lead time, revisión, recibe hoy).
+    tiendas: pd.DataFrame | None = None
 
     @property
     def propuesta(self) -> pd.DataFrame:
@@ -219,5 +221,11 @@ def ejecutar(
         "fill_rate": float(np.round(det["cantidad"].sum() / max(det["necesidad"].sum(), 1), 4)),
     }
     return EngineResult(
-        run_id=run_id, fecha_corte=corte, params=params, detalle=det, mc=mc, resumen=resumen
+        run_id=run_id,
+        fecha_corte=corte,
+        params=params,
+        detalle=det,
+        mc=mc,
+        resumen=resumen,
+        tiendas=base.tiendas,
     )

@@ -42,7 +42,8 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
         res.detalle,
         entradas.ventas,
         entradas.dim_producto,
-        entradas.dim_tienda,
+        # tiendas con el calendario aplicado (lead time y período de revisión de cada una)
+        res.tiendas if getattr(res, "tiendas", None) is not None else entradas.dim_tienda,
         params,
         res.fecha_corte,
         cd_id,

@@ -148,3 +148,16 @@ def test_reponer_la_venta_desde_la_ultima_ruta():
     p2 = params(reposicion_venta={"reponer_venta_desde_ruta": False})
     d2 = ejecutar(inp, p2, CORTE).detalle.set_index(["tienda_id", "sku"])
     assert d2.loc[("8", sku), "necesidad"] < 25
+
+
+def test_archivo_trae_leadtime_y_revision_de_cada_tienda():
+    from forusight.export.archivo import construir_tabla
+
+    e = _escenario()
+    p = params()
+    inp = e.inputs()
+    inp.dim_tienda = CAL.aplicar(inp.dim_tienda, "2026-09-23", p, ["HUSH PUPPIES"])  # miércoles
+    res = ejecutar(inp, p, CORTE)
+    t = construir_tabla(res.detalle, inp.ventas, inp.dim_producto, res.tiendas, p, CORTE)
+    j = t.drop_duplicates("Código Centro").set_index("Código Centro")
+    assert j.loc["8", "Leadtime [días]"] == 3.0 and j.loc["8", "Período Revisión [días]"] == 2.33

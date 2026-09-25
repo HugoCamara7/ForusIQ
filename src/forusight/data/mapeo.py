@@ -83,6 +83,8 @@ ALIAS_VENTAS: dict[str, list[str]] = {
     "cod_color": ["cod_color", "codigo_color", "color_cod"],
     "talla": ["talla", "talla_numero", "tallanumero", "size", "cod_talla", "talla_desc"],
     "marca": ["marca", "desc_marca", "nombre_marca"],
+    # nombre del modelo (ft_pe_venta_retail · modelo): respaldo si ARTI no trae descripción
+    "nombre_modelo": ["modelo", "nombre_modelo", "desc_modelo", "descripcion_modelo"],
 }
 
 #: Maestro de productos ARTI (`product_master_table`), p. ej. stg_pe_central_arti.

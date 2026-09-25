@@ -524,6 +524,29 @@ class FuentesRepository(BigQueryRepository):
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
         )
+        # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
+        dp = entradas.dim_producto
+        if (
+            "nombre_modelo" in m_v
+            and "id_producto" in m_v
+            and dp["descripcion"].isna().mean() > 0.2
+        ):
+            try:
+                nm = q(
+                    "nombres_modelo",
+                    F.sql_nombres_modelo(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                )
+                nombres = pd.Series(
+                    F.texto(nm["nombre_modelo"]).str.upper().to_numpy(),
+                    index=F.sku_canonico(nm["id_producto"]).to_numpy(),
+                )
+                nombres = nombres[~nombres.index.duplicated()]
+                por_sku = dp["sku"].map(nombres)
+                # un nombre por modelo-color: completa las tallas que no vendieron
+                por_mc = por_sku.groupby(dp["modelo_color_id"]).transform("first")
+                dp["descripcion"] = dp["descripcion"].fillna(por_sku).fillna(por_mc)
+            except Exception as exc:
+                diag.notas.append(f"No se pudo leer el nombre del modelo: {explicar_error(exc)}")
         # Venta diaria reciente: reponer lo vendido desde la ruta anterior de cada mall.
         if "id_producto" in m_v:
             try:

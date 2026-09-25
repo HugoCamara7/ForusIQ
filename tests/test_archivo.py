@@ -151,11 +151,10 @@ def test_excel_estilo_forus_con_dinamica_sial_y_diccionario(corrida):
     j = list(t.columns).index("Cantidad Pedida Final [un]") + 1
     assert ws.cell(8, j).fill.fgColor.rgb.endswith("FFF1CC") and ws.cell(8, j).font.b
     assert ws.max_row == 7 + len(t)
-    # filtrada en cantidad > 0: las filas sin envío quedan ocultas
+    # todo lo que tiene cada tienda de la ruta (se repone o no): sin filas ocultas
     q = t["Cantidad Pedida Final [un]"].to_numpy()
-    ocultas = {r for r, d in ws.row_dimensions.items() if d.hidden}
-    assert ocultas == {8 + i for i in range(len(t)) if q[i] <= 0}
-    assert ws.auto_filter.filterColumn[0].colId == j - 1
+    assert not any(d.hidden for d in ws.row_dimensions.values())
+    assert set(t["Grupo Requerimiento"]) == {"Revision de stock"}  # nada de Carga Pedidos
     # SIAL: producto + códigos de tienda, sólo valores > 0, igual a la suma del archivo
     sial = pd.read_excel(io.BytesIO(x), sheet_name="SIAL")
     prod = [

@@ -110,8 +110,13 @@ def construir_tabla(
     if cantidad is not None:
         d["cantidad"] = cantidad.reindex(d.index).fillna(0).astype(int)
     d["pendiente"] = (d["necesidad"] - d["cantidad"]).clip(lower=0)
+    # Sólo reposición (Revision de stock): los modelos nuevos para la tienda (carga de pedidos)
+    # no son de Forusight y no van en el archivo.
+    d = d.loc[~d["es_introduccion"].fillna(False).astype(bool)]
+    vr = d["venta_desde_ruta"] if "venta_desde_ruta" in d else pd.Series(0.0, index=d.index)
     activos = (
-        (d["cantidad"] > 0)
+        (vr.fillna(0) > 0)
+        | (d["cantidad"] > 0)
         | (d["pendiente"] > 0)
         | (d["stock_tienda"] > 0)
         | (d["venta_12s"] > 0)
@@ -187,9 +192,7 @@ def construir_tabla(
             "Centro Comercial": t("centro_comercial"),
             "Zona CC": t("zona"),
             "Código Grupo Planificación": clase.map(GRUPO_PLANIFICACION),
-            "Grupo Requerimiento": np.where(
-                d["es_introduccion"], "Carga Pedidos", "Revision de stock"
-            ),
+            "Grupo Requerimiento": "Revision de stock",
         },
         index=d.index,
     )
@@ -426,12 +429,6 @@ def _hoja_distribucion(lb: _Libro, tabla: pd.DataFrame, titulo: str, subtitulo: 
                     {"type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": cebra},
                 )
     ws.autofilter(6, 0, 6 + n, len(cols) - 1)
-    if Q_COL in cols and n:  # filtrado: sólo lo que se envía (> 0)
-        jq = cols.index(Q_COL)
-        ws.filter_column(jq, "x > 0")
-        q = pd.to_numeric(tabla[Q_COL], errors="coerce").fillna(0).to_numpy()
-        for i in np.flatnonzero(q <= 0):
-            ws.set_row(7 + int(i), None, None, {"hidden": True})
     fijas = next((i + 1 for i, c in enumerate(cols) if c == "Talla"), 1)
     ws.freeze_panes(7, fijas)
     return ws
