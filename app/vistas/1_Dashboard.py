@@ -85,7 +85,9 @@ env = det[det["cantidad"] > 0]
 
 meta = [f"Semana {_fecha(r['fecha_corte'])}"]
 if diag.get("fecha_foto"):
-    meta.append(f"Stock al {_fecha(diag['fecha_foto'])}")
+    # el corte de fecha F es el cierre del día anterior
+    cierre = pd.Timestamp(diag["fecha_foto"]) - pd.Timedelta(days=1)
+    meta.append(f"Stock al cierre del {_fecha(cierre)}")
 meta += list(diag.get("marcas") or [])
 if entradas is not None and getattr(entradas, "reporte", None) is not None:
     from forusight.data.reporte import coincidencia

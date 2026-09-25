@@ -1,6 +1,6 @@
 """Reponer la venta desde la última ruta.
 
-El stock es el cierre del último corte (ayer). Si la tienda vendió ayer 10 y hoy 15, y su
+El stock_bi de fecha_corte F es el cierre del día anterior (F − 1). Si la tienda vendió ayer 10 y hoy 15, y su
 mall tiene ruta mañana, hay que reponer esas 25 unidades (si el CD las tiene), además de lo
 que pida el análisis de 12 semanas:
 
@@ -8,8 +8,8 @@ que pida el análisis de 12 semanas:
                          (sin ruta: día de reposición − período de revisión)
     venta desde ruta   = venta diaria desde la ruta anterior hasta el día antes de la de hoy
                          (lo que se vendió después de armar el envío anterior)
-    venta post corte   = venta posterior a la fecha del corte de stock (aún no descontada
-                         del stock): se resta de la posición.
+    venta post corte   = venta desde la fecha del corte (F), es decir posterior al cierre
+                         F − 1 (aún no descontada del stock): se resta de la posición.
 
 La necesidad es max(nivel máximo − posición, venta desde ruta).
 """
@@ -44,7 +44,8 @@ def resumir(
     if venta_diaria is None or venta_diaria.empty:
         return pd.DataFrame(columns=COLUMNAS)
     d = pd.Timestamp(dia).normalize()
-    foto = pd.Timestamp(fecha_foto).normalize() if fecha_foto else d - pd.Timedelta(days=1)
+    # fecha_corte F del stock = cierre del día anterior: la venta desde F no está descontada.
+    corte = pd.Timestamp(fecha_foto).normalize() if fecha_foto else d - pd.Timedelta(days=1)
     t = dim_tienda.drop_duplicates("tienda_id").set_index("tienda_id")
     dias = t["dias_reposicion"] if "dias_reposicion" in t else pd.Series("", index=t.index)
     rev = t["revision_dias"] if "revision_dias" in t else pd.Series(None, index=t.index)
@@ -54,7 +55,7 @@ def resumir(
     v = v.loc[v["fecha"] < d]
     inicio = v["tienda_id"].astype(str).map(desde)
     v["venta_desde_ruta"] = v["unidades"].where(inicio.notna() & (v["fecha"] >= inicio), 0)
-    v["venta_post_corte"] = v["unidades"].where(v["fecha"] > foto, 0)
+    v["venta_post_corte"] = v["unidades"].where(v["fecha"] >= corte, 0)
     g = v.groupby(["tienda_id", "sku"], as_index=False)[
         ["venta_desde_ruta", "venta_post_corte"]
     ].sum()

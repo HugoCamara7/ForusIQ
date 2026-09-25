@@ -149,8 +149,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     ),
     "Venta después del corte [un]": (
         VENTA,
-        "Venta posterior al corte de stock: todavía no está descontada del Stock Físico.",
-        "SUMA(venta diaria) con fecha > fecha del corte de stock.",
+        "Venta posterior al cierre del stock: todavía no está descontada del Stock Físico.",
+        "SUMA(venta diaria) con fecha ≥ fecha_corte del stock (el corte de fecha F es el cierre "
+        "del día F − 1).",
         "ft_pe_venta_retail + stock_bi · fecha_corte",
         "No aplica",
     ),
@@ -221,8 +222,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     ),
     "Stock Físico [un]": (
         STOCK,
-        "Stock de la tienda al cierre del último corte.",
-        "stock_tiendas del último corte de este año (el del año pasado se descarta).",
+        "Stock de la tienda al cierre del día anterior al último corte.",
+        "stock_tiendas del último fecha_corte de este año (el corte de fecha F es el cierre del "
+        "día F − 1; el del año pasado se descarta).",
         "stock_bi · stock_tiendas",
         REP,
     ),

@@ -136,7 +136,7 @@ def test_reponer_la_venta_desde_la_ultima_ruta():
         }
     )
     dt = CAL.aplicar(inp.dim_tienda, "2026-09-25", p, ["HUSH PUPPIES"])  # viernes
-    vr = VR.resumir(diaria, dt, "2026-09-25", "2026-09-23")  # corte = cierre del 23
+    vr = VR.resumir(diaria, dt, "2026-09-25", "2026-09-24")  # corte del 24 = cierre del 23
     fila = vr.set_index(["tienda_id", "sku"]).loc[("8", sku)]
     assert fila["venta_desde_ruta"] == 25 and fila["venta_post_corte"] == 15
     inp.dim_tienda = dt

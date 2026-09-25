@@ -532,7 +532,12 @@ def barra_lateral() -> None:
             diag = ss.get("diagnostico") or {}
             filas = [
                 ("Corrida", res.run_id.split("-")[-1]),
-                ("Stock al", _ddmm(diag.get("fecha_foto"))),
+                (
+                    "Stock al cierre",
+                    _ddmm(pd.Timestamp(diag["fecha_foto"]) - pd.Timedelta(days=1))
+                    if diag.get("fecha_foto")
+                    else "",
+                ),
                 ("Unidades", f"{res.resumen['unidades_a_distribuir']:,}"),
             ]
             html(
