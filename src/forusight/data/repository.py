@@ -524,6 +524,22 @@ class FuentesRepository(BigQueryRepository):
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
         )
+        # Venta diaria reciente: reponer lo vendido desde la ruta anterior de cada mall.
+        if "id_producto" in m_v:
+            try:
+                dias = 14
+                vd = q(
+                    "venta_diaria",
+                    F.sql_venta_diaria(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                    {"desde_diaria": foto - dt.timedelta(days=dias)},
+                )
+                entradas.venta_diaria = F.a_venta_diaria(
+                    vd,
+                    set(entradas.dim_producto["sku"]),
+                    excl | {F.codigo_tienda(self.settings.cd_id)},
+                )
+            except Exception as exc:
+                diag.notas.append(f"No se pudo leer la venta diaria: {explicar_error(exc)}")
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
         return entradas

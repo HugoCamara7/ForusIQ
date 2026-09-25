@@ -248,6 +248,14 @@ def _datos_falsos():
         "ventas": ventas,
         "maestro_tiendas": tiendas,
         "maestro_cadena": cadena,
+        "venta_diaria": pd.DataFrame(
+            {
+                "fecha": [(CORTE + pd.Timedelta(days=d)).date() for d in (1, 2)],
+                "tienda_cod": ["008", "008"],
+                "id_producto": [arti.id_producto.iloc[0]] * 2,
+                "unidades": [10.0, 15.0],
+            }
+        ),
     }
 
 
@@ -285,7 +293,9 @@ def test_flujo_completo_bigquery_maestros_y_motor():
         "ventas",
         "maestro_tiendas",
         "maestro_cadena",
+        "venta_diaria",
     ]
+    assert inp.venta_diaria["unidades"].sum() == 25 and set(inp.venta_diaria["tienda_id"]) == {"8"}
     assert "historial" not in [c[0] for c in fake.consultas]  # el stock no tiene historial
     for _, sql, p in fake.consultas:
         assert "SELECT *" not in sql.upper()

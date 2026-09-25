@@ -3,7 +3,9 @@
 cobertura_semanas = lead time + ciclo de revisión + seguridad(rotación)   [por categoría]
 objetivo_mc       = redondeo(demanda_semanal × cobertura)
 objetivo_talla    = max(mínimo de exhibición si talla core, Hamilton(objetivo_mc, share_talla))
-necesidad         = max(0, objetivo_talla − stock − tránsito), con tope por SKU×tienda
+posición          = stock (cierre del corte) + tránsito − venta posterior al corte
+necesidad         = max(objetivo_talla − posición, venta desde la última ruta), con tope por
+                    SKU×tienda (reponer lo vendido desde el envío anterior; ver venta_reciente)
 Sobrestock (cobertura actual > umbral): necesidad 0 y se marca.
 Introducción (NUNCA_TUVO, o EXPOSICION_INSUFICIENTE sin stock ni tránsito): exige
 afinidad >= umbral; si no, necesidad 0.
@@ -184,9 +186,25 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     objetivo = np.where(agotado, 0, objetivo)
     out["stock_objetivo"] = np.where(talla_nueva, 0, objetivo).astype("int64")
 
-    pos = out["stock_disponible"] + out["stock_transito"]
-    bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos)).astype("int64")
-    tope = params.tope_tienda.max_unidades_por_sku
+    # La venta posterior al corte de stock todavía no está descontada del stock.
+    post = out["venta_post_corte"].fillna(0) if "venta_post_corte" in out else 0.0
+    pos = (out["stock_disponible"] + out["stock_transito"] - post).clip(lower=0)
+    bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
+    # Reponer lo vendido desde la ruta anterior (si la talla no está bloqueada ni en sobrestock).
+    if params.reposicion_venta.reponer_venta_desde_ruta and "venta_desde_ruta" in out:
+        piso = np.where(
+            repone.to_numpy() & ~sobre & ~talla_nueva & ~agotado,
+            np.ceil(out["venta_desde_ruta"].fillna(0).to_numpy()),
+            0,
+        )
+        out["repone_venta_ruta"] = piso > bruta
+        bruta = np.maximum(bruta, piso)
+    else:
+        piso = np.zeros(len(out))
+        out["repone_venta_ruta"] = False
+    bruta = bruta.astype("int64")
+    # El tope por SKU×tienda no recorta la reposición de lo que ya se vendió.
+    tope = np.maximum(params.tope_tienda.max_unidades_por_sku, piso)
     bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0))
     out["necesidad_bruta"] = bruta
     out["necesidad"] = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")

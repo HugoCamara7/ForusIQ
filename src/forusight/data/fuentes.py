@@ -267,6 +267,41 @@ def sql_ventas(
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY {grupos}"
 
 
+def sql_venta_diaria(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+) -> str:
+    """Venta diaria reciente por tienda×SKU (para reponer lo vendido desde la última ruta)."""
+    f = _c(mapa, "fecha")
+    sel = [
+        f"DATE({f}) AS fecha",
+        f"CAST({_c(mapa, 'tienda_cod')} AS STRING) AS tienda_cod",
+        f"{sku_sql(_c(mapa, 'id_producto'))} AS id_producto",
+    ]
+    where = f"DATE({f}) >= @desde_diaria AND DATE({f}) < @hasta_foto"
+    if con_marcas:
+        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+    return (
+        f"SELECT {', '.join(sel)}, SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades"
+        f"\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2, 3"
+    )
+
+
+def a_venta_diaria(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
+    """Resultado de sql_venta_diaria → fecha, tienda_id, sku, unidades."""
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["fecha", "tienda_id", "sku", "unidades"])
+    v = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(df["fecha"]),
+            "tienda_id": df["tienda_cod"].map(codigo_tienda),
+            "sku": sku_canonico(df["id_producto"]),
+            "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
+        }
+    )
+    v = v.loc[v["sku"].isin(skus) & v["tienda_id"].ne("") & ~v["tienda_id"].isin(excluidas)]
+    return v.groupby(["fecha", "tienda_id", "sku"], as_index=False)["unidades"].sum()
+
+
 def sql_revisar_venta(
     tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
 ) -> tuple[str, str]:

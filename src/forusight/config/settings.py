@@ -234,6 +234,13 @@ class RecepcionParams(_Section):
     dias_pendiente: int = Field(3, ge=0, le=14)
 
 
+class ReposicionVentaParams(_Section):
+    """Reponer lo vendido desde la ruta anterior del mall (venta diaria de BigQuery)."""
+
+    reponer_venta_desde_ruta: bool = True
+    dias_venta_diaria: int = Field(14, ge=7, le=31)
+
+
 class TopeTiendaParams(_Section):
     max_unidades_por_sku: int = Field(12, ge=0)
     max_unidades_por_tienda: int = Field(600, ge=0)
@@ -288,6 +295,7 @@ class EngineParams(_Section):
     recepcion: RecepcionParams = Field(default_factory=RecepcionParams)
     calendario: CalendarioParams = Field(default_factory=CalendarioParams)
     stock_cd: StockCdParams = Field(default_factory=StockCdParams)
+    reposicion_venta: ReposicionVentaParams = Field(default_factory=ReposicionVentaParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

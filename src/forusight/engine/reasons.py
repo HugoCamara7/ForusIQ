@@ -15,6 +15,7 @@ ENVIO_QUIEBRE = "ENVIO_QUIEBRE"
 ENVIO_CURVA_ROTA = "ENVIO_CURVA_ROTA"
 ENVIO_INTRODUCCION = "ENVIO_INTRODUCCION"
 ENVIO_REPOSICION = "ENVIO_REPOSICION"
+ENVIO_VENTA_RUTA = "ENVIO_VENTA_RUTA"
 
 PARCIAL_CD = "PARCIAL_CD"
 PARCIAL_TOPE = "PARCIAL_TOPE"
@@ -30,6 +31,7 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     ENVIO_CURVA_ROTA: "Envío para completar talla core faltante",
     ENVIO_INTRODUCCION: "Introducción de modelo con afinidad suficiente",
     ENVIO_REPOSICION: "Reposición hasta el stock objetivo",
+    ENVIO_VENTA_RUTA: "Reposición de lo vendido desde la ruta anterior del mall",
     "NO_SIN_DEMANDA": "Tuvo exposición suficiente y no vendió",
     "NO_SIN_REFERENCIA": "Sin historia ni referencias de venta",
     "NO_AFINIDAD_BAJA": "Afinidad bajo el umbral para introducir",
@@ -53,9 +55,14 @@ def asignar_codigos(f: pd.DataFrame, params: EngineParams) -> pd.DataFrame:
     out = f.copy()
     envia = out["cantidad"] > 0
     quiebre = out["estado_mc"].eq(QUIEBRE) | out["estado_sku"].eq(QUIEBRE)
+    venta_ruta = (
+        out["repone_venta_ruta"].fillna(False).astype(bool)
+        if "repone_venta_ruta" in out
+        else pd.Series(False, index=out.index)
+    )
     cod_envio = np.select(
-        [out["es_introduccion"], quiebre, out["talla_core_faltante"]],
-        [ENVIO_INTRODUCCION, ENVIO_QUIEBRE, ENVIO_CURVA_ROTA],
+        [out["es_introduccion"], venta_ruta, quiebre, out["talla_core_faltante"]],
+        [ENVIO_INTRODUCCION, ENVIO_VENTA_RUTA, ENVIO_QUIEBRE, ENVIO_CURVA_ROTA],
         ENVIO_REPOSICION,
     )
     bloqueo = out["motivo_asignacion"].where(out["motivo_asignacion"].ne(""), out["motivo_bloqueo"])
@@ -119,6 +126,12 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
             envio + f"se introduce el modelo: afinidad {r['afinidad']:.2f} ≥ umbral {umbral:.2f} "
             f"y demanda estimada por {str(r['fuente_demanda']).lower()} de "
             f"{r['demanda_semanal']:.2f} pares/sem del modelo-color; " + base
+        )
+    elif c == ENVIO_VENTA_RUTA:
+        t = (
+            envio
+            + f"desde la ruta anterior del mall vendió {_pares(r.get('venta_desde_ruta', 0))} "
+            "y se repone lo vendido (más que lo que pide el nivel máximo de 12 semanas); " + base
         )
     elif c == ENVIO_REPOSICION:
         t = envio + "hay que reponer hasta el stock objetivo: " + base
@@ -214,6 +227,9 @@ def generar_textos(f: pd.DataFrame, params: EngineParams, cd_id: str = "320") ->
         "dias_12s_mc",
         "cobertura_actual",
         "tope_sku_aplicado",
+        "venta_desde_ruta",
     ]
+    if "venta_desde_ruta" not in f:
+        f = f.assign(venta_desde_ruta=0.0)
     registros = f[cols].to_dict("records")
     return pd.Series([texto_motivo(r, params, cd_id) for r in registros], index=f.index)

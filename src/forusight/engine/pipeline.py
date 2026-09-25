@@ -65,6 +65,8 @@ COLUMNAS_EXTRA = [
     "curva_rota",
     "talla_core_faltante",
     "es_introduccion",
+    "venta_desde_ruta",
+    "venta_post_corte",
     "necesidad_bruta",
     "etapa",
     "prioridad_inicial",
@@ -83,11 +85,18 @@ class EngineInputs:
     permitidos: pd.DataFrame | None = None
     #: Opcional: reporte de distribución del día usado como base (filas originales).
     reporte: pd.DataFrame | None = None
+    #: Opcional: venta diaria reciente (fecha, tienda_id, sku, unidades), de BigQuery.
+    venta_diaria: pd.DataFrame | None = None
+    #: Opcional: venta desde la última ruta y posterior al corte, por tienda×SKU
+    #: (engine.venta_reciente.resumir).
+    venta_reciente: pd.DataFrame | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
             permitidos=self.permitidos,
             reporte=self.reporte,
+            venta_diaria=self.venta_diaria,
+            venta_reciente=self.venta_reciente,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),
@@ -155,6 +164,15 @@ def ejecutar(
     )
     mc = calcular_objetivo_mc(mc, params)
     sku = curva_tallas(sku, base.semanal, params)
+    vr = inp.venta_reciente
+    if vr is not None and len(vr):
+        sku = sku.merge(
+            vr[["tienda_id", "sku", "venta_desde_ruta", "venta_post_corte"]],
+            on=["tienda_id", "sku"],
+            how="left",
+        )
+    for c in ("venta_desde_ruta", "venta_post_corte"):
+        sku[c] = sku[c].fillna(0).astype(float) if c in sku else 0.0
     sku = calcular_necesidad(sku, mc, params)
 
     disp = dict(zip(base.cd["sku"], base.cd["disponible"], strict=True))
