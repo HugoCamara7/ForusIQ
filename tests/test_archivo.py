@@ -92,6 +92,9 @@ def test_columnas_son_del_reporte_y_en_su_orden(corrida):
     assert len(semanas) == 12 and semanas == sorted(semanas)
     nombres = ["SEMANAS" if c in semanas else c for c in t.columns]
     nombres = [n for i, n in enumerate(nombres) if n != "SEMANAS" or nombres.index("SEMANAS") == i]
+    # columnas propias de Forusight (no están en el reporte original)
+    propias = {"Motivo Forusight", "Venta desde ruta anterior [un]", "Venta después del corte [un]"}
+    nombres = [n for n in nombres if n not in propias]
     assert set(nombres) <= set(NEOGISTICA), set(nombres) - set(NEOGISTICA)
     posiciones = [NEOGISTICA.index(n) for n in nombres]
     assert posiciones == sorted(posiciones)
@@ -135,22 +138,48 @@ def test_cantidad_aprobada_reemplaza_la_propuesta(corrida):
     assert t["Cantidad Pedida Final [un]"].sum() == 0
 
 
-def test_excel_con_cabecera_y_estilo_neogistica(corrida):
+def test_excel_estilo_forus_con_dinamica_sial_y_diccionario(corrida):
     t = _tabla(corrida)
     x = a_excel_forusight(t, pd.Timestamp("2026-09-23"))
     wb = openpyxl.load_workbook(io.BytesIO(x))
-    ws = wb["Hoja1"]
-    assert ws["A3"].value == "Empresa:" and ws["B3"].value == "Forus Peru"
-    assert ws["A4"].value == "Reporte:" and ws["A5"].value == "Fecha:"
-    assert ws["B5"].value == "23/09/2026"
+    assert wb.sheetnames == ["Resumen", "Distribución", "Dinámica", "SIAL", "Diccionario"]
+    ws = wb["Distribución"]
+    assert ws["C1"].value.startswith("Forusight") and "23/09/2026" in ws["C2"].value
     assert ws["A7"].value == "Código SKU" and ws.auto_filter.ref.startswith("A7")
-    assert ws["A7"].fill.fgColor.rgb.endswith("084B8A") and ws["A7"].font.b
+    assert ws["A6"].value == "PRODUCTO" and ws["A7"].font.b
+    assert len(ws._images) == 1  # logo de Forus
     j = list(t.columns).index("Cantidad Pedida Final [un]") + 1
-    celda = ws.cell(8, j)
-    assert celda.fill.fgColor.rgb.endswith("C2C567") and celda.font.color.rgb.endswith("FF0000")
+    assert ws.cell(8, j).fill.fgColor.rgb.endswith("FFF1CC") and ws.cell(8, j).font.b
     assert ws.max_row == 7 + len(t)
-    assert "Resumen" in wb.sheetnames
+    # filtrada en cantidad > 0: las filas sin envío quedan ocultas
+    q = t["Cantidad Pedida Final [un]"].to_numpy()
+    ocultas = {r for r, d in ws.row_dimensions.items() if d.hidden}
+    assert ocultas == {8 + i for i in range(len(t)) if q[i] <= 0}
+    assert ws.auto_filter.filterColumn[0].colId == j - 1
+    # SIAL: producto + códigos de tienda, sólo valores > 0, igual a la suma del archivo
+    sial = pd.read_excel(io.BytesIO(x), sheet_name="SIAL")
+    prod = [
+        c for c in ("Código Modelo", "Modelo", "Código Color", "Talla", "Descripción SKU") if c in t
+    ]
+    assert list(sial.columns[: len(prod)]) == prod
+    assert sial.iloc[:, len(prod) :].sum().sum() == q.sum()
+    tiendas = {str(c) for c in sial.columns[len(prod) :]}
+    assert tiendas == set(t.loc[q > 0, "Código Centro"].astype(str))
+    din = wb["Dinámica"]
+    assert din["A8"].value == "Suma de Cantidad Pedida Final" and din["B6"].value == "> 0"
+    dic = wb["Diccionario"]
+    cols = [dic.cell(r, 1).value for r in range(1, dic.max_row + 1)]
+    assert "Cantidad Pedida Final [un]" in cols and "Stock en CD" in cols
     assert nombre_archivo(pd.Timestamp("2026-09-23")) == "20260923_Distribucion_Forusight.xlsx"
+
+
+def test_diccionario_excel_suelto():
+    from forusight.export.archivo import diccionario_excel
+
+    wb = openpyxl.load_workbook(io.BytesIO(diccionario_excel()))
+    ws = wb["Diccionario"]
+    cols = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1)]
+    assert "Venta desde ruta anterior [un]" in cols and "Semanas (12 columnas con fecha)" in cols
 
 
 def test_config_github_reutiliza_ticketing_del_catalogo():

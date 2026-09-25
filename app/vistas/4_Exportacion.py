@@ -44,9 +44,21 @@ if res is not None:
     )
     st.caption(
         ("Distribución **aprobada**." if cantidad is not None else "Propuesta de la corrida.")
-        + " El archivo trae la hoja de distribución y una hoja Resumen por tienda."
+        + " El archivo trae 5 hojas: Resumen por tienda, Distribución (filtrada en cantidad > 0), "
+        "Dinámica (producto × código de tienda), SIAL (valores para subir) y Diccionario."
     )
     boton_archivo("archivo_exportacion")
+    from forusight.export.archivo import diccionario_excel
+
+    st.download_button(
+        "Descargar diccionario de columnas",
+        data=diccionario_excel,
+        file_name="Diccionario_Forusight.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        icon=":material/menu_book:",
+        width="stretch",
+        key="diccionario_exportacion",
+    )
 
     if getattr(entradas, "reporte", None) is not None:
         from forusight.data.reporte import coincidencia

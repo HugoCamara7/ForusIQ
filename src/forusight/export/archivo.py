@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -65,6 +66,8 @@ COLUMNAS: list[Col] = [
     _txt("Grupo Requerimiento", 20),
     # 12 semanas: se insertan dinámicamente (relleno #A4C4C4, formato #,##0)
     _num("Demanda Periodo Actual", ancho=15),
+    _num("Venta desde ruta anterior [un]", ancho=14),
+    _num("Venta después del corte [un]", ancho=14),
     _num("Pronóstico Demanda [un/semana]", "#,##0.00", "#87A6C4"),
     _num("Leadtime [días]", ancho=10),
     _num("Período Revisión [días]", "#,##0.0"),
@@ -81,6 +84,7 @@ COLUMNAS: list[Col] = [
     _num("Unidad Empaque Distribución", ancho=15),
     _num("Alcance Posición Stock Actual [semanas]", "#,##0.0"),
     _num("Alcance Posición Stock Final [semanas]", "#,##0.0"),
+    Col("Motivo Forusight", ancho=90),
 ]
 SEMANA = Col("", "#A4C4C4", "#,##0", 12, True)
 GRUPO_PLANIFICACION = {"VESTUARIO": "VST", "CALZADO": "CLZ", "ACCESORIOS": "ACC"}
@@ -157,7 +161,8 @@ def construir_tabla(
     if "leadtime_dias" in tien:  # calendario: lead time y revisión propios de cada tienda
         lead = d["tienda_id"].map(tien["leadtime_dias"]).fillna(lead)
         revision = d["tienda_id"].map(tien["revision_dias"]).fillna(revision)
-    posicion = d["stock_tienda"] + d["stock_transito"]
+    post = d["venta_post_corte"] if "venta_post_corte" in d else pd.Series(0.0, index=d.index)
+    posicion = (d["stock_tienda"] + d["stock_transito"] - post.fillna(0)).clip(lower=0)
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
     almacenamiento = d["motivo_codigo"].eq("NO_TOPE_TIENDA") | d["motivo_parcial"].eq(
         "PARCIAL_TOPE"
@@ -205,6 +210,12 @@ def construir_tabla(
         out[s.strftime("%Y-%m-%d")] = np.nan_to_num(col, nan=0.0)
     actual = v.loc[v["semana_inicio"] == corte].groupby(["tienda_id", "sku"])["unidades"].sum()
     out["Demanda Periodo Actual"] = actual.reindex(llave).fillna(0).to_numpy()
+    for col, c in (
+        ("Venta desde ruta anterior [un]", "venta_desde_ruta"),
+        ("Venta después del corte [un]", "venta_post_corte"),
+    ):
+        if c in d and d[c].fillna(0).gt(0).any():
+            out[col] = d[c].fillna(0)
 
     out["Pronóstico Demanda [un/semana]"] = d["demanda_semanal"].round(6)
     out["Leadtime [días]"] = lead
@@ -225,6 +236,8 @@ def construir_tabla(
     out["Unidad Empaque Distribución"] = params.asignacion.multiplo_envio
     out["Alcance Posición Stock Actual [semanas]"] = posicion / fc
     out["Alcance Posición Stock Final [semanas]"] = (posicion + d["cantidad"]) / fc
+    if "motivo_texto" in d:
+        out["Motivo Forusight"] = d["motivo_texto"]
 
     # sólo columnas con dato real (las operativas siempre)
     siempre = {c.nombre for c in COLUMNAS if c.siempre}
@@ -236,88 +249,520 @@ def construir_tabla(
     return out.reset_index(drop=True)
 
 
+# ------------------------------------------------------------------ Excel estilo Forus
+
+LOGO = Path(__file__).resolve().parents[3] / "assets" / "forus_logo.png"
+NAVY, AZUL_FORUS, ACENTO = "#17269A", "#2367FF", "#009FE3"
+CEBRA, TINTA, GRIS_TXT = "#F5F7FC", "#0F172A", "#64748B"
+Q_COL, P_COL = "Cantidad Pedida Final [un]", "Pendiente Reposición"
+FILAS_PRODUCTO = ["Código Modelo", "Modelo", "Código Color", "Talla", "Descripción SKU"]
+
+
 def resumen_por_tienda(tabla: pd.DataFrame) -> pd.DataFrame:
-    """Como la dinámica que el equipo arma sobre el reporte (Hoja4)."""
-    g = ["Nombre Centro", "Código Centro"] if "Nombre Centro" in tabla else ["Código Centro"]
+    """Unidades, SKU y pendiente por tienda (como la dinámica del equipo)."""
+    g = [c for c in ("Código Centro", "Nombre Centro", "Centro Comercial") if c in tabla]
+    t = tabla.assign(_sku=tabla[Q_COL].gt(0))
     r = (
-        tabla.groupby(g, dropna=False)
+        t.groupby(g, dropna=False)
         .agg(
             **{
-                "Suma de Cantidad Pedida Final [un]": ("Cantidad Pedida Final [un]", "sum"),
-                "Suma de Pendiente Reposición": ("Pendiente Reposición", "sum"),
+                "Unidades a enviar": (Q_COL, "sum"),
+                "SKU con envío": ("_sku", "sum"),
+                "Pendiente": (P_COL, "sum"),
             }
         )
         .reset_index()
     )
-    return r.sort_values("Suma de Cantidad Pedida Final [un]", ascending=False)
+    return r.sort_values("Unidades a enviar", ascending=False).reset_index(drop=True)
 
 
 def nombre_archivo(fecha: pd.Timestamp) -> str:
     return f"{pd.Timestamp(fecha):%Y%m%d}_Distribucion_Forusight.xlsx"
 
 
+def dinamica(tabla: pd.DataFrame) -> pd.DataFrame:
+    """Filas producto (modelo, nombre, color, talla, descripción), columnas código de tienda,
+    valores suma de Cantidad Pedida Final; sólo cantidades > 0."""
+    t = tabla.loc[pd.to_numeric(tabla[Q_COL], errors="coerce").fillna(0) > 0]
+    filas = [c for c in FILAS_PRODUCTO if c in t]
+    if t.empty:
+        return pd.DataFrame(columns=filas)
+    t = t.assign(**{c: t[c].astype("string").fillna("") for c in filas})
+    piv = t.pivot_table(
+        index=filas, columns="Código Centro", values=Q_COL, aggfunc="sum", fill_value=0
+    )
+    orden = sorted(
+        piv.columns, key=lambda c: (not str(c).isdigit(), int(c) if str(c).isdigit() else 0, str(c))
+    )
+    piv = piv[orden]
+    piv.columns = [str(c) for c in piv.columns]
+    return piv.reset_index()
+
+
+def _codigo(c: str):
+    return int(c) if str(c).isdigit() else c
+
+
+class _Libro:
+    """Formatos compartidos del libro (cacheados por propiedades)."""
+
+    def __init__(self, wb):
+        self.wb = wb
+        self._cache: dict = {}
+
+    def f(self, **props):
+        clave = tuple(sorted(props.items()))
+        if clave not in self._cache:
+            self._cache[clave] = self.wb.add_format({"font_name": "Calibri", **props})
+        return self._cache[clave]
+
+    def portada(self, ws, titulo: str, subtitulo: str, kpis: list[tuple[str, str]], ancho: int):
+        """Logo de Forus, título, subtítulo y fila de indicadores (filas 0 a 4)."""
+        ws.hide_gridlines(2)
+        ws.set_row(0, 30), ws.set_row(1, 22), ws.set_row(2, 16), ws.set_row(3, 26)
+        if LOGO.exists():
+            ws.insert_image(
+                0, 0, str(LOGO), {"x_scale": 0.085, "y_scale": 0.085, "x_offset": 6, "y_offset": 6}
+            )
+        ws.write(0, 2, titulo, self.f(bold=True, font_size=18, font_color=NAVY, valign="vcenter"))
+        ws.write(1, 2, subtitulo, self.f(font_size=10, font_color=GRIS_TXT, valign="top"))
+        col = 2
+        for etiqueta, valor in kpis:
+            ws.write(2, col, etiqueta.upper(), self.f(font_size=8, bold=True, font_color=GRIS_TXT))
+            ws.write(3, col, valor, self.f(font_size=15, bold=True, font_color=AZUL_FORUS))
+            col += 2
+        ws.set_row(4, 5)
+        for j in range(max(ancho, col)):
+            ws.write_blank(4, j, None, self.f(bg_color=NAVY))
+
+
+def _banda(lb: _Libro, ws, fila: int, columnas: list[str]) -> None:
+    """Fila de secciones con el color Forus de cada una (tramos contiguos combinados)."""
+    from forusight.export.diccionario import COLORES, seccion
+
+    secs = [seccion(c) for c in columnas]
+    j = 0
+    while j < len(secs):
+        k = j
+        while k + 1 < len(secs) and secs[k + 1] == secs[j]:
+            k += 1
+        fmt = lb.f(
+            bold=True,
+            font_color="#FFFFFF",
+            bg_color=COLORES[secs[j]][0],
+            align="center",
+            valign="vcenter",
+            font_size=10,
+        )
+        if k > j:
+            ws.merge_range(fila, j, fila, k, secs[j].upper(), fmt)
+        else:
+            ws.write(fila, j, secs[j].upper(), fmt)
+        j = k + 1
+
+
+def _encabezado(lb: _Libro, columna: str):
+    from forusight.export.diccionario import COLORES, seccion
+
+    _, claro, texto = COLORES[seccion(columna)]
+    return lb.f(
+        bold=True,
+        bg_color=claro,
+        font_color=texto,
+        text_wrap=True,
+        align="center",
+        valign="vcenter",
+        border=1,
+        border_color="#FFFFFF",
+        font_size=10,
+    )
+
+
+def _escribir_columna(ws, fila0: int, j: int, col: pd.Series, fmt) -> None:
+    if pd.api.types.is_numeric_dtype(col) and not pd.api.types.is_bool_dtype(col):
+        v = pd.to_numeric(col, errors="coerce").to_numpy(dtype=float, na_value=np.nan)
+        for i in np.flatnonzero(np.isfinite(v)):
+            ws.write_number(fila0 + int(i), j, float(v[i]), fmt)
+    else:
+        vals = col.astype(object).where(col.notna(), None).tolist()
+        for i, x in enumerate(vals):
+            if x is not None and x != "":
+                ws.write(fila0 + i, j, x, fmt)
+
+
+def _hoja_distribucion(lb: _Libro, tabla: pd.DataFrame, titulo: str, subtitulo: str, kpis):
+    ws = lb.wb.add_worksheet("Distribución")
+    estilos = {c.nombre: c for c in COLUMNAS}
+    cols = list(tabla.columns)
+    lb.portada(ws, titulo, subtitulo, kpis, len(cols))
+    _banda(lb, ws, 5, cols)
+    ws.set_row(6, 62)
+    n = len(tabla)
+    for j, nombre in enumerate(cols):
+        c = estilos.get(nombre, SEMANA if nombre[:2] == "20" else Col(nombre))
+        props = {
+            "num_format": c.formato,
+            "align": "right" if c.derecha else "left",
+            "font_size": 10,
+            "font_color": TINTA,
+        }
+        if nombre == Q_COL:
+            props.update(bold=True, bg_color="#FFF1CC", font_color="#7A5200", align="center")
+        fmt = lb.f(**props)
+        ws.set_column(j, j, min(c.ancho, 60) if nombre != "Motivo Forusight" else 90)
+        ws.write(6, j, nombre, _encabezado(lb, nombre))
+        _escribir_columna(ws, 7, j, tabla[nombre], fmt)
+    if n:
+        # cebra suave (sin tapar la columna de cantidad)
+        jq = cols.index(Q_COL) if Q_COL in cols else -1
+        cebra = lb.f(bg_color=CEBRA)
+        for a, b in ((0, jq - 1), (jq + 1, len(cols) - 1)) if jq >= 0 else ((0, len(cols) - 1),):
+            if b >= a:
+                ws.conditional_format(
+                    7,
+                    a,
+                    6 + n,
+                    b,
+                    {"type": "formula", "criteria": "=MOD(ROW(),2)=0", "format": cebra},
+                )
+    ws.autofilter(6, 0, 6 + n, len(cols) - 1)
+    if Q_COL in cols and n:  # filtrado: sólo lo que se envía (> 0)
+        jq = cols.index(Q_COL)
+        ws.filter_column(jq, "x > 0")
+        q = pd.to_numeric(tabla[Q_COL], errors="coerce").fillna(0).to_numpy()
+        for i in np.flatnonzero(q <= 0):
+            ws.set_row(7 + int(i), None, None, {"hidden": True})
+    fijas = next((i + 1 for i, c in enumerate(cols) if c == "Talla"), 1)
+    ws.freeze_panes(7, fijas)
+    return ws
+
+
+def _hoja_resumen(lb: _Libro, tabla: pd.DataFrame, titulo: str, subtitulo: str, kpis):
+    ws = lb.wb.add_worksheet("Resumen")
+    r = resumen_por_tienda(tabla)
+    lb.portada(ws, titulo, subtitulo, kpis, max(len(r.columns), 8))
+    ws.set_column(0, 0, 16), ws.set_column(1, 1, 34), ws.set_column(2, 2, 26)
+    ws.set_column(3, len(r.columns), 16)
+    ws.write(6, 0, "Unidades por tienda", lb.f(bold=True, font_size=13, font_color=NAVY))
+    enc = lb.f(
+        bold=True,
+        font_color="#FFFFFF",
+        bg_color=NAVY,
+        align="center",
+        valign="vcenter",
+        text_wrap=True,
+        border=1,
+        border_color="#FFFFFF",
+    )
+    ws.set_row(7, 30)
+    for j, c in enumerate(r.columns):
+        ws.write(7, j, c, enc)
+    txt, num = lb.f(font_size=10), lb.f(font_size=10, num_format="#,##0")
+    for i, fila in enumerate(r.itertuples(index=False), start=8):
+        for j, x in enumerate(fila):
+            if pd.isna(x):
+                continue
+            ws.write(i, j, x, num if isinstance(x, int | float | np.integer | np.floating) else txt)
+    fin = 7 + len(r)
+    tot = lb.f(bold=True, font_color="#FFFFFF", bg_color=AZUL_FORUS, num_format="#,##0")
+    ws.write(fin + 1, 0, "Total general", tot)
+    for j, c in enumerate(r.columns):
+        if j == 0:
+            continue
+        if pd.api.types.is_numeric_dtype(r[c]):
+            ws.write_number(fin + 1, j, float(r[c].sum()), tot)
+        else:
+            ws.write_blank(fin + 1, j, None, tot)
+    if len(r):
+        ju = list(r.columns).index("Unidades a enviar")
+        ws.conditional_format(
+            8, ju, fin, ju, {"type": "data_bar", "bar_color": ACENTO, "bar_solid": True}
+        )
+        ws.conditional_format(
+            8,
+            0,
+            fin,
+            len(r.columns) - 1,
+            {"type": "formula", "criteria": "=MOD(ROW(),2)=1", "format": lb.f(bg_color=CEBRA)},
+        )
+    return ws
+
+
+def _hoja_dinamica(lb: _Libro, piv: pd.DataFrame, tabla: pd.DataFrame, titulo: str, kpis):
+    ws = lb.wb.add_worksheet("Dinámica")
+    filas = [c for c in FILAS_PRODUCTO if c in piv]
+    tiendas = [c for c in piv.columns if c not in filas]
+    lb.portada(
+        ws,
+        titulo,
+        "Suma de Cantidad Pedida Final [un] por producto y tienda",
+        kpis,
+        len(filas) + len(tiendas) + 1,
+    )
+    ws.write(5, 0, "Cantidad Pedida Final [un]", lb.f(bold=True, font_size=10, font_color=NAVY))
+    ws.write(
+        5,
+        1,
+        "> 0",
+        lb.f(bold=True, font_size=10, font_color="#FFFFFF", bg_color=ACENTO, align="center"),
+    )
+    anchos = {
+        "Código Modelo": 17,
+        "Modelo": 28,
+        "Código Color": 11,
+        "Talla": 7,
+        "Descripción SKU": 44,
+    }
+    for j, c in enumerate(filas):
+        ws.set_column(j, j, anchos.get(c, 14))
+    ws.set_column(len(filas), len(filas) + len(tiendas), 7)
+    ws.set_column(len(filas) + len(tiendas), len(filas) + len(tiendas), 11)
+    enc = lb.f(
+        bold=True,
+        font_color="#FFFFFF",
+        bg_color=NAVY,
+        align="center",
+        valign="vcenter",
+        border=1,
+        border_color="#FFFFFF",
+        font_size=10,
+    )
+    sub = lb.f(
+        bold=True,
+        font_color=NAVY,
+        bg_color="#E3E7FB",
+        align="center",
+        valign="vcenter",
+        border=1,
+        border_color="#FFFFFF",
+        font_size=10,
+        text_wrap=True,
+    )
+    nombres = (
+        tabla.drop_duplicates("Código Centro").set_index("Código Centro")["Nombre Centro"]
+        if "Nombre Centro" in tabla
+        else pd.Series(dtype=str)
+    )
+    nombres.index = nombres.index.astype(str)
+    ws.write(7, 0, "Suma de Cantidad Pedida Final", enc)
+    for j in range(1, len(filas)):
+        ws.write_blank(7, j, None, enc)
+    if tiendas:
+        if len(tiendas) > 1:
+            ws.merge_range(7, len(filas), 7, len(filas) + len(tiendas) - 1, "Código Centro", enc)
+        else:
+            ws.write(7, len(filas), "Código Centro", enc)
+    ws.write(7, len(filas) + len(tiendas), "", enc)
+    # fila 8: nombre de la tienda (chico); fila 9: encabezados y código de tienda
+    ws.set_row(8, 34)
+    chico = lb.f(
+        font_size=7,
+        font_color=GRIS_TXT,
+        text_wrap=True,
+        align="center",
+        valign="bottom",
+        bg_color="#E3E7FB",
+    )
+    for j in range(len(filas)):
+        ws.write_blank(8, j, None, chico)
+    for k, t in enumerate(tiendas):
+        ws.write(8, len(filas) + k, str(nombres.get(str(t), "")), chico)
+    ws.write_blank(8, len(filas) + len(tiendas), None, chico)
+    for j, c in enumerate(filas):
+        ws.write(9, j, c, sub)
+    for k, t in enumerate(tiendas):
+        ws.write(9, len(filas) + k, _codigo(t), sub)
+    ws.write(9, len(filas) + len(tiendas), "Total general", sub)
+    # filas: bloques de modelo con color alterno; el código de modelo en negrita
+    modelo = piv["Código Modelo"] if "Código Modelo" in piv else pd.Series("", index=piv.index)
+    m = modelo.astype(str).to_numpy()
+    bloque = pd.Series(np.r_[True, m[1:] != m[:-1]] if len(m) else [], index=piv.index).cumsum()
+    for i, (fila, b) in enumerate(zip(piv.itertuples(index=False), bloque, strict=True), start=10):
+        fondo = "#FFFFFF" if b % 2 else "#F1F4FB"
+        nuevo = i == 10 or bloque.iloc[i - 10] != bloque.iloc[i - 11]
+        for j, c in enumerate(filas):
+            negrita = c == "Código Modelo" or (c == "Modelo" and nuevo)
+            ws.write(
+                i,
+                j,
+                fila[j],
+                lb.f(bg_color=fondo, font_size=10, bold=negrita, font_color=TINTA),
+            )
+        valores = [float(x) for x in fila[len(filas) :]]
+        for k, x in enumerate(valores):
+            fmt = lb.f(
+                bg_color=fondo,
+                font_size=10,
+                align="center",
+                num_format="#,##0",
+                font_color="#7A5200" if x > 0 else TINTA,
+                bold=x > 0,
+            )
+            if x > 0:
+                ws.write_number(i, len(filas) + k, x, fmt)
+            else:
+                ws.write_blank(i, len(filas) + k, None, fmt)
+        ws.write_number(
+            i,
+            len(filas) + len(tiendas),
+            sum(valores),
+            lb.f(
+                bg_color="#E3E7FB",
+                bold=True,
+                font_size=10,
+                align="center",
+                num_format="#,##0",
+                font_color=NAVY,
+            ),
+        )
+    fin = 10 + len(piv)
+    tot = lb.f(bold=True, font_color="#FFFFFF", bg_color=NAVY, num_format="#,##0", align="center")
+    ws.write(fin, 0, "Total general", lb.f(bold=True, font_color="#FFFFFF", bg_color=NAVY))
+    for j in range(1, len(filas)):
+        ws.write_blank(fin, j, None, tot)
+    for k, t in enumerate(tiendas):
+        ws.write_number(fin, len(filas) + k, float(piv[t].sum()), tot)
+    ws.write_number(
+        fin, len(filas) + len(tiendas), float(piv[tiendas].to_numpy().sum()) if tiendas else 0, tot
+    )
+    ws.freeze_panes(10, len(filas))
+    return ws
+
+
+def _hoja_sial(lb: _Libro, piv: pd.DataFrame) -> None:
+    """Valores planos para subir a SIAL: encabezados de producto + códigos de tienda."""
+    ws = lb.wb.add_worksheet("SIAL")
+    filas = [c for c in FILAS_PRODUCTO if c in piv]
+    tiendas = [c for c in piv.columns if c not in filas]
+    ws.write_row(0, 0, filas + [_codigo(t) for t in tiendas])
+    for i, fila in enumerate(piv.itertuples(index=False), start=1):
+        ws.write_row(i, 0, [str(x) for x in fila[: len(filas)]])
+        for k, x in enumerate(fila[len(filas) :]):
+            if float(x) > 0:
+                ws.write_number(i, len(filas) + k, float(x))
+
+
+def hoja_diccionario(lb: _Libro, columnas: list[str], titulo: str) -> None:
+    from forusight.export.diccionario import COLORES, HOJAS, entrada
+
+    ws = lb.wb.add_worksheet("Diccionario")
+    lb.portada(ws, titulo, "Qué es cada columna, cómo se calcula y de dónde sale el dato", [], 7)
+    ws.set_column(0, 0, 34), ws.set_column(1, 1, 18), ws.set_column(2, 2, 46)
+    ws.set_column(3, 3, 70), ws.set_column(4, 4, 44), ws.set_column(5, 5, 38)
+    ws.write(6, 0, "Hojas del archivo", lb.f(bold=True, font_size=13, font_color=NAVY))
+    fila = 7
+    for hoja, texto in HOJAS:
+        ws.write(fila, 0, hoja, lb.f(bold=True, font_color=AZUL_FORUS))
+        ws.merge_range(fila, 1, fila, 4, texto, lb.f(text_wrap=True, font_size=10))
+        fila += 1
+    fila += 1
+    ws.write(fila, 0, "Columnas", lb.f(bold=True, font_size=13, font_color=NAVY))
+    fila += 1
+    enc = lb.f(
+        bold=True,
+        font_color="#FFFFFF",
+        bg_color=NAVY,
+        valign="vcenter",
+        text_wrap=True,
+        border=1,
+        border_color="#FFFFFF",
+    )
+    for j, c in enumerate(
+        [
+            "Columna",
+            "Sección",
+            "Qué es",
+            "Cómo se calcula",
+            "Fuente (BigQuery)",
+            "Con el reporte del día",
+        ]
+    ):
+        ws.write(fila, j, c, enc)
+    ws.freeze_panes(fila + 1, 1)
+    fila += 1
+    vistos = set()
+    for col in columnas:
+        e = entrada(col)
+        clave = "semanas" if col[:2] == "20" else col
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        banda, claro, texto = COLORES[e[0]]
+        nombre = "Semanas (12 columnas con fecha)" if clave == "semanas" else col
+        ws.write(
+            fila,
+            0,
+            nombre,
+            lb.f(bold=True, text_wrap=True, valign="top", font_size=10, left=5, left_color=banda),
+        )
+        ws.write(
+            fila,
+            1,
+            e[0],
+            lb.f(bold=True, font_color=texto, bg_color=claro, valign="top", font_size=10),
+        )
+        for j, x in enumerate(e[1:], start=2):
+            ws.write(fila, j, x, lb.f(text_wrap=True, valign="top", font_size=10))
+        fila += 1
+
+
+def _kpis(tabla: pd.DataFrame) -> list[tuple[str, str]]:
+    q = pd.to_numeric(tabla.get(Q_COL, pd.Series(dtype=float)), errors="coerce").fillna(0)
+    env = tabla.loc[q > 0]
+    k = [
+        ("Unidades a enviar", f"{int(q.sum()):,}"),
+        ("Tiendas", f"{env['Código Centro'].nunique() if len(env) else 0}"),
+        ("SKU", f"{env['Código SKU'].nunique() if 'Código SKU' in env and len(env) else 0}"),
+    ]
+    if P_COL in tabla:
+        k.append(
+            ("Pendiente", f"{int(pd.to_numeric(tabla[P_COL], errors='coerce').fillna(0).sum()):,}")
+        )
+    return k
+
+
 def a_excel_forusight(
     tabla: pd.DataFrame,
     fecha: pd.Timestamp,
-    reporte: str = "Archivo Forusight · Distribución CD 320",
+    reporte: str = "Distribución CD 320",
 ) -> bytes:
+    """Archivo Forusight con estilo Forus: Resumen, Distribución (filtrada en cantidad > 0),
+    Dinámica, SIAL (valores para subir) y Diccionario."""
     import xlsxwriter
 
-    estilos = {c.nombre: c for c in COLUMNAS}
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_numbers": False})
-    ws = wb.add_worksheet("Hoja1")
-    cab = wb.add_format({"font_name": "Calibri", "font_size": 11})
-    enc = wb.add_format(
-        {
-            "bold": True,
-            "font_color": "#FFFFFF",
-            "bg_color": AZUL,
-            "align": "center",
-            "valign": "vcenter",
-            "text_wrap": True,
-            "font_name": "Calibri",
-        }
+    lb = _Libro(wb)
+    marcas = (
+        ", ".join(sorted(tabla["Marca"].dropna().astype(str).unique())) if "Marca" in tabla else ""
     )
-    ws.set_row(0, 36)
-    ws.write(2, 0, "Empresa:", cab), ws.write(2, 1, "Forus Peru", cab)
-    ws.write(3, 0, "Reporte:", cab), ws.write(3, 1, reporte, cab)
-    ws.write(4, 0, "Fecha:", cab), ws.write(4, 1, f"{pd.Timestamp(fecha):%d/%m/%Y}", cab)
-    ws.set_row(6, 76.05)
-    for j, nombre in enumerate(tabla.columns):
-        c = estilos.get(nombre, SEMANA if nombre[:2] == "20" else Col(nombre))
-        fmt = wb.add_format(
-            {
-                "bg_color": c.relleno,
-                "num_format": c.formato,
-                "align": "right" if c.derecha else "left",
-                "font_name": "Calibri",
-                **({"font_color": "#FF0000"} if c.rojo else {}),
-            }
-        )
-        # El formato de columna pinta también las celdas vacías: sólo se escriben valores.
-        ws.set_column(j, j, c.ancho, fmt)
-        ws.write(6, j, nombre, enc)
-        col = tabla[nombre]
-        if pd.api.types.is_numeric_dtype(col) and not pd.api.types.is_bool_dtype(col):
-            v = pd.to_numeric(col, errors="coerce").to_numpy(dtype=float, na_value=np.nan)
-            escribir = ws.write_number
-            filas = np.flatnonzero(np.isfinite(v))
-            valores = v[filas].tolist()
-        else:
-            v = col.astype(object).where(col.notna(), None).tolist()
-            escribir = ws.write
-            filas = [i for i, x in enumerate(v) if x is not None and x != ""]
-            valores = [v[i] for i in filas]
-        for i, x in zip(filas, valores, strict=True):
-            escribir(7 + int(i), j, x, fmt)
-    ws.autofilter(6, 0, 6 + len(tabla), len(tabla.columns) - 1)
+    titulo = f"Forusight · {reporte}"
+    subtitulo = f"Forus Perú · {pd.Timestamp(fecha):%d/%m/%Y}" + (f" · {marcas}" if marcas else "")
+    kpis = _kpis(tabla)
+    _hoja_resumen(lb, tabla, titulo, subtitulo, kpis)
+    _hoja_distribucion(lb, tabla, titulo, subtitulo, kpis)
+    piv = dinamica(tabla)
+    _hoja_dinamica(lb, piv, tabla, titulo, kpis)
+    _hoja_sial(lb, piv)
+    hoja_diccionario(lb, list(tabla.columns), titulo)
+    wb.worksheets()[1].activate()
+    wb.close()
+    return buf.getvalue()
 
-    rs = wb.add_worksheet("Resumen")
-    r = resumen_por_tienda(tabla)
-    rs.write_row(0, 0, list(r.columns), enc)
-    for i, fila in enumerate(r.itertuples(index=False), start=1):
-        rs.write_row(i, 0, [None if pd.isna(x) else x for x in fila])
-    rs.set_column(0, 0, 30), rs.set_column(1, len(r.columns), 18)
+
+def diccionario_excel(columnas: list[str] | None = None) -> bytes:
+    """Excel sólo con el diccionario (todas las columnas si no se indican)."""
+    import xlsxwriter
+
+    from forusight.export.diccionario import DICCIONARIO
+
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    lb = _Libro(wb)
+    cols = columnas or [c for c in DICCIONARIO if c != "Semanas (columnas con fecha)"]
+    if columnas is None:  # las semanas van después de Grupo Requerimiento, como en el archivo
+        i = cols.index("Demanda Periodo Actual")
+        cols = cols[:i] + ["2026-01-05"] + cols[i:]
+    hoja_diccionario(lb, cols, "Forusight · Diccionario del archivo")
     wb.close()
     return buf.getvalue()
