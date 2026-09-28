@@ -161,3 +161,65 @@ def test_archivo_trae_leadtime_y_revision_de_cada_tienda():
     t = construir_tabla(res.detalle, inp.ventas, inp.dim_producto, res.tiendas, p, CORTE)
     j = t.drop_duplicates("Código Centro").set_index("Código Centro")
     assert j.loc["8", "Leadtime [días]"] == 3.0 and j.loc["8", "Período Revisión [días]"] == 2.33
+
+
+def _con_venta_ruta(e, dia, vendidos: dict[str, float], p):
+    from forusight.engine import venta_reciente as VR
+
+    inp = e.inputs()
+    sku = inp.dim_producto["sku"].iloc[0]
+    diaria = pd.DataFrame(
+        {
+            "fecha": pd.Timestamp(dia) - pd.Timedelta(days=1),
+            "tienda_id": list(vendidos),
+            "sku": sku,
+            "unidades": list(vendidos.values()),
+        }
+    )
+    inp.dim_tienda = CAL.aplicar(inp.dim_tienda, dia, p, ["HUSH PUPPIES"])
+    inp.venta_reciente = VR.resumir(diaria, inp.dim_tienda, dia, dia)
+    return inp, sku
+
+
+def test_lo_vendido_se_repone_aunque_haya_sobrestock_o_sin_demanda():
+    from forusight.engine.disponibilidad import control_venta
+
+    e = Escenario()
+    skus = e.modelo("A-NEG", tallas=("38", "39"))
+    e.tienda("8", nombre="HP JOCKEY")
+    for s in skus:
+        e.stock_tienda("8", s, 40)  # sobrestock: 40 pares sin venta en 12 semanas
+        e.stock_cd(s, 50)
+    p = params(calendario={"aplicar": False})
+    inp, sku = _con_venta_ruta(e, "2026-09-25", {"8": 2}, p)
+    d = ejecutar(inp, p, CORTE).detalle.set_index(["tienda_id", "sku"])
+    assert d.loc[("8", sku), "cantidad"] == 2
+    assert d.loc[("8", sku), "motivo_codigo"] == "ENVIO_VENTA_RUTA"
+    cv = control_venta(d.reset_index())
+    assert cv["vendido"] == 2 and cv["repuesto"] == 2 and cv["otro"] == 0
+
+
+def test_cd_escaso_primero_repone_lo_vendido_una_unidad_por_tienda():
+    """3 unidades en el CD, 5 tiendas vendieron 1 y otra pide 6 para anticipar: las 3 van a
+    tiendas que vendieron (por prioridad), ninguna recibe 2 antes que otra reciba 1."""
+    from forusight.engine.disponibilidad import control_venta
+
+    e = Escenario()
+    skus = e.modelo("A-NEG", tallas=("40",))
+    tiendas = ["8", "16", "22", "23", "111", "12"]
+    for t in tiendas:
+        e.tienda(t, nombre=f"HP {t}")
+        e.stock_tienda(t, skus[0], 0)
+    e.venta_constante("12", skus, unidades=3)  # la que anticipa: vende mucho, sin venta reciente
+    for t in tiendas[:5]:
+        e.venta_constante(t, skus, unidades=0.3)
+    e.stock_cd(skus[0], 3)
+    p = params(calendario={"aplicar": False})
+    inp, sku = _con_venta_ruta(e, "2026-09-25", {t: 1 for t in tiendas[:5]}, p)
+    d = ejecutar(inp, p, CORTE).detalle.set_index("tienda_id")
+    assert d["cantidad"].sum() == 3
+    assert d.loc["12", "cantidad"] == 0  # anticipar va después de reponer lo vendido
+    assert d.loc[tiendas[:5], "cantidad"].max() == 1
+    cv = control_venta(d.reset_index())
+    assert cv["vendido"] == 5 and cv["repuesto"] == 3 and cv["cd_insuficiente"] == 2
+    assert cv["otro"] == 0

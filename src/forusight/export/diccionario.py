@@ -246,8 +246,10 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         RESULTADO,
         "Unidades a enviar del CD 320 a la tienda. Es la cantidad que se sube a SIAL.",
         "Necesidad = máx(Nivel Máximo − Posición; Venta desde ruta anterior), en empaques "
-        "completos. Se reparte el Stock en CD por SKU: si alcanza, cada tienda recibe su "
-        "necesidad; si no, primero quiebres y luego por prioridad (riesgo de quiebre, venta, "
+        "completos. Lo vendido desde la ruta anterior se repone siempre (ninguna regla lo "
+        "anula). Se reparte el Stock en CD por SKU: si alcanza, cada tienda recibe su "
+        "necesidad; si no, primero lo vendido (una unidad por tienda por vuelta, por prioridad), "
+        "luego quiebres y luego por prioridad (riesgo de quiebre, venta, "
         "prioridad A/B/C de la tienda, curva rota). Sólo reciben las tiendas cuyo mall tiene "
         "ruta ese día. 0 si la talla nunca se tuvo ni vendió, si el modelo se agotó sin venta "
         "en 4 semanas o si el modelo es nuevo para la tienda.",

@@ -190,32 +190,33 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     post = out["venta_post_corte"].fillna(0) if "venta_post_corte" in out else 0.0
     pos = (out["stock_disponible"] + out["stock_transito"] - post).clip(lower=0)
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
-    # Reponer lo vendido desde la ruta anterior (si la talla no está bloqueada ni en sobrestock).
-    if params.reposicion_venta.reponer_venta_desde_ruta and "venta_desde_ruta" in out:
-        piso = np.where(
-            repone.to_numpy() & ~sobre & ~talla_nueva & ~agotado,
-            np.ceil(out["venta_desde_ruta"].fillna(0).to_numpy()),
-            0,
-        )
-        out["repone_venta_ruta"] = piso > bruta
-        bruta = np.maximum(bruta, piso)
-    else:
-        piso = np.zeros(len(out))
-        out["repone_venta_ruta"] = False
     bruta = bruta.astype("int64")
-    # El tope por SKU×tienda no recorta la reposición de lo que ya se vendió.
-    tope = np.maximum(params.tope_tienda.max_unidades_por_sku, piso)
+    tope = params.tope_tienda.max_unidades_por_sku
     bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0))
-    out["necesidad_bruta"] = bruta
-    out["necesidad"] = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
-    out["tope_sku_aplicado"] = ~bloqueada & (bruta > tope)
+    normal = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
+    # Reponer lo vendido desde la ruta anterior es obligatorio: ninguna otra regla (sobrestock,
+    # sin demanda en 12 semanas, talla "nunca tuvo", modelo agotado, tope por SKU) lo anula.
+    # Sólo puede quedar sin enviar si el CD no tiene stock o no alcanza para todas las tiendas.
+    if params.reposicion_venta.reponer_venta_desde_ruta and "venta_desde_ruta" in out:
+        piso = np.ceil(out["venta_desde_ruta"].fillna(0).clip(lower=0).to_numpy()).astype("int64")
+    else:
+        piso = np.zeros(len(out), dtype="int64")
+    out["piso_venta"] = piso
+    out["repone_venta_ruta"] = piso > normal
+    out["necesidad_bruta"] = np.maximum(bruta, piso)
+    out["necesidad"] = np.maximum(normal, piso).astype("int64")
+    out["tope_sku_aplicado"] = ~bloqueada & (bruta > tope) & (piso < bruta)
     out["motivo_bloqueo"] = np.where(
-        bloqueada,
-        out["bloqueo_mc"],
+        piso > 0,
+        "",
         np.where(
-            talla_nueva,
-            NO_TALLA_NUNCA_TUVO,
-            np.where(agotado, NO_MODELO_AGOTADO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
+            bloqueada,
+            out["bloqueo_mc"],
+            np.where(
+                talla_nueva,
+                NO_TALLA_NUNCA_TUVO,
+                np.where(agotado, NO_MODELO_AGOTADO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
+            ),
         ),
     )
 

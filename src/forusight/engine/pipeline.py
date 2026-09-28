@@ -67,6 +67,7 @@ COLUMNAS_EXTRA = [
     "es_introduccion",
     "venta_desde_ruta",
     "venta_post_corte",
+    "piso_venta",
     "necesidad_bruta",
     "etapa",
     "prioridad_inicial",

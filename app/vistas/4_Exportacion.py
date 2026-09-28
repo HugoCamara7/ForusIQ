@@ -154,3 +154,47 @@ if res is not None:
             mime="text/csv",
             width="stretch",
         )
+
+    from forusight.engine.disponibilidad import control_venta
+
+    det_v = res.detalle if cantidad is None else res.detalle.assign(cantidad=cantidad)
+    cv = control_venta(det_v)
+    section(
+        "Control de reposición de lo vendido",
+        "Lo vendido desde la ruta anterior se repone siempre; sólo queda sin reponer si el CD "
+        "no tiene stock o no alcanza para todas las tiendas",
+        "shield",
+    )
+    if not cv["vendido"]:
+        st.caption("Sin venta diaria desde la ruta anterior en esta corrida.")
+    else:
+        kpi_row(
+            [
+                (
+                    "Vendido desde la ruta",
+                    f"{cv['vendido']:,}",
+                    f"{cv['filas']:,} tienda × SKU",
+                    "shopping-bag",
+                ),
+                (
+                    "Repuesto",
+                    f"{cv['repuesto'] / cv['vendido']:.0%}",
+                    f"{cv['repuesto']:,} unidades",
+                    "check-circle",
+                ),
+                (
+                    "Sin stock en el CD",
+                    f"{cv['sin_stock_cd']:,}",
+                    "no hay qué enviar",
+                    "package",
+                ),
+                (
+                    "CD no alcanzó",
+                    f"{cv['cd_insuficiente'] + cv['tope_tienda']:,}",
+                    "se repartió por prioridad",
+                    "alert",
+                ),
+            ]
+        )
+        if cv["otro"]:
+            st.error(f"{cv['otro']} unidades vendidas quedaron sin reponer por otra regla.")

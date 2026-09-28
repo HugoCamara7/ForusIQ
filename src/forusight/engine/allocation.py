@@ -2,6 +2,9 @@
 
 Etapa 0  SKU con stock suficiente para todas las necesidades (y tienda sin tope activo):
          cada tienda recibe su necesidad.
+Etapa V  SKU escaso: primero se repone lo vendido desde la ruta anterior (piso_venta), de a
+         un múltiplo por vez y por prioridad, para que cada tienda que vendió reciba antes de
+         que otra anticipe.
 Etapa 1  SKU escaso: filas en QUIEBRE con demanda reciben hasta su mínimo de exhibición
          (en orden de prioridad).
 Etapa 2  Asignación marginal con heap, de a un múltiplo de envío por vez:
@@ -27,7 +30,7 @@ from forusight.config.settings import EngineParams
 from forusight.engine.common import KEY_MC, QUIEBRE
 
 NO_CURVA_MINIMA_CD = "NO_CURVA_MINIMA_CD"
-ETAPA_NINGUNA, ETAPA_SUFICIENTE, ETAPA_QUIEBRE, ETAPA_MARGINAL = 0, 1, 2, 3
+ETAPA_NINGUNA, ETAPA_SUFICIENTE, ETAPA_QUIEBRE, ETAPA_MARGINAL, ETAPA_VENTA = 0, 1, 2, 3, 4
 
 COLUMNAS_REQUERIDAS = [
     "tienda_id",
@@ -134,6 +137,30 @@ def _asignar_una_vez(
     tienda_ok = (s["t"].map(dem_tienda) <= s["t"].map(cap).fillna(0)).to_numpy()
     for i in np.flatnonzero(sku_ok & tienda_ok & (need > 0)):
         dar(i, int(need[i]), ETAPA_SUFICIENTE)
+
+    # --- Etapa V: reponer lo vendido primero (SKU escaso), por prioridad y de a un múltiplo
+    piso = (
+        f["piso_venta"].fillna(0).to_numpy(dtype=np.int64)
+        if "piso_venta" in f
+        else np.zeros(n, dtype=np.int64)
+    )
+    tope_v = np.minimum(piso, need)
+    # por vueltas: ninguna tienda recibe su 2.ª unidad antes de que las demás que vendieron
+    # reciban la 1.ª; dentro de la vuelta manda la prioridad.
+    heap_v = [
+        (0, -prio0[i], tiendas[i], skus[i], i)
+        for i in range(n)
+        if not sku_ok[i] and tope_v[i] - asig[i] >= m
+    ]
+    heapq.heapify(heap_v)
+    while heap_v:
+        vuelta, _, t, sk, i = heapq.heappop(heap_v)
+        if tope_v[i] - asig[i] < m or pool[sk] < m or cap[t] < m:
+            continue
+        dar(i, m, ETAPA_VENTA)
+        if tope_v[i] - asig[i] >= m:
+            p = _prioridad(estatica[i], pos[i], obj[i], falt[i], params)
+            heapq.heappush(heap_v, (vuelta + 1, -p, t, sk, i))
 
     # Orden determinista para etapas 1-2
     orden = sorted(

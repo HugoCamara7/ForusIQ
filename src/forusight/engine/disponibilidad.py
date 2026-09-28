@@ -142,3 +142,35 @@ def control_cd(detalle: pd.DataFrame, cantidad: pd.Series | None = None) -> pd.D
     )
     g["queda"] = g["stock_cd"] - g["enviado"]
     return g.reset_index()
+
+
+def control_venta(detalle: pd.DataFrame) -> dict:
+    """¿Se repuso lo vendido desde la ruta anterior? Unidades vendidas, repuestas y, de lo no
+    repuesto, por qué: sin stock en el CD, CD insuficiente (se priorizó a otras tiendas) o tope
+    de la tienda. «otro» debe ser siempre 0."""
+    piso = (
+        detalle["piso_venta"].fillna(0).to_numpy(dtype=float)
+        if "piso_venta" in detalle
+        else np.zeros(len(detalle))
+    )
+    q = detalle["cantidad"].fillna(0).to_numpy(dtype=float)
+    falta = np.maximum(piso - q, 0)
+    cd = detalle["stock_cd_disponible"].fillna(0).to_numpy(dtype=float)
+    motivo = detalle["motivo_codigo"].astype(str).to_numpy()
+    parcial = (
+        detalle["motivo_parcial"].astype(str).to_numpy()
+        if "motivo_parcial" in detalle
+        else np.full(len(detalle), "")
+    )
+    tope = np.isin(motivo, ["NO_TOPE_TIENDA"]) | (parcial == "PARCIAL_TOPE")
+    sin_cd = (cd <= 0) & ~tope
+    escaso = (cd > 0) & ~tope
+    return {
+        "filas": int((piso > 0).sum()),
+        "vendido": int(piso.sum()),
+        "repuesto": int(np.minimum(piso, q).sum()),
+        "sin_stock_cd": int(falta[sin_cd].sum()),
+        "cd_insuficiente": int(falta[escaso].sum()),
+        "tope_tienda": int(falta[tope].sum()),
+        "otro": int(falta.sum() - falta[sin_cd].sum() - falta[escaso].sum() - falta[tope].sum()),
+    }

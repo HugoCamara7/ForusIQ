@@ -194,6 +194,9 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
             "se asignó a tiendas con mayor prioridad."
         )
 
+    vr = float(r.get("venta_desde_ruta", 0) or 0)
+    if q < vr and c in (NO_SIN_STOCK_CD, NO_CD_INSUFICIENTE, NO_TOPE_TIENDA):
+        t += f" Vendió {_pares(vr)} desde la ruta anterior y no se pudo reponer por eso."
     p = r.get("motivo_parcial", "")
     if p == PARCIAL_CD:
         t += f". Se envía menos que la necesidad ({int(r['necesidad'])}) porque el CD no alcanza."

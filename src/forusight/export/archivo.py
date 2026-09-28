@@ -112,7 +112,7 @@ def construir_tabla(
     d["pendiente"] = (d["necesidad"] - d["cantidad"]).clip(lower=0)
     # Sólo reposición (Revision de stock): los modelos nuevos para la tienda (carga de pedidos)
     # no son de Forusight y no van en el archivo.
-    d = d.loc[~d["es_introduccion"].fillna(False).astype(bool)]
+    d = d.loc[~d["es_introduccion"].fillna(False).astype(bool) | (d["cantidad"] > 0)]
     vr = d["venta_desde_ruta"] if "venta_desde_ruta" in d else pd.Series(0.0, index=d.index)
     activos = (
         (vr.fillna(0) > 0)
@@ -281,6 +281,24 @@ def resumen_por_tienda(tabla: pd.DataFrame) -> pd.DataFrame:
 
 def nombre_archivo(fecha: pd.Timestamp) -> str:
     return f"{pd.Timestamp(fecha):%Y%m%d}_Distribucion_Forusight.xlsx"
+
+
+def control_venta_tabla(tabla: pd.DataFrame) -> dict | None:
+    """Lo vendido desde la ruta anterior: repuesto y, lo que no, por falta de CD o escasez."""
+    v = "Venta desde ruta anterior [un]"
+    if v not in tabla:
+        return None
+    vend = np.ceil(pd.to_numeric(tabla[v], errors="coerce").fillna(0).to_numpy())
+    q = pd.to_numeric(tabla[Q_COL], errors="coerce").fillna(0).to_numpy()
+    cd = pd.to_numeric(tabla.get("Stock en CD", 0), errors="coerce")
+    cd = np.asarray(cd.fillna(0) if hasattr(cd, "fillna") else np.zeros(len(tabla)))
+    falta = np.maximum(vend - q, 0)
+    return {
+        "vendido": int(vend.sum()),
+        "repuesto": int(np.minimum(vend, q).sum()),
+        "sin_stock_cd": int(falta[cd <= 0].sum()),
+        "cd_insuficiente": int(falta[cd > 0].sum()),
+    }
 
 
 def dinamica(tabla: pd.DataFrame) -> pd.DataFrame:
@@ -470,6 +488,19 @@ def _hoja_resumen(lb: _Libro, tabla: pd.DataFrame, titulo: str, subtitulo: str, 
             ws.write_number(fin + 1, j, float(r[c].sum()), tot)
         else:
             ws.write_blank(fin + 1, j, None, tot)
+    cv = control_venta_tabla(tabla)
+    if cv:
+        f0 = fin + 3
+        ws.write(f0, 0, "Reposición de lo vendido", lb.f(bold=True, font_size=13, font_color=NAVY))
+        etiquetas = [
+            ("Vendido desde la ruta anterior", cv["vendido"]),
+            ("Repuesto", cv["repuesto"]),
+            ("Sin stock en el CD", cv["sin_stock_cd"]),
+            ("CD no alcanzó (se priorizó)", cv["cd_insuficiente"]),
+        ]
+        for k, (e, v) in enumerate(etiquetas, start=1):
+            ws.write(f0 + k, 0, e, lb.f(font_size=10))
+            ws.write_number(f0 + k, 1, v, lb.f(font_size=10, bold=True, num_format="#,##0"))
     if len(r):
         ju = list(r.columns).index("Unidades a enviar")
         ws.conditional_format(
