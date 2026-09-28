@@ -118,3 +118,7 @@ stock_cd:                       # qué parte del CD 320 se reparte a tiendas
 reposicion_venta:               # reponer lo vendido desde la ruta anterior del mall
   reponer_venta_desde_ruta: true  # necesidad = max(nivel máximo − posición, venta desde la ruta anterior)
   dias_venta_diaria: 14         # días de venta diaria que se leen de BigQuery
+
+surtido:                        # qué se puede reponer
+  temporadas_reponer: ["INVIERNO 2026", "VERANO 2026"]   # las demás temporadas no se reponen
+  temporadas_en_bigquery: false # activar cuando ARTI traiga la temporada comercial correcta

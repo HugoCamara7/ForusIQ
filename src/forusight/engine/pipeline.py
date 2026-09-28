@@ -91,6 +91,8 @@ class EngineInputs:
     #: Opcional: venta desde la última ruta y posterior al corte, por tienda×SKU
     #: (engine.venta_reciente.resumir).
     venta_reciente: pd.DataFrame | None = None
+    #: Opcional: modelo-color bloqueado por tienda (reporte 1003 de bloqueos).
+    bloqueos: pd.DataFrame | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
@@ -98,6 +100,7 @@ class EngineInputs:
             reporte=self.reporte,
             venta_diaria=self.venta_diaria,
             venta_reciente=self.venta_reciente,
+            bloqueos=self.bloqueos,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),
@@ -120,6 +123,29 @@ class EngineResult:
     @property
     def propuesta(self) -> pd.DataFrame:
         return self.detalle.loc[self.detalle["cantidad"] > 0]
+
+
+def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams):
+    """Bloqueos por tienda y temporadas a reponer: necesidad 0 (manda sobre reponer lo vendido)."""
+    from forusight.data.bloqueos import fuera_de_surtido
+
+    temp = None
+    if params.surtido.temporadas_en_bigquery and "temporada" in dim_producto:
+        temp = sku["sku"].map(dim_producto.drop_duplicates("sku").set_index("sku")["temporada"])
+    bloq, fuera = fuera_de_surtido(
+        sku["tienda_id"], sku["modelo_color_id"], temp, bloqueos, params.surtido.temporadas_reponer
+    )
+    if not (bloq.any() or fuera.any()):
+        return sku
+    sku = sku.copy()
+    corta = (bloq | fuera).to_numpy()
+    sku.loc[corta, "necesidad"] = 0
+    if "piso_venta" in sku:
+        sku.loc[corta, "piso_venta"] = 0
+        sku.loc[corta, "repone_venta_ruta"] = False
+    sku.loc[fuera.to_numpy(), "motivo_bloqueo"] = "NO_TEMPORADA"
+    sku.loc[bloq.to_numpy(), "motivo_bloqueo"] = "NO_BLOQUEO_TIENDA"
+    return sku
 
 
 def topes_por_tienda(dim_tienda: pd.DataFrame, params: EngineParams) -> dict[str, int]:
@@ -177,6 +203,7 @@ def ejecutar(
     for c in ("venta_desde_ruta", "venta_post_corte"):
         sku[c] = sku[c].fillna(0).astype(float) if c in sku else 0.0
     sku = calcular_necesidad(sku, mc, params)
+    sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params)
 
     disp = dict(zip(base.cd["sku"], base.cd["disponible"], strict=True))
     res = asignar(sku, disp, topes_por_tienda(base.tiendas, params), params)

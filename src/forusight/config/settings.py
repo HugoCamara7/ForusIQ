@@ -241,6 +241,16 @@ class ReposicionVentaParams(_Section):
     dias_venta_diaria: int = Field(14, ge=7, le=31)
 
 
+class SurtidoParams(_Section):
+    """Qué se puede reponer: temporadas comerciales activas y modelos bloqueados por tienda."""
+
+    #: Sólo se reponen estas temporadas comerciales (vacío = todas).
+    temporadas_reponer: list[str] = Field(default_factory=lambda: ["INVIERNO 2026", "VERANO 2026"])
+    #: Aplicar el filtro de temporadas cuando la corrida usa BigQuery (ARTI debe traer la
+    #: temporada comercial correcta; con el reporte del día se usa la del reporte).
+    temporadas_en_bigquery: bool = False
+
+
 class TopeTiendaParams(_Section):
     max_unidades_por_sku: int = Field(12, ge=0)
     max_unidades_por_tienda: int = Field(600, ge=0)
@@ -296,6 +306,7 @@ class EngineParams(_Section):
     calendario: CalendarioParams = Field(default_factory=CalendarioParams)
     stock_cd: StockCdParams = Field(default_factory=StockCdParams)
     reposicion_venta: ReposicionVentaParams = Field(default_factory=ReposicionVentaParams)
+    surtido: SurtidoParams = Field(default_factory=SurtidoParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

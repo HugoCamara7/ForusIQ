@@ -47,6 +47,8 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     NO_MULTIPLO_ENVIO: "Necesidad menor al múltiplo de envío",
     "PEND_DISTRIBUCION": "Carga manual pendiente de distribución",
     "NO_ALMACENAMIENTO": "La tienda no tiene capacidad de almacenamiento",
+    "NO_BLOQUEO_TIENDA": "Modelo-color bloqueado para la tienda (reporte de bloqueos)",
+    "NO_TEMPORADA": "Temporada comercial que no se repone",
 }
 
 
@@ -152,6 +154,10 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
             "No se envía: la tienda nunca tuvo ni vendió esta talla; la reposición repone lo "
             "vendido, no completa la curva."
         )
+    elif c == "NO_BLOQUEO_TIENDA":
+        t = "No se envía: el modelo-color está bloqueado para esta tienda (reporte de bloqueos)."
+    elif c == "NO_TEMPORADA":
+        t = "No se envía: la temporada comercial del producto no está entre las que se reponen."
     elif c == "NO_INTRODUCCION":
         t = (
             "No se envía: la tienda nunca tuvo este modelo; los modelos nuevos entran por carga "

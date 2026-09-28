@@ -151,6 +151,7 @@ def _correr_motor(
     marcas: tuple[str, ...] | None,
     pend_csv: str = "",
     dia_reposicion: str = "",
+    bloq_clave: str = "",
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -166,7 +167,8 @@ def _correr_motor(
     from forusight.engine import venta_reciente as VR
 
     vr = VR.resumir(getattr(inputs, "venta_diaria", None), dt, dia, diag.get("fecha_foto"))
-    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr)
+    bloq = bloqueos_de(bloq_clave)
+    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr, bloqueos=bloq)
     diag = {
         **diag,
         "pendientes": _resumen_pend(pend),
@@ -175,10 +177,20 @@ def _correr_motor(
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
         "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
+        "bloqueos": int(len(bloq)) if bloq is not None else 0,
     }
     firma = hashlib.sha1(
         "|".join(
-            [params_json, fuente, huella, cd_nombre, ",".join(marcas or ()), pend_csv, dia]
+            [
+                params_json,
+                fuente,
+                huella,
+                cd_nombre,
+                ",".join(marcas or ()),
+                pend_csv,
+                dia,
+                bloq_clave,
+            ]
         ).encode()
         + (cd_bytes or b"")
     ).hexdigest()[:8]
@@ -196,6 +208,7 @@ def correr_motor(
     marcas: tuple[str, ...] | None = None,
     pend_csv: str = "",
     dia_reposicion: str = "",
+    bloq_clave: str = "",
 ):
     return _correr_motor(
         fuente,
@@ -207,7 +220,36 @@ def correr_motor(
         marcas,
         pend_csv,
         dia_reposicion,
+        bloq_clave,
     )
+
+
+#: Bloqueos subidos (reporte 1003), por huella del contenido. Se pasa sólo la huella a las
+#: funciones en caché para no volver a hashear archivos de varios MB en cada interacción.
+_BLOQUEOS: dict[str, pd.DataFrame] = {}
+
+
+@st.cache_data(max_entries=16, show_spinner="Leyendo reporte de bloqueos…")
+def _leer_bloqueo(contenido: bytes) -> pd.DataFrame:
+    from forusight.data import bloqueos as B
+
+    return B.leer(contenido)
+
+
+def registrar_bloqueos(archivos: list[bytes]) -> str:
+    """Une los archivos de bloqueos y devuelve su huella ('' si no hay)."""
+    from forusight.data import bloqueos as B
+
+    if not archivos:
+        return ""
+    clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a in archivos)).hexdigest()[:12]
+    if clave not in _BLOQUEOS:
+        _BLOQUEOS[clave] = B.unir([_leer_bloqueo(a) for a in archivos])
+    return clave
+
+
+def bloqueos_de(clave: str) -> pd.DataFrame | None:
+    return _BLOQUEOS.get(clave) if clave else None
 
 
 def _pend_df(pend_csv: str) -> pd.DataFrame:
@@ -278,6 +320,7 @@ def _correr_reporte(
     criterio: str,
     params_json: str,
     pend_csv: str = "",
+    bloq_clave: str = "",
 ) -> tuple[EngineResult, dict]:
     from forusight.data import pendientes as PEND
     from forusight.data import reporte as R
@@ -286,7 +329,10 @@ def _correr_reporte(
     inp, diag = _entradas_reporte(contenido, marcas)
     pend = _pend_df(pend_csv)
     base = PEND.aplicar_a_reporte(inp.reporte, pend)
-    diag = {**diag, "pendientes": _resumen_pend(pend)}
+    base, n_bloq = R.aplicar_surtido(
+        base, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
+    )
+    diag = {**diag, "pendientes": _resumen_pend(pend), "bloqueadas": n_bloq}
     dist = R.distribuir(base, params.prioridad_tiendas.patrones, criterio)
     firma = hashlib.sha1(
         contenido[:4096]
@@ -295,6 +341,7 @@ def _correr_reporte(
         + ",".join(marcas or ()).encode()
         + params_json.encode()
         + pend_csv.encode()
+        + bloq_clave.encode()
     ).hexdigest()[:8]
     corte = R.corte(inp.reporte)
     run_id = f"{corte:%Y%m%d}-{firma}"
@@ -373,7 +420,12 @@ def ejecutar_corrida() -> EngineResult:
     if ss.get("reporte"):
         marcas = tuple(ss.get("marcas_reporte") or ()) or None
         res, diag = _correr_reporte(
-            ss.reporte[0], marcas, ss.criterio, ss.params.model_dump_json(), pendientes_csv()
+            ss.reporte[0],
+            marcas,
+            ss.criterio,
+            ss.params.model_dump_json(),
+            pendientes_csv(),
+            ss.get("bloq_clave", ""),
         )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
             ss.aprobacion = None
@@ -393,6 +445,7 @@ def ejecutar_corrida() -> EngineResult:
         marcas,
         pendientes_csv(),
         pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
+        ss.get("bloq_clave", ""),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
@@ -574,6 +627,22 @@ def barra_lateral() -> None:
                 "llegan a la tienda: se descuentan del CD y cuentan como tránsito.",
             )
             ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
+            archivos_b = st.file_uploader(
+                "Reporte de bloqueos (1003)",
+                type=["xlsx"],
+                accept_multiple_files=True,
+                key="bloq_uploader",
+                help="Modelos bloqueados por tienda (todas sus partes): no se reponen ahí.",
+            )
+            try:
+                ss.bloq_clave = registrar_bloqueos([a.getvalue() for a in archivos_b or []])
+                if ss.bloq_clave:
+                    st.caption(
+                        f"{len(bloqueos_de(ss.bloq_clave)):,} modelo-color × tienda bloqueados"
+                    )
+            except Exception as exc:
+                st.error(f"No se pudo leer el reporte de bloqueos: {exc}")
+                ss.bloq_clave = ""
             from forusight.data.github_store import config_github
 
             if config_github(secretos()) is not None:

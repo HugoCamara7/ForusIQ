@@ -584,3 +584,23 @@ def comparar_stock_cd(
         )
     resumen = pd.DataFrame(filas).sort_values("sku_iguales", ascending=False).reset_index(drop=True)
     return resumen, det.reset_index(names="sku")
+
+
+def aplicar_surtido(
+    df: pd.DataFrame, bloqueos: pd.DataFrame | None, temporadas: list[str]
+) -> tuple[pd.DataFrame, int]:
+    """Marca «Reposición Bloqueada = SI» en modelos bloqueados para la tienda y en temporadas
+    comerciales que no se reponen (la necesidad de esas filas pasa a 0)."""
+    from forusight.data.bloqueos import fuera_de_surtido
+
+    mc = df["Código Modelo"].astype("string") + "-" + df["Código Color"].astype("string")
+    temp = df.get("Temporada comercial", None)
+    bloq, fuera = fuera_de_surtido(
+        df[CENTRO].astype(str).str.lstrip("0"), mc, temp, bloqueos, temporadas
+    )
+    corta = (bloq | fuera).to_numpy()
+    if not corta.any():
+        return df, 0
+    out = df.copy()
+    out.loc[corta, "Reposición Bloqueada"] = "SI"
+    return out, int(corta.sum())

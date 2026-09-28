@@ -1,0 +1,103 @@
+"""Reporte 1003 de bloqueos y temporadas a reponer."""
+
+import io
+
+import pandas as pd
+import xlsxwriter
+
+from forusight.data import bloqueos as B
+from forusight.data import reporte as R
+from forusight.engine.pipeline import ejecutar
+from tests.builders import CORTE, Escenario, params
+
+FILA = [
+    "HP1-NEG",
+    "111",
+    "8",
+    "HP X",
+    "HP JOCKEY",
+    "",
+    0,
+    0,
+    0,
+    "CALZADO",
+    "HUSH PUPPIES",
+    "MUJER",
+    "ZAPATOS",
+    "VERANO 2021",
+    "Coleccion No Activa en Tienda",
+    "",
+]
+
+
+def _xlsx(filas, cabecera=True) -> bytes:
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf)
+    ws = wb.add_worksheet("Hoja1")
+    r = 0
+    if cabecera:
+        ws.write_row(3, 0, ["Reporte:", "1003 - Modelos Bloqueados"])
+        ws.write_row(
+            6,
+            0,
+            [
+                "Código modelo color (s)",
+                "Código sku",
+                "Código centro",
+                "Descripción (s)",
+                "Nombre centro (c)",
+                "Pronóstico de demanda (pd)",
+                "Stock físico equiv.",
+                "Stock tránsito interno",
+                "Stock físico CD",
+                "Clase",
+                "Marca",
+                "Genero",
+                "Prenda",
+                "Temporada comercial",
+                "Motivo bloqueo",
+                "Modelo concentrado (id listado) (s)",
+            ],
+        )
+        r = 7
+    for i, f in enumerate(filas):
+        ws.write_row(r + i, 0, f)
+    wb.close()
+    return buf.getvalue()
+
+
+def test_lee_partes_con_y_sin_cabecera():
+    a = B.leer(_xlsx([FILA, FILA[:1] + ["112"] + FILA[2:]]))
+    b = B.leer(_xlsx([["HP2-ROJ", "222", "016"] + FILA[3:]], cabecera=False))
+    u = B.unir([a, b])
+    assert set(B.claves(u)) == {"8|HP1-NEG", "16|HP2-ROJ"}  # sin repetidos por talla
+
+
+def test_bloqueo_manda_sobre_reponer_lo_vendido():
+    e = Escenario()
+    skus = e.modelo("HP1-NEG", tallas=("38",))
+    e.tienda("8", nombre="HP JOCKEY")
+    e.venta_constante("8", skus, unidades=2)
+    e.stock_tienda("8", skus[0], 0)
+    e.stock_cd(skus[0], 20)
+    p = params(calendario={"aplicar": False})
+    inp = e.inputs()
+    assert ejecutar(inp, p, CORTE).detalle["cantidad"].sum() > 0
+    inp.bloqueos = pd.DataFrame({"tienda_id": ["8"], "modelo_color_id": ["HP1-NEG"]})
+    d = ejecutar(inp, p, CORTE).detalle
+    assert d["cantidad"].sum() == 0 and set(d["motivo_codigo"]) == {"NO_BLOQUEO_TIENDA"}
+
+
+def test_reporte_bloqueos_y_temporadas():
+    df = pd.DataFrame(
+        {
+            R.CENTRO: ["8", "8", "12"],
+            "Código Modelo": ["HP1", "HP2", "HP1"],
+            "Código Color": ["NEG", "NEG", "NEG"],
+            "Temporada comercial": ["VERANO 2026", "ESCOLAR 2025", "VERANO 2026"],
+        }
+    )
+    bl = pd.DataFrame({"tienda_id": ["8"], "modelo_color_id": ["HP1-NEG"]})
+    out, n = R.aplicar_surtido(df, bl, ["INVIERNO 2026", "VERANO 2026"])
+    assert n == 2
+    assert out["Reposición Bloqueada"].eq("SI").tolist() == [True, True, False]

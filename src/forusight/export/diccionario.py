@@ -251,7 +251,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "necesidad; si no, primero lo vendido (una unidad por tienda por vuelta, por prioridad), "
         "luego quiebres y luego por prioridad (riesgo de quiebre, venta, "
         "prioridad A/B/C de la tienda, curva rota). Sólo reciben las tiendas cuyo mall tiene "
-        "ruta ese día. 0 si la talla nunca se tuvo ni vendió, si el modelo se agotó sin venta "
+        "ruta ese día. 0 si el modelo-color está bloqueado para la tienda (reporte 1003) o su "
+        "temporada comercial no se repone; 0 si la talla nunca se tuvo ni vendió, si el modelo se agotó sin venta "
         "en 4 semanas o si el modelo es nuevo para la tienda.",
         "Motor Forusight",
         "Misma regla del reporte (punto de reorden → nivel máximo); se recalcula",
