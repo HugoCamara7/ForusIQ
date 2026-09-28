@@ -50,6 +50,7 @@ rotacion:
 exhibicion:                     # PENDIENTE (i)
   minimo_por_talla_core: 1
   minimo_por_talla_activa: 1     # reponer lo vendido: cada talla de un modelo que la tienda vende queda con >= 1
+  completar_curva: true          # talla que nunca tuvo, de un modelo que vende: recibe su mínimo (como el reporte)
   minimo_por_categoria: {}      # ej.: {"BOTA": 2}
   tallas_core_default: ["36", "37", "38", "39"]
   tallas_core_por_genero:          # claves = valor de GENERO_MA en ARTI (mayúsculas)

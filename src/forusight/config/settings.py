@@ -164,6 +164,9 @@ class ExhibicionParams(_Section):
     minimo_por_talla_activa: int = Field(1, ge=0)
     #: Modelo agotado en la tienda (0 en todas las tallas) sin venta en 4 semanas: no se repone.
     no_reponer_modelo_agotado_sin_venta_reciente: bool = True
+    #: Completar la curva como el reporte de distribución: una talla que la tienda nunca tuvo
+    #: ni vendió, de un modelo-color que la tienda vende, recibe su mínimo (1).
+    completar_curva: bool = True
     minimo_por_categoria: dict[str, int] = Field(default_factory=dict)
     tallas_core_default: list[str] = Field(default_factory=list)
     tallas_core_por_genero: dict[str, list[str]] = Field(default_factory=dict)

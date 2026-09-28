@@ -192,8 +192,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Stock que la talla debe tener para cubrir hasta la próxima ruta.",
         "máx(1 si la tienda vende el modelo; redondeo(d·c + 0,5·√(d·c))), con d = Pronóstico y "
         "c = cobertura en semanas = (Leadtime + Período Revisión) ÷ 7 × factor de la tienda "
-        "(prioridad A ×1,25, B ×1, C ×0,9; liquidadoras DH, SE, FB ×0,75). 0 si la tienda "
-        "nunca tuvo ni vendió la talla.",
+        "(prioridad A ×1,25, B ×1, C ×0,9; liquidadoras DH, SE, FB ×0,75). Talla que la "
+        "tienda nunca tuvo, de un modelo-color que vende: 1 (se completa la curva, como el "
+        "reporte). Modelo que la tienda no vende ni tiene: 0.",
         "Motor Forusight",
         REP,
     ),

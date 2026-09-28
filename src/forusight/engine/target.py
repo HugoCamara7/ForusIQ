@@ -163,7 +163,13 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     objetivo = np.where(sobre, minimo, objetivo)
     # Reposición = reponer lo vendido / anticipar: nunca llenar una talla que la tienda no tuvo
     # ni vendió (aunque la curva del modelo la incluya).
-    talla_nueva = (repone & out["estado_sku"].eq(NUNCA_TUVO)).to_numpy() & (objetivo > 0)
+    nunca = (repone & out["estado_sku"].eq(NUNCA_TUVO)).to_numpy() & (objetivo > 0)
+    if params.exhibicion.completar_curva:
+        # Como el reporte: la talla nueva de un modelo que la tienda vende queda en su mínimo.
+        objetivo = np.where(nunca, np.minimum(objetivo, np.maximum(minimo, 1)), objetivo)
+        talla_nueva = np.zeros(len(out), dtype=bool)
+    else:
+        talla_nueva = nunca
     # Modelo que se agotó en la tienda (0 en todas sus tallas, sin tránsito) y no vendió en las
     # últimas 4 semanas: salió de la tienda; como en el reporte, no se repone.
     g = out.groupby(KEY_MC, sort=False)

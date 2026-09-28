@@ -590,6 +590,15 @@ class FuentesRepository(BigQueryRepository):
             )
         return info, filas
 
+    def explorar_tabla(self, tabla: str, n: int = 20) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """(columnas con tipo, muestra de filas) de cualquier tabla, sin costo de consulta."""
+        cols = self.client.columnas(tabla)
+        try:
+            muestra = self.client.muestra(tabla, n)
+        except Exception:  # vistas: la API de lectura no las sirve
+            muestra = pd.DataFrame()
+        return cols, muestra
+
     def buscar_tablas(self, patrones: tuple[str, ...] = ("venta", "vta", "sales")) -> pd.DataFrame:
         """Tablas del proyecto del datalake cuyo nombre sugiere venta (INFORMATION_SCHEMA)."""
         from forusight.data.bq_client import validar_identificador

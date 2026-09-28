@@ -404,6 +404,14 @@ class BigQueryClient:
             {"column_name": [c.name for c in esquema], "data_type": [c.field_type for c in esquema]}
         )
 
+    def muestra(self, tabla: str, n: int = 20, columnas: list[str] | None = None) -> pd.DataFrame:
+        """Primeras ``n`` filas de una tabla con la API de lectura (tabledata.list): no es una
+        consulta, no escanea la tabla y no tiene costo. No funciona con vistas."""
+        t = self.client.get_table(validar_tabla(tabla))
+        campos = [c for c in t.schema if not columnas or c.name in columnas]
+        filas = self.client.list_rows(t, selected_fields=campos, max_results=int(n))
+        return filas.to_dataframe()
+
     def tablas_del_dataset(self, proyecto: str, dataset: str, patron: str = "") -> list[str]:
         """Nombres de tablas de un dataset (para sugerir cuando una ruta no existe)."""
         tablas = self.client.list_tables(

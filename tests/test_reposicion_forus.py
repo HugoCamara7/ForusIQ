@@ -108,7 +108,25 @@ def test_no_se_llena_una_talla_que_la_tienda_nunca_tuvo_ni_vendio():
         e.stock_tienda("T1", s, 0)
     for s in skus:
         e.stock_cd(s, 20)
-    d = ejecutar(e.inputs(), params(), CORTE).detalle.set_index("sku")
+    p = params(exhibicion={"completar_curva": False})
+    d = ejecutar(e.inputs(), p, CORTE).detalle.set_index("sku")
     assert d.loc[skus[3], "cantidad"] == 0
     assert d.loc[skus[3], "motivo_codigo"] == "NO_TALLA_NUNCA_TUVO"
     assert (d.loc[skus[:3], "cantidad"] > 0).all()  # lo vendido sí se repone
+
+
+def test_completar_curva_como_el_reporte():
+    """Por defecto (como Neogística): la talla nueva de un modelo que la tienda vende queda en
+    su mínimo, 1 unidad; un modelo que la tienda no vende no se completa."""
+    e = Escenario()
+    skus = e.modelo("A-NEG", tallas=("37", "38", "39", "40"))
+    otro = e.modelo("B-NEG", tallas=("37", "38"))
+    e.tienda("T1", nombre="HP JOCKEY")
+    e.venta_constante("T1", skus[:3], unidades=2)
+    for s in skus[:3]:
+        e.stock_tienda("T1", s, 0)
+    for s in skus + otro:
+        e.stock_cd(s, 20)
+    d = ejecutar(e.inputs(), params(), CORTE).detalle.set_index("sku")
+    assert d.loc[skus[3], "cantidad"] == 1 and d.loc[skus[3], "stock_objetivo"] == 1
+    assert d.reindex(otro)["cantidad"].fillna(0).sum() == 0

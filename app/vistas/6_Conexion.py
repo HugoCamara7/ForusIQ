@@ -209,6 +209,48 @@ if st.session_state.get("comparacion_cd"):
         st.dataframe(detalle, hide_index=True, width="stretch")
 
 st.divider()
+st.subheader("Explorar tablas: pedidos, despachos, ingresos y ARTI")
+st.caption(
+    "Busca tablas por nombre y muestra sus columnas y 20 filas de ejemplo (lectura directa, "
+    "sin costo de consulta). Sirve para conectar el detalle de pedidos (aprobados, en "
+    "despacho, ingresos) y para encontrar la temporada comercial en ARTI."
+)
+e1, e2 = st.columns([3, 1])
+patron = e1.text_input(
+    "Nombre contiene", value="pedido, despacho, ingreso, traslado, guia, transfer"
+)
+if e2.button("Buscar", width="stretch", key="buscar_explorar"):
+    try:
+        pats = tuple(p.strip().lower() for p in patron.split(",") if p.strip())
+        st.session_state.tablas_explorar = repo.buscar_tablas(pats)
+    except Exception as exc:
+        st.error(explicar_error(exc))
+halladas = st.session_state.get("tablas_explorar")
+opciones_t = list(halladas["ruta"]) if halladas is not None and len(halladas) else []
+arti_ruta = repo.tablas().get("arti")
+if arti_ruta:
+    opciones_t = [arti_ruta] + [o for o in opciones_t if o != arti_ruta]
+if opciones_t:
+    ruta = st.selectbox("Tabla", opciones_t, key="tabla_explorar")
+    if st.button("Ver columnas y ejemplo", key="ver_explorar"):
+        try:
+            st.session_state.exploracion = (ruta, *repo.explorar_tabla(ruta))
+        except Exception as exc:
+            st.error(explicar_error(exc))
+exp = st.session_state.get("exploracion")
+if exp:
+    ruta, cols, muestra = exp
+    st.markdown(f"**{ruta}** · {len(cols)} columnas")
+    temp = [c for c in cols["column_name"] if "temp" in str(c).lower()]
+    if temp:
+        st.caption("Columnas de temporada: " + ", ".join(temp))
+    st.dataframe(cols, hide_index=True, width="stretch", height=240)
+    if len(muestra):
+        st.dataframe(muestra, hide_index=True, width="stretch")
+    else:
+        st.caption("Es una vista: no se puede leer una muestra sin consulta.")
+
+st.divider()
 st.subheader("Prueba de lectura")
 st.caption(
     f"Lee los datos para la semana y la marca elegidas en la barra lateral, con dry run y "
