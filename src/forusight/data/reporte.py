@@ -134,7 +134,7 @@ def nunca_tuvo(df: pd.DataFrame) -> pd.Series:
     return (venta <= 0) & (_num(df[FISICO]) <= 0) & (posicion(df) <= 0)
 
 
-def necesidad(df: pd.DataFrame) -> pd.Series:
+def necesidad(df: pd.DataFrame, completar_curva: bool = True) -> pd.Series:
     """Necesidad de reposición (Revisión de stock): reponer lo vendido y anticipar hasta el nivel
     máximo. Las cargas manuales no son reposición (0) y una talla que la tienda nunca tuvo ni
     vendió no se repone (0)."""
@@ -146,7 +146,9 @@ def necesidad(df: pd.DataFrame) -> pd.Series:
     empaques = np.where(bruta > 0, np.maximum(np.floor(bruta / ue + 0.5), 1), 0)
     revision = empaques * ue
     bloqueada = df.get("Reposición Bloqueada", pd.Series("NO", index=df.index)).astype(str).eq("SI")
-    rev = es_revision(df).to_numpy() & ~bloqueada.to_numpy() & ~nunca_tuvo(df).to_numpy()
+    rev = es_revision(df).to_numpy() & ~bloqueada.to_numpy()
+    if not completar_curva:  # sin completar la curva: la talla que nunca tuvo no se llena
+        rev = rev & ~nunca_tuvo(df).to_numpy()
     return pd.Series(np.where(rev, revision, 0), index=df.index).astype("int64")
 
 
@@ -177,6 +179,7 @@ def distribuir(
     df: pd.DataFrame,
     patrones_prioridad: list[str] | None = None,
     criterio: str = IGUAL_REPORTE,
+    completar_curva: bool = True,
 ) -> pd.DataFrame:
     """Recalcula cantidad, pendiente y motivo de cada fila del reporte.
 
@@ -193,7 +196,7 @@ def distribuir(
         luego por nivel de servicio planificado y necesidad más chica.
     """
     out = df.copy()
-    nec = necesidad(out)
+    nec = necesidad(out, completar_curva)
     ue = _num(out.get(UE, 1)).clip(lower=1).astype("int64")
     carga = es_carga(out).to_numpy()
     stock_cd = _num(out[CD]).astype("int64")

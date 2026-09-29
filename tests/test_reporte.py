@@ -65,13 +65,14 @@ def test_lee_reporte_y_regla_de_necesidad():
         _fila("12", "HP CHICLAYO", "1", **{R.FISICO: 2, R.POSICION: 2, R.MAX: 3, R.ROP: 1}),  # 0
         _fila("22", "HP TRUJILLO", "2", **{R.MAX: 7, R.ROP: 3, R.UE: 6}),  # 7 → 1 empaque = 6
         _fila("43", "HP SAN MIGUEL 2", "2", **{R.GRUPO: "Carga Pedidos", R.P: 4, R.MAX: None}),
-        # talla que la tienda nunca tuvo ni vendió: no se llena la curva
+        # talla que la tienda nunca tuvo ni vendió: se completa la curva (como el reporte)
         _fila("44", "HP PLAZA NORTE", "2", **{s: 0 for s in SEMANAS}),
     ]
     df, fecha = R.leer_reporte(_excel(filas))
     assert fecha == pd.Timestamp("2026-09-23")
     assert df[R.CENTRO].tolist() == ["8", "12", "22", "43", "44"]
-    assert R.necesidad(df).tolist() == [2, 0, 6, 0, 0]  # la carga manual no es reposición
+    assert R.necesidad(df).tolist() == [2, 0, 6, 0, 2]  # la carga manual no es reposición
+    assert R.necesidad(df, completar_curva=False).tolist() == [2, 0, 6, 0, 0]
     assert R.solo_revision(df)[R.CENTRO].tolist() == ["8", "12", "22", "44"]
     assert R.corte(df) == pd.Timestamp("2026-09-21")
 

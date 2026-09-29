@@ -366,7 +366,9 @@ def _correr_reporte(
         base, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
     )
     diag = {**diag, "pendientes": _resumen_pend(pend), "bloqueadas": n_bloq}
-    dist = R.distribuir(base, params.prioridad_tiendas.patrones, criterio)
+    dist = R.distribuir(
+        base, params.prioridad_tiendas.patrones, criterio, params.exhibicion.completar_curva
+    )
     firma = hashlib.sha1(
         contenido[:4096]
         + len(contenido).to_bytes(8, "big")
