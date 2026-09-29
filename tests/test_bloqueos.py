@@ -166,3 +166,29 @@ def test_temporada_comercial_del_maestro_y_filtro():
     t = construir_tabla(res.detalle, inp.ventas, inp.dim_producto, res.tiendas, p, CORTE)
     assert set(t["Temporada comercial"]) == {"VERANO 2026"}  # lo que no se repone no se lista
     assert T.por_defecto().get("HP10201162490-N11") is not None  # maestro guardado
+
+
+def test_mantenedor_bloquear_desbloquear_y_todas_las_tiendas():
+    base = pd.DataFrame(
+        {"tienda_id": ["8", "8"], "modelo_color_id": ["HP1-NEG", "HP2-NEG"], "motivo": "r"}
+    )
+    m = pd.concat(
+        [
+            B.nuevos_manuales(["16"], ["hp3-neg"], B.BLOQUEAR, "nuevo", "ana"),
+            B.nuevos_manuales(["8"], ["HP1-NEG"], B.DESBLOQUEAR, "vuelve", "ana"),
+            B.nuevos_manuales([B.TODAS], ["HP9-ROJ"], B.BLOQUEAR, "todas", "ana"),
+        ],
+        ignore_index=True,
+    )
+    ef = B.aplicar_manuales(base, m)
+    assert set(B.claves(ef)) == {"8|HP2-NEG", "16|HP3-NEG", "*|HP9-ROJ"}
+    t = pd.Series(["8", "44", "16"])
+    mc = pd.Series(["HP1-NEG", "HP9-ROJ", "HP3-NEG"])
+    bloq, _ = B.fuera_de_surtido(t, mc, None, ef, [])
+    assert bloq.tolist() == [False, True, True]  # desbloqueado · todas las tiendas · manual
+    # la última acción manda: se vuelve a bloquear HP1 en la tienda 8
+    m2 = pd.concat([m, B.nuevos_manuales(["8"], ["HP1-NEG"], B.BLOQUEAR, "", "ana")])
+    assert "8|HP1-NEG" in set(B.claves(B.aplicar_manuales(base, m2)))
+    # el historial se guarda y se vuelve a leer igual
+    csv = m2.to_csv(index=False).encode("utf-8-sig")
+    assert B.leer_manuales(csv)["accion"].tolist() == m2["accion"].tolist()

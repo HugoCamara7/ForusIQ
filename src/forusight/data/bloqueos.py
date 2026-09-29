@@ -101,12 +101,92 @@ def claves(bloq: pd.DataFrame) -> pd.Series:
     return bloq["tienda_id"].astype(str) + "|" + bloq["modelo_color_id"].astype(str)
 
 
+# ------------------------------------------------------------------ mantenedor de bloqueos
+
+#: Ruta (dentro del almacenamiento de GitHub) de los bloqueos y desbloqueos manuales.
+RUTA_MANUALES = "bloqueos/bloqueos_manuales.csv"
+COLUMNAS_MANUALES = ["tienda_id", "modelo_color_id", "accion", "motivo", "usuario", "fecha"]
+BLOQUEAR, DESBLOQUEAR = "BLOQUEAR", "DESBLOQUEAR"
+TODAS = "*"  # tienda_id "*" = el modelo-color en todas las tiendas
+
+
+def manuales_vacio() -> pd.DataFrame:
+    return pd.DataFrame(columns=COLUMNAS_MANUALES)
+
+
+def leer_manuales(contenido: bytes | None) -> pd.DataFrame:
+    if not contenido:
+        return manuales_vacio()
+    d = pd.read_csv(io.BytesIO(contenido), dtype=str, encoding="utf-8-sig").fillna("")
+    return d.reindex(columns=COLUMNAS_MANUALES, fill_value="")
+
+
+def nuevos_manuales(
+    tiendas: list[str], modelos: list[str], accion: str, motivo: str, usuario: str
+) -> pd.DataFrame:
+    from forusight.data.fuentes import codigo_tienda
+
+    ahora = pd.Timestamp.now(tz="America/Lima").strftime("%Y-%m-%d %H:%M")
+    filas = [
+        {
+            "tienda_id": TODAS if t == TODAS else codigo_tienda(t),
+            "modelo_color_id": str(m).strip().upper(),
+            "accion": accion,
+            "motivo": motivo.strip(),
+            "usuario": usuario,
+            "fecha": ahora,
+        }
+        for t in tiendas
+        for m in modelos
+        if str(m).strip()
+    ]
+    return pd.DataFrame(filas, columns=COLUMNAS_MANUALES)
+
+
+def vigentes(manuales: pd.DataFrame) -> pd.DataFrame:
+    """Última acción por tienda × modelo-color (la más reciente manda)."""
+    if manuales is None or manuales.empty:
+        return manuales_vacio()
+    return manuales.drop_duplicates(["tienda_id", "modelo_color_id"], keep="last").reset_index(
+        drop=True
+    )
+
+
+def aplicar_manuales(base: pd.DataFrame | None, manuales: pd.DataFrame | None) -> pd.DataFrame:
+    """Bloqueos efectivos = reporte 1003 + bloqueos manuales − desbloqueos manuales.
+
+    Un desbloqueo con tienda «*» libera el modelo-color en todas las tiendas; un bloqueo con
+    tienda «*» queda como fila «*» (fuera_de_surtido la aplica a todas)."""
+    b = base.copy() if base is not None else pd.DataFrame(columns=["tienda_id", "modelo_color_id"])
+    b = b.assign(origen=b.get("motivo", "reporte 1003"))
+    v = vigentes(manuales)
+    if v.empty:
+        return b
+    clave = b["tienda_id"].astype(str) + "|" + b["modelo_color_id"].astype(str)
+    des = v.loc[v["accion"].eq(DESBLOQUEAR)]
+    quita = set(des["tienda_id"] + "|" + des["modelo_color_id"])
+    todas = set(des.loc[des["tienda_id"].eq(TODAS), "modelo_color_id"])
+    b = b.loc[~clave.isin(quita) & ~b["modelo_color_id"].isin(todas)]
+    blo = v.loc[v["accion"].eq(BLOQUEAR), ["tienda_id", "modelo_color_id", "motivo"]]
+    blo = blo.assign(origen="manual: " + blo["motivo"].where(blo["motivo"].ne(""), "sin motivo"))
+    return (
+        pd.concat([b, blo], ignore_index=True)
+        .drop_duplicates(["tienda_id", "modelo_color_id"], keep="last")
+        .reset_index(drop=True)
+    )
+
+
 def fuera_de_surtido(
     tienda: pd.Series, modelo_color: pd.Series, temporada: pd.Series | None, bloq, temporadas
 ) -> tuple[pd.Series, pd.Series]:
     """(bloqueado, fuera_de_temporada) por fila. ``temporadas`` vacío = todas."""
-    clave = tienda.astype(str) + "|" + modelo_color.astype("string").str.upper()
-    bloqueado = clave.isin(set(claves(bloq))) if bloq is not None and len(bloq) else clave.eq("\0")
+    mc = modelo_color.astype("string").str.upper()
+    clave = tienda.astype(str) + "|" + mc
+    if bloq is not None and len(bloq):
+        todas = set(bloq.loc[bloq["tienda_id"].astype(str).eq(TODAS), "modelo_color_id"])
+        bloqueado = clave.isin(set(claves(bloq))) | mc.isin(todas)
+    else:
+        bloqueado = pd.Series(False, index=tienda.index)
     activas = {str(t).strip().upper() for t in temporadas or [] if str(t).strip()}
     if activas and temporada is not None:
         t = temporada.astype("string").str.strip().str.upper()

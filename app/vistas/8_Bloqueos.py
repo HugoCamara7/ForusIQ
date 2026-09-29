@@ -1,0 +1,186 @@
+"""Mantenedor de bloqueos: bloquear un modelo-color en una o todas las tiendas (no se repone)
+o sacarlo del bloqueo. Los cambios quedan guardados y se aplican en la próxima corrida."""
+
+import pandas as pd
+import streamlit as st
+from app.components.estado import (
+    bloqueos_de,
+    bloqueos_manuales,
+    clave_bloqueos,
+    guardar_bloqueos_manuales,
+)
+from app.components.login import puede, usuario_actual
+from app.components.ui import hero, kpi_row, section
+
+from forusight.data import bloqueos as B
+from forusight.data import cadenas as CAD
+
+ss = st.session_state
+hero(
+    "Bloqueos de productos",
+    "Un modelo-color bloqueado para una tienda no se repone ahí, aunque la tienda lo venda. "
+    "Aquí se bloquea o se saca del bloqueo; el cambio se aplica en la próxima corrida.",
+    eyebrow="Mantenedor",
+)
+
+tiendas = CAD.catalogo_tiendas()[["codigo_tienda", "nombre_tienda"]].drop_duplicates()
+nombre = dict(zip(tiendas["codigo_tienda"], tiendas["nombre_tienda"], strict=True))
+nombre[B.TODAS] = "TODAS LAS TIENDAS"
+efectivos = bloqueos_de(clave_bloqueos())
+manuales = B.vigentes(bloqueos_manuales())
+kpi_row(
+    [
+        ("Bloqueos vigentes", f"{len(efectivos):,}", "modelo-color × tienda", "shield"),
+        (
+            "Del reporte 1003",
+            f"{int(efectivos['origen'].astype(str).str.startswith('reporte').sum()):,}",
+            f"cargado del {B.FECHA_POR_DEFECTO} o subido",
+            "layers",
+        ),
+        (
+            "Bloqueados a mano",
+            f"{int(manuales['accion'].eq(B.BLOQUEAR).sum()):,}",
+            "en este mantenedor",
+            "lock",
+        ),
+        (
+            "Desbloqueados a mano",
+            f"{int(manuales['accion'].eq(B.DESBLOQUEAR).sum()):,}",
+            "vuelven a reponerse",
+            "check-circle",
+        ),
+    ]
+)
+editable = puede("aprobar")
+if not editable:
+    st.info("Tu rol permite ver los bloqueos, no cambiarlos (rol `aprobador` o `admin`).")
+
+# ---------------------------------------------------------------- bloquear
+with st.container(key="card_bloquear"):
+    section("Bloquear", "El modelo-color deja de reponerse en las tiendas elegidas", "lock")
+    res = ss.get("resultado")
+    sugeridos = (
+        sorted(res.detalle["modelo_color_id"].astype(str).unique()) if res is not None else []
+    )
+    c1, c2 = st.columns(2)
+    elegidas = c1.multiselect(
+        "Tiendas",
+        [B.TODAS] + sorted(tiendas["codigo_tienda"], key=lambda x: int(x) if x.isdigit() else 0),
+        format_func=lambda t: f"{t} · {nombre.get(t, '')}" if t != B.TODAS else nombre[t],
+        key="blq_tiendas",
+        placeholder="Elige tiendas (o «Todas las tiendas»)",
+    )
+    de_corrida = c2.multiselect(
+        "Modelos-color de la última corrida",
+        sugeridos,
+        key="blq_modelos",
+        placeholder="Elige modelos-color"
+        if sugeridos
+        else "Ejecuta una corrida para elegir de la lista",
+    )
+    pegados = st.text_area(
+        "O pega modelos-color (uno por línea, p. ej. HP10201162490-N11)",
+        key="blq_texto",
+        height=90,
+    )
+    motivo = st.text_input("Motivo", key="blq_motivo", placeholder="p. ej. Colección no activa")
+    modelos = list(dict.fromkeys(de_corrida + pegados.replace(",", "\n").split()))
+    if st.button(
+        f"Bloquear {len(modelos) * len(elegidas):,} modelo-color × tienda",
+        type="primary",
+        icon=":material/lock:",
+        disabled=not (editable and modelos and elegidas),
+        key="btn_bloquear",
+    ):
+        nuevos = B.nuevos_manuales(elegidas, modelos, B.BLOQUEAR, motivo, usuario_actual())
+        st.success(f"Bloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}.")
+        st.rerun()
+
+# ---------------------------------------------------------------- consultar y desbloquear
+with st.container(key="card_desbloquear"):
+    section(
+        "Consultar y desbloquear",
+        "Busca por tienda o modelo; marca los que vuelven a reponerse",
+        "search",
+    )
+    f1, f2 = st.columns(2)
+    tienda_f = f1.selectbox(
+        "Tienda",
+        ["(todas)"]
+        + sorted(
+            efectivos["tienda_id"].astype(str).unique(), key=lambda x: int(x) if x.isdigit() else -1
+        ),
+        format_func=lambda t: t if t == "(todas)" else f"{t} · {nombre.get(t, '')}",
+        key="dbl_tienda",
+    )
+    texto = f2.text_input("Modelo-color contiene", key="dbl_texto", placeholder="p. ej. HP1020116")
+    vista = efectivos
+    if tienda_f != "(todas)":
+        vista = vista.loc[vista["tienda_id"].astype(str).eq(tienda_f)]
+    if texto.strip():
+        vista = vista.loc[
+            vista["modelo_color_id"].astype(str).str.contains(texto.strip().upper(), regex=False)
+        ]
+    if tienda_f == "(todas)" and not texto.strip():
+        st.caption(f"{len(efectivos):,} bloqueos vigentes: elige una tienda o escribe un modelo.")
+    else:
+        st.caption(
+            f"{len(vista):,} bloqueos encontrados"
+            + (" (se muestran 2.000)" if len(vista) > 2000 else "")
+        )
+        tabla = vista.head(2000).assign(
+            tienda=lambda d: d["tienda_id"].astype(str).map(nombre).fillna(""),
+            desbloquear=False,
+        )[["desbloquear", "tienda_id", "tienda", "modelo_color_id", "origen"]]
+        editado = st.data_editor(
+            tabla,
+            hide_index=True,
+            width="stretch",
+            height=380,
+            disabled=["tienda_id", "tienda", "modelo_color_id", "origen"],
+            column_config={
+                "desbloquear": st.column_config.CheckboxColumn("Desbloquear"),
+                "tienda_id": "Código",
+                "tienda": "Tienda",
+                "modelo_color_id": "Modelo-color",
+                "origen": "Origen del bloqueo",
+            },
+            key="editor_desbloqueo",
+        )
+        marcados = editado.loc[editado["desbloquear"]]
+        motivo_d = st.text_input("Motivo del desbloqueo", key="dbl_motivo")
+        if st.button(
+            f"Desbloquear {len(marcados):,} seleccionados",
+            icon=":material/lock_open:",
+            disabled=not (editable and len(marcados)),
+            key="btn_desbloquear",
+        ):
+            nuevos = pd.concat(
+                [
+                    B.nuevos_manuales([t], [m], B.DESBLOQUEAR, motivo_d, usuario_actual())
+                    for t, m in zip(marcados["tienda_id"], marcados["modelo_color_id"], strict=True)
+                ],
+                ignore_index=True,
+            )
+            st.success(
+                f"Desbloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}."
+            )
+            st.rerun()
+
+# ---------------------------------------------------------------- historial
+with st.expander("Historial de cambios manuales", icon=":material/history:"):
+    hist = bloqueos_manuales()
+    if hist.empty:
+        st.caption("Todavía no hay bloqueos ni desbloqueos manuales.")
+    else:
+        st.dataframe(
+            hist.iloc[::-1].assign(tienda=lambda d: d["tienda_id"].map(nombre).fillna("")),
+            hide_index=True,
+            width="stretch",
+        )
+        st.download_button(
+            "Descargar historial (CSV)",
+            hist.to_csv(index=False).encode("utf-8-sig"),
+            file_name="bloqueos_manuales.csv",
+            mime="text/csv",
+        )

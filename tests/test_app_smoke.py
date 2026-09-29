@@ -6,7 +6,7 @@ import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
 RAIZ = Path(__file__).resolve().parents[1]
-PAGINAS = ["1_Dashboard", "5_Parametros"]  # vista única + configuración
+PAGINAS = ["1_Dashboard", "8_Bloqueos", "5_Parametros"]  # vista única + configuración
 
 
 def _app(monkeypatch, secrets=None):
@@ -104,3 +104,17 @@ def test_dashboard_con_aprobacion_en_curso(monkeypatch):
     app.session_state["aprobacion"] = pd.DataFrame({"cantidad_aprobada": [1]})
     app.switch_page("app/vistas/1_Dashboard.py").run()
     assert not app.exception, app.exception
+
+
+def test_mantenedor_de_bloqueos(monkeypatch):
+    app = _app(monkeypatch)
+    app.switch_page("app/vistas/8_Bloqueos.py").run()
+    assert not app.exception, app.exception
+    app.multiselect(key="blq_tiendas").select("8").run()
+    app.text_area(key="blq_texto").input("HP10201162490-N11").run()
+    app.button(key="btn_bloquear").click().run()
+    assert not app.exception, app.exception
+    m = app.session_state.bloqueos_manuales
+    assert (
+        m.iloc[-1]["accion"] == "BLOQUEAR" and m.iloc[-1]["modelo_color_id"] == "HP10201162490-N11"
+    )
