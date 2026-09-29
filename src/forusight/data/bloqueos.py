@@ -8,8 +8,24 @@ tienda no se repone ahí, aunque la tienda lo haya vendido.
 from __future__ import annotations
 
 import io
+from functools import lru_cache
+from pathlib import Path
 
 import pandas as pd
+
+#: Bloqueos por defecto (reporte 1003 del 28/09/2026, las 4 partes). Se usan cuando no se
+#: sube un reporte más reciente en la barra lateral.
+POR_DEFECTO = Path(__file__).resolve().parents[1] / "config" / "bloqueos.csv.gz"
+FECHA_POR_DEFECTO = "28/09/2026"
+
+
+@lru_cache(maxsize=1)
+def por_defecto() -> pd.DataFrame:
+    if not POR_DEFECTO.exists():
+        return pd.DataFrame(columns=["tienda_id", "modelo_color_id", "motivo"])
+    d = pd.read_csv(POR_DEFECTO, dtype=str)
+    return d.assign(motivo="reporte 1003 del " + FECHA_POR_DEFECTO)
+
 
 COLUMNAS = {
     "Código centro": "tienda_id",

@@ -166,7 +166,11 @@ def construir_tabla(
     if "leadtime_dias" in tien:  # calendario: lead time y revisión propios de cada tienda
         lead = d["tienda_id"].map(tien["leadtime_dias"]).fillna(lead)
         revision = d["tienda_id"].map(tien["revision_dias"]).fillna(revision)
-    post = d["venta_post_corte"] if "venta_post_corte" in d else pd.Series(0.0, index=d.index)
+    post = (
+        d["venta_post_corte"]
+        if "venta_post_corte" in d and params.reposicion_venta.descontar_venta_post_corte
+        else pd.Series(0.0, index=d.index)
+    )
     posicion = (d["stock_tienda"] + d["stock_transito"] - post.fillna(0)).clip(lower=0)
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
     almacenamiento = d["motivo_codigo"].eq("NO_TOPE_TIENDA") | d["motivo_parcial"].eq(

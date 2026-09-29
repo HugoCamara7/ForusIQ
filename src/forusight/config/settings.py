@@ -241,6 +241,9 @@ class ReposicionVentaParams(_Section):
     """Reponer lo vendido desde la ruta anterior del mall (venta diaria de BigQuery)."""
 
     reponer_venta_desde_ruta: bool = True
+    #: Restar de la posición la venta posterior al corte de stock. El reporte de distribución
+    #: no lo hace (posición = físico + tránsito): apagado para cuadrar con el reporte.
+    descontar_venta_post_corte: bool = False
     dias_venta_diaria: int = Field(14, ge=7, le=31)
 
 

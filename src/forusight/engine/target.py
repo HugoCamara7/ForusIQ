@@ -193,7 +193,11 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     out["stock_objetivo"] = np.where(talla_nueva, 0, objetivo).astype("int64")
 
     # La venta posterior al corte de stock todavía no está descontada del stock.
-    post = out["venta_post_corte"].fillna(0) if "venta_post_corte" in out else 0.0
+    post = (
+        out["venta_post_corte"].fillna(0)
+        if "venta_post_corte" in out and params.reposicion_venta.descontar_venta_post_corte
+        else 0.0
+    )
     pos = (out["stock_disponible"] + out["stock_transito"] - post).clip(lower=0)
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
     bruta = bruta.astype("int64")

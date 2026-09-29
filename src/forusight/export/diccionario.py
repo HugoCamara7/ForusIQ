@@ -239,7 +239,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Posición Stock [un]": (
         STOCK,
         "Lo que la tienda tiene y lo que ya viene en camino.",
-        "Stock Físico + Stock Trán. Int. − Venta después del corte (mínimo 0).",
+        "Stock Físico + Stock Trán. Int. (como el reporte; la venta después del corte sólo se "
+        "resta si se activa en Parámetros).",
         "Calculada",
         "Físico + Trán. Int. + Trán. Prov. − Comprometido − Backorder",
     ),

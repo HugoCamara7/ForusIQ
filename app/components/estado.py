@@ -249,6 +249,10 @@ def registrar_bloqueos(archivos: list[bytes]) -> str:
 
 
 def bloqueos_de(clave: str) -> pd.DataFrame | None:
+    if clave == "defecto":
+        from forusight.data import bloqueos as B
+
+        return B.por_defecto()
     return _BLOQUEOS.get(clave) if clave else None
 
 
@@ -425,7 +429,7 @@ def ejecutar_corrida() -> EngineResult:
             ss.criterio,
             ss.params.model_dump_json(),
             pendientes_csv(),
-            ss.get("bloq_clave", ""),
+            ss.get("bloq_clave", "defecto"),
         )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
             ss.aprobacion = None
@@ -445,7 +449,7 @@ def ejecutar_corrida() -> EngineResult:
         marcas,
         pendientes_csv(),
         pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
-        ss.get("bloq_clave", ""),
+        ss.get("bloq_clave", "defecto"),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
