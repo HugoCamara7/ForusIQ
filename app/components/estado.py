@@ -173,7 +173,7 @@ def _correr_motor(
 
     maestro = TEMP.combinar(
         TEMP.por_defecto(),
-        _TEMPORADAS.get(bloq_clave),
+        _TEMPORADAS.get(bloq_clave.partition("|")[0]),
         _TEMPORADAS.get(niveles_clave),
     )
     inputs = replace(
@@ -258,6 +258,13 @@ def _leer_bloqueo(contenido: bytes) -> pd.DataFrame:
     return B.leer(contenido)
 
 
+def clave_bloqueos() -> str:
+    """Clave de bloqueos para la corrida: archivo base + huella del mantenedor."""
+    base = st.session_state.get("bloq_clave", "defecto") or "defecto"
+    h = huella_manuales()
+    return f"{base}|{h}" if h else base
+
+
 def registrar_bloqueos(archivos: list[bytes]) -> str:
     """Une los archivos de bloqueos y devuelve su huella ('' si no hay)."""
     from forusight.data import bloqueos as B
@@ -301,12 +308,74 @@ def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
     return clave
 
 
-def bloqueos_de(clave: str) -> pd.DataFrame | None:
+def _bloqueos_base(clave: str) -> pd.DataFrame | None:
     if clave == "defecto":
         from forusight.data import bloqueos as B
 
         return B.por_defecto()
     return _BLOQUEOS.get(clave) if clave else None
+
+
+def bloqueos_de(clave: str) -> pd.DataFrame | None:
+    """Bloqueos efectivos: reporte 1003 (guardado o subido) + mantenedor (bloquear/desbloquear).
+
+    ``clave`` = «base» o «base|huella de los manuales» (la huella cambia la caché)."""
+    from forusight.data import bloqueos as B
+
+    base, _, _ = (clave or "").partition("|")
+    return B.aplicar_manuales(_bloqueos_base(base), bloqueos_manuales())
+
+
+# ------------------------------------------------------------------ mantenedor de bloqueos
+
+
+def _store_bloqueos():
+    from forusight.data.github_store import GitHubStore, config_github
+
+    cfg = config_github(secretos())
+    if cfg is None:
+        return None
+    return GitHubStore(cfg["repository"], cfg["token"], cfg["branch"], cfg["prefix"])
+
+
+def bloqueos_manuales() -> pd.DataFrame:
+    """Historial de bloqueos/desbloqueos manuales (GitHub; si no hay, sólo esta sesión)."""
+    from forusight.data import bloqueos as B
+
+    ss = st.session_state
+    if "bloqueos_manuales" not in ss:
+        store = _store_bloqueos()
+        try:
+            contenido = store.leer(f"{store.prefix}/{B.RUTA_MANUALES}") if store else None
+            ss.bloqueos_manuales = B.leer_manuales(contenido)
+        except Exception:
+            ss.bloqueos_manuales = B.manuales_vacio()
+    return ss.bloqueos_manuales
+
+
+def huella_manuales() -> str:
+    m = bloqueos_manuales()
+    if m.empty:
+        return ""
+    return hashlib.sha1(m.to_csv(index=False).encode()).hexdigest()[:10]
+
+
+def guardar_bloqueos_manuales(nuevos: pd.DataFrame, usuario: str) -> str:
+    """Agrega movimientos al historial y lo guarda. Devuelve dónde quedó guardado."""
+    from forusight.data import bloqueos as B
+
+    ss = st.session_state
+    todo = pd.concat([bloqueos_manuales(), nuevos], ignore_index=True)
+    ss.bloqueos_manuales = todo
+    store = _store_bloqueos()
+    if store is None:
+        return "esta sesión (sin GitHub configurado: descarga el historial para no perderlo)"
+    ruta = store.guardar(
+        B.RUTA_MANUALES,
+        todo.to_csv(index=False).encode("utf-8-sig"),
+        f"forusight: bloqueos manuales por {usuario}",
+    )
+    return f"GitHub ({store.repository}: {ruta})"
 
 
 def _pend_df(pend_csv: str) -> pd.DataFrame:
@@ -484,7 +553,7 @@ def ejecutar_corrida() -> EngineResult:
             ss.criterio,
             ss.params.model_dump_json(),
             pendientes_csv(),
-            ss.get("bloq_clave", "defecto"),
+            clave_bloqueos(),
         )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
             ss.aprobacion = None
@@ -504,7 +573,7 @@ def ejecutar_corrida() -> EngineResult:
         marcas,
         pendientes_csv(),
         pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
-        ss.get("bloq_clave", "defecto"),
+        clave_bloqueos(),
         ss.get("niveles_clave", ""),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
