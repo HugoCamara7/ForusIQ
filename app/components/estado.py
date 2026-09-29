@@ -152,6 +152,7 @@ def _correr_motor(
     pend_csv: str = "",
     dia_reposicion: str = "",
     bloq_clave: str = "",
+    niveles_clave: str = "",
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -168,7 +169,11 @@ def _correr_motor(
 
     vr = VR.resumir(getattr(inputs, "venta_diaria", None), dt, dia, diag.get("fecha_foto"))
     bloq = bloqueos_de(bloq_clave)
-    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr, bloqueos=bloq)
+    niveles = _NIVELES.get(niveles_clave) if niveles_clave else None
+    if niveles is not None:
+        edad = pd.Timestamp(dia) - pd.to_datetime(niveles["fecha_ref"])
+        niveles = niveles.loc[edad <= pd.Timedelta(days=params.referencia.dias_maximos)]
+    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr, bloqueos=bloq, niveles_ref=niveles)
     diag = {
         **diag,
         "pendientes": _resumen_pend(pend),
@@ -178,6 +183,7 @@ def _correr_motor(
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
         "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
+        "niveles_ref": int(len(niveles)) if niveles is not None else 0,
     }
     firma = hashlib.sha1(
         "|".join(
@@ -190,6 +196,7 @@ def _correr_motor(
                 pend_csv,
                 dia,
                 bloq_clave,
+                niveles_clave,
             ]
         ).encode()
         + (cd_bytes or b"")
@@ -209,6 +216,7 @@ def correr_motor(
     pend_csv: str = "",
     dia_reposicion: str = "",
     bloq_clave: str = "",
+    niveles_clave: str = "",
 ):
     return _correr_motor(
         fuente,
@@ -221,6 +229,7 @@ def correr_motor(
         pend_csv,
         dia_reposicion,
         bloq_clave,
+        niveles_clave,
     )
 
 
@@ -245,6 +254,26 @@ def registrar_bloqueos(archivos: list[bytes]) -> str:
     clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a in archivos)).hexdigest()[:12]
     if clave not in _BLOQUEOS:
         _BLOQUEOS[clave] = B.unir([_leer_bloqueo(a) for a in archivos])
+    return clave
+
+
+#: Niveles de referencia (reportes de distribución recientes), por huella del contenido.
+_NIVELES: dict[str, pd.DataFrame] = {}
+
+
+def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
+    """Nivel máximo del último reporte de cada tienda; devuelve su huella ('' si no hay)."""
+    from forusight.data import reporte as R
+
+    if not archivos:
+        return ""
+    clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a, _ in archivos)).hexdigest()[:12]
+    if clave not in _NIVELES:
+        partes = []
+        for contenido, nombre in archivos:
+            df, fecha = _leer_reporte(contenido)
+            partes.append((df, fecha if fecha is not None else R.fecha_de_nombre(nombre)))
+        _NIVELES[clave] = R.niveles_referencia(partes)
     return clave
 
 
@@ -450,6 +479,7 @@ def ejecutar_corrida() -> EngineResult:
         pendientes_csv(),
         pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
         ss.get("bloq_clave", "defecto"),
+        ss.get("niveles_clave", ""),
     )
     if ss.resultado is None or ss.resultado.run_id != res.run_id:
         ss.aprobacion = None
@@ -655,6 +685,28 @@ def barra_lateral() -> None:
                     value=ss.get("pend_github", True),
                     help="Lee las aprobaciones guardadas en GitHub.",
                 )
+            if ss.fuente == "bigquery" and not ss.get("reporte"):
+                archivos_n = st.file_uploader(
+                    "Reportes de distribución recientes (niveles)",
+                    type=["xlsx"],
+                    accept_multiple_files=True,
+                    key="niveles_uploader",
+                    help="Reportes de Neogística de los últimos días: se usa el Nivel Máximo del "
+                    "último reporte de cada tienda para cuadrar con él.",
+                )
+                try:
+                    ss.niveles_clave = registrar_niveles(
+                        [(a.getvalue(), a.name) for a in archivos_n or []]
+                    )
+                    if ss.niveles_clave:
+                        nv = _NIVELES[ss.niveles_clave]
+                        st.caption(
+                            f"Niveles de {nv['tienda_id'].nunique()} tiendas · "
+                            f"{len(nv):,} tienda × SKU"
+                        )
+                except Exception as exc:
+                    st.error(f"No se pudo leer el reporte: {exc}")
+                    ss.niveles_clave = ""
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(
                     "Stock CD con reservas (opcional)",

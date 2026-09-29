@@ -200,15 +200,36 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     )
     pos = (out["stock_disponible"] + out["stock_transito"] - post).clip(lower=0)
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
+    # Nivel de referencia del último reporte de distribución de la tienda: manda sobre el
+    # nivel propio (el reporte ya decidió la curva, el surtido y el pronóstico de la talla).
+    ref = (
+        out["nivel_ref"].notna().to_numpy()
+        if "nivel_ref" in out and params.referencia.usar_nivel_del_reporte
+        else np.zeros(len(out), dtype=bool)
+    )
+    if ref.any():
+        nivel = out["nivel_ref"].fillna(0).to_numpy()
+        rop = (
+            np.where(out["rop_ref"].isna(), nivel - 1, out["rop_ref"].fillna(0))
+            if "rop_ref" in out
+            else nivel - 1
+        )
+        pide = np.ceil(pos.to_numpy()) <= rop
+        bruta = np.where(ref, np.where(pide, np.maximum(nivel - np.ceil(pos), 0), 0), bruta)
+        out["stock_objetivo"] = np.where(ref, nivel, out["stock_objetivo"]).astype("int64")
+        talla_nueva = talla_nueva & ~ref
+        agotado = agotado & ~ref
     bruta = bruta.astype("int64")
     tope = params.tope_tienda.max_unidades_por_sku
-    bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0))
+    bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0)) & ~ref
     normal = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
     # Reponer lo vendido desde la ruta anterior es obligatorio: ninguna otra regla (sobrestock,
     # sin demanda en 12 semanas, talla "nunca tuvo", modelo agotado, tope por SKU) lo anula.
     # Sólo puede quedar sin enviar si el CD no tiene stock o no alcanza para todas las tiendas.
     if params.reposicion_venta.reponer_venta_desde_ruta and "venta_desde_ruta" in out:
         piso = np.ceil(out["venta_desde_ruta"].fillna(0).clip(lower=0).to_numpy()).astype("int64")
+        if not params.referencia.reponer_venta_con_nivel_del_reporte:
+            piso = np.where(ref, 0, piso)  # con el nivel del reporte, manda su regla
     else:
         piso = np.zeros(len(out), dtype="int64")
     out["piso_venta"] = piso

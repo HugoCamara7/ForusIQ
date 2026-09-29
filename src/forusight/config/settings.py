@@ -247,6 +247,18 @@ class ReposicionVentaParams(_Section):
     dias_venta_diaria: int = Field(14, ge=7, le=31)
 
 
+class ReferenciaParams(_Section):
+    """Niveles del último reporte de distribución de cada tienda (Neogística)."""
+
+    #: Usar el Nivel Máximo y el Punto de Reorden del reporte cuando la tienda×SKU está en él.
+    usar_nivel_del_reporte: bool = True
+    #: Reponer además lo vendido desde la ruta anterior en las filas con nivel del reporte (el
+    #: reporte no lo hace: apagado para cuadrar con él).
+    reponer_venta_con_nivel_del_reporte: bool = False
+    #: Antigüedad máxima del reporte usado como referencia.
+    dias_maximos: int = Field(10, ge=1, le=60)
+
+
 class SurtidoParams(_Section):
     """Qué se puede reponer: temporadas comerciales activas y modelos bloqueados por tienda."""
 
@@ -313,6 +325,7 @@ class EngineParams(_Section):
     stock_cd: StockCdParams = Field(default_factory=StockCdParams)
     reposicion_venta: ReposicionVentaParams = Field(default_factory=ReposicionVentaParams)
     surtido: SurtidoParams = Field(default_factory=SurtidoParams)
+    referencia: ReferenciaParams = Field(default_factory=ReferenciaParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

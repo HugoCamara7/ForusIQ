@@ -604,3 +604,46 @@ def aplicar_surtido(
     out = df.copy()
     out.loc[corta, "Reposición Bloqueada"] = "SI"
     return out, int(corta.sum())
+
+
+def fecha_de_nombre(nombre: str) -> pd.Timestamp | None:
+    """«20260928_Reporte_Distribucion…» → 28/09/2026."""
+    import re
+
+    m = re.search(r"(20\d{6})", nombre or "")
+    return pd.to_datetime(m.group(1), format="%Y%m%d", errors="coerce") if m else None
+
+
+def niveles_referencia(
+    reportes: list[tuple[pd.DataFrame, pd.Timestamp | None]], hoy=None, dias_maximos: int = 10
+) -> pd.DataFrame:
+    """Nivel Máximo, Punto de Reorden y Pronóstico por tienda×SKU del reporte más reciente de
+    cada tienda (los reportes de días anteriores cubren las tiendas de otras rutas)."""
+    from forusight.data.fuentes import codigo_tienda, sku_canonico
+
+    partes = []
+    for df, fecha in reportes:
+        f = fecha if fecha is not None and not pd.isna(fecha) else corte(df)
+        partes.append(
+            pd.DataFrame(
+                {
+                    "tienda_id": df[CENTRO].map(codigo_tienda),
+                    "sku": sku_canonico(df[SKU].astype("string")).astype(str),
+                    "nivel_ref": _num(df[MAX]),
+                    "rop_ref": _num(df[ROP]) if ROP in df else np.nan,
+                    "pronostico_ref": _num(df.get(PRONOSTICO, np.nan)),
+                    "fecha_ref": f,
+                }
+            )
+        )
+    if not partes:
+        return pd.DataFrame(columns=["tienda_id", "sku", "nivel_ref", "rop_ref", "fecha_ref"])
+    d = pd.concat(partes, ignore_index=True).dropna(subset=["nivel_ref"])
+    if hoy is not None:
+        d = d.loc[
+            pd.Timestamp(hoy) - pd.to_datetime(d["fecha_ref"]) <= pd.Timedelta(days=dias_maximos)
+        ]
+    # por tienda, el reporte más reciente
+    ultima = d.groupby("tienda_id")["fecha_ref"].transform("max")
+    d = d.loc[d["fecha_ref"] == ultima]
+    return d.drop_duplicates(["tienda_id", "sku"], keep="first").reset_index(drop=True)

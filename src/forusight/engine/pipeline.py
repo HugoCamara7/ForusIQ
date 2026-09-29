@@ -93,6 +93,8 @@ class EngineInputs:
     venta_reciente: pd.DataFrame | None = None
     #: Opcional: modelo-color bloqueado por tienda (reporte 1003 de bloqueos).
     bloqueos: pd.DataFrame | None = None
+    #: Opcional: nivel máximo / punto de reorden del último reporte de cada tienda.
+    niveles_ref: pd.DataFrame | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
@@ -101,6 +103,7 @@ class EngineInputs:
             venta_diaria=self.venta_diaria,
             venta_reciente=self.venta_reciente,
             bloqueos=self.bloqueos,
+            niveles_ref=self.niveles_ref,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),
@@ -202,6 +205,13 @@ def ejecutar(
         )
     for c in ("venta_desde_ruta", "venta_post_corte"):
         sku[c] = sku[c].fillna(0).astype(float) if c in sku else 0.0
+    nr = inp.niveles_ref
+    if nr is not None and len(nr):
+        sku = sku.merge(
+            nr[["tienda_id", "sku", "nivel_ref", "rop_ref"]].drop_duplicates(["tienda_id", "sku"]),
+            on=["tienda_id", "sku"],
+            how="left",
+        )
     sku = calcular_necesidad(sku, mc, params)
     sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params)
 

@@ -101,3 +101,43 @@ def test_reporte_bloqueos_y_temporadas():
     out, n = R.aplicar_surtido(df, bl, ["INVIERNO 2026", "VERANO 2026"])
     assert n == 2
     assert out["Reposición Bloqueada"].eq("SI").tolist() == [True, True, False]
+
+
+def test_nivel_del_reporte_manda_si_esta():
+    e = Escenario()
+    skus = e.modelo("HP1-NEG", tallas=("38", "39"))
+    e.tienda("8", nombre="HP JOCKEY")
+    e.venta_constante("8", skus, unidades=1)
+    for s in skus:
+        e.stock_tienda("8", s, 1)
+        e.stock_cd(s, 20)
+    p = params(calendario={"aplicar": False})
+    inp = e.inputs()
+    inp.niveles_ref = pd.DataFrame(
+        {"tienda_id": ["8", "8"], "sku": skus, "nivel_ref": [4.0, 1.0], "rop_ref": [3.0, 0.0]}
+    )
+    d = ejecutar(inp, p, CORTE).detalle.set_index("sku")
+    assert d.loc[skus[0], "stock_objetivo"] == 4 and d.loc[skus[0], "cantidad"] == 3
+    assert d.loc[skus[1], "cantidad"] == 0  # posición 1 > punto de reorden 0: no pide
+
+
+def test_niveles_referencia_toma_el_ultimo_reporte_de_cada_tienda():
+    def rep(tienda, nivel):
+        return pd.DataFrame(
+            {
+                R.CENTRO: [tienda],
+                R.SKU: ["111"],
+                R.MAX: [nivel],
+                R.ROP: [nivel - 1],
+                "2026-09-14": [1],
+            }
+        )
+
+    nv = R.niveles_referencia(
+        [
+            (rep("8", 2), pd.Timestamp("2026-09-23")),
+            (rep("8", 3), pd.Timestamp("2026-09-25")),
+            (rep("16", 5), pd.Timestamp("2026-09-24")),
+        ]
+    ).set_index("tienda_id")
+    assert nv.loc["8", "nivel_ref"] == 3 and nv.loc["16", "nivel_ref"] == 5
