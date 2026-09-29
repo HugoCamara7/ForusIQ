@@ -282,6 +282,14 @@ def app_styles() -> None:
         background:linear-gradient(90deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
     .rank-val {{ text-align:right; font-weight:900; color:#0B1B46;
         font-variant-numeric:tabular-nums; }}
+    .gauge {{ text-align:center; padding:4px 6px 2px; }}
+    .gauge-title {{ font-size:13px; font-weight:900; letter-spacing:.06em; text-transform:uppercase;
+        color:#64748B; margin-bottom:2px; }}
+    .gauge svg {{ max-width:340px; display:block; margin:0 auto; }}
+    .gauge-val {{ font-size:40px; font-weight:950; line-height:1; margin-top:2px; }}
+    .gauge-state {{ display:inline-block; margin-top:8px; padding:3px 12px; border-radius:999px;
+        font-size:12px; font-weight:900; }}
+    .gauge-sub {{ margin-top:8px; font-size:12.5px; color:#64748B; font-weight:700; }}
     .meter {{ margin:4px 0 16px; }}
     .meter-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
     .meter-top b {{ font-size:13px; font-weight:900; color:#0B1B46; }}
@@ -313,6 +321,11 @@ def app_styles() -> None:
     .stButton button, button[data-testid^="stBaseButton"] {{ border-radius:12px; font-weight:850; }}
     .stDownloadButton button {{ border-radius:14px; min-height:52px; font-weight:950; font-size:15px;
         background:linear-gradient(135deg,#0B7A3B,#16A34A); border:none; color:#FFF; }}
+    .st-key-btn_aprobar button, .st-key-aprobada button {{ border-radius:14px; min-height:52px;
+        font-weight:950; font-size:15px; border:none; color:#FFF;
+        background:linear-gradient(135deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
+    .st-key-aprobada button:disabled {{ background:#E8F7EE; color:#0B7A3B;
+        border:1.5px solid #9AD7B0; opacity:1; }}
     div[data-testid="stDataFrame"] {{ border-radius:14px; overflow:hidden; border:1px solid var(--line); }}
     div[data-testid="stFileUploader"] section {{ border-radius:14px; border:1.5px dashed #BFD4FF;
         background:#FAFCFF; }}
@@ -470,3 +483,66 @@ def apiladas(grupos: dict[str, dict[str, int]], colores: dict[str, str]) -> str:
             f'<span class="stack">{seg}</span><span class="tot">{tot:,}</span></div>'
         )
     return f'<div class="legend">{ley}</div>{"".join(filas)}'
+
+
+#: Velocímetro de disponibilidad: rojo < 90 %, naranja 90–93 %, verde ≥ 93 %.
+ROJO, NARANJA, VERDE = "#DC2626", "#F59E0B", "#16A34A"
+
+
+def color_disponibilidad(v: float) -> tuple[str, str]:
+    if v >= 0.93:
+        return VERDE, "Óptima"
+    if v >= 0.90:
+        return NARANJA, "En alerta"
+    return ROJO, "Crítica"
+
+
+def velocimetro(valor: float, titulo: str, detalle: str = "", minimo: float = 0.70) -> str:
+    """Medio círculo con zonas roja / naranja / verde y aguja en el valor (escala 70–100 %)."""
+    import math
+
+    v = max(0.0, min(1.0, float(valor or 0)))
+    cx, cy, r, w = 170, 158, 116, 24
+
+    def punto(x: float, radio: float = r) -> tuple[float, float]:
+        t = (max(minimo, min(1.0, x)) - minimo) / (1 - minimo)
+        a = math.pi * (1 - t)
+        return cx + radio * math.cos(a), cy - radio * math.sin(a)
+
+    def arco(a: float, b: float, color: str) -> str:
+        (x1, y1), (x2, y2) = punto(a), punto(b)
+        return (
+            f'<path d="M {x1:.1f} {y1:.1f} A {r} {r} 0 0 1 {x2:.1f} {y2:.1f}" '
+            f'stroke="{color}" stroke-width="{w}" fill="none"/>'
+        )
+
+    color, estado = color_disponibilidad(v)
+    nx, ny = punto(v, r - 34)
+
+    def marca(m: float) -> str:
+        x, y = punto(m, r + w / 2 + 12)
+        ancla = "end" if x < cx - 20 else "start" if x > cx + 20 else "middle"
+        return (
+            f'<text x="{x:.1f}" y="{y + 4:.1f}" text-anchor="{ancla}" font-size="12" '
+            f'fill="#64748B" font-weight="800">{m:.0%}</text>'
+        )
+
+    marcas = "".join(marca(m) for m in (minimo, 0.90, 0.93, 1.0))
+    svg = (
+        f'<svg viewBox="0 0 340 185" width="100%" role="img" aria-label="{escape(titulo)} {v:.1%}">'
+        + arco(minimo, 0.90, ROJO)
+        + arco(0.90, 0.93, NARANJA)
+        + arco(0.93, 1.0, VERDE)
+        + marcas
+        + f'<line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="#0F172A" '
+        'stroke-width="5" stroke-linecap="round"/>'
+        + f'<circle cx="{cx}" cy="{cy}" r="10" fill="#0F172A"/>'
+        + "</svg>"
+    )
+    return (
+        '<div class="gauge">'
+        f'<div class="gauge-title">{escape(titulo)}</div>{svg}'
+        f'<div class="gauge-val" style="color:{color}">{v:.1%}</div>'
+        f'<div class="gauge-state" style="background:{color}1A;color:{color}">{estado}</div>'
+        f'<div class="gauge-sub">{escape(detalle)}</div></div>'
+    )
