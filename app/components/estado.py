@@ -585,7 +585,7 @@ def _selector_marcas_reporte() -> None:
     )
 
 
-def barra_lateral() -> None:
+def barra_lateral(paginas: list | None = None) -> None:
     """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
     raiz = Path(__file__).resolve().parents[2] / "assets"
@@ -595,39 +595,16 @@ def barra_lateral() -> None:
         opciones = fuentes_disponibles()
         if ss.fuente not in opciones:
             ss.fuente = opciones[0]
-        archivo_rep = st.file_uploader(
-            "Reporte de distribución del día",
-            type=["xlsx"],
-            key="reporte_uploader",
-            help="Opcional. Con el reporte del día, Forusight usa su venta, niveles y stock del "
-            "CD y entrega el mismo archivo recalculado.",
+        # Sin reporte del día: la distribución sale de BigQuery (el reporte no se usa como base).
+        ss.reporte = None
+        if ss.fuente == "bigquery":
+            _selector_marcas()
+        ss.fecha_corte = st.date_input(
+            "Semana (lunes)",
+            value=ss.fecha_corte,
+            format="DD/MM/YYYY",
+            help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
         )
-        ss.reporte = (archivo_rep.getvalue(), archivo_rep.name) if archivo_rep else None
-        if ss.reporte:
-            _selector_marcas_reporte()
-            ss.criterio = (
-                st.segmented_control(
-                    "Cuando el CD no alcanza",
-                    ["reporte", "forusight"],
-                    default=ss.criterio,
-                    format_func={
-                        "reporte": "Igual al reporte",
-                        "forusight": "Prioridad Jockey",
-                    }.get,
-                    help="«Igual al reporte» reproduce la distribución del reporte. «Prioridad "
-                    "Jockey» reparte el CD escaso primero a las tiendas Jockey.",
-                )
-                or ss.criterio
-            )
-        else:
-            if ss.fuente == "bigquery":
-                _selector_marcas()
-            ss.fecha_corte = st.date_input(
-                "Semana (lunes)",
-                value=ss.fecha_corte,
-                format="DD/MM/YYYY",
-                help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
-            )
         if st.button(
             "Ejecutar corrida",
             type="primary",
@@ -695,14 +672,19 @@ def barra_lateral() -> None:
                 help="Modelos bloqueados por tienda (todas sus partes): no se reponen ahí.",
             )
             try:
-                ss.bloq_clave = registrar_bloqueos([a.getvalue() for a in archivos_b or []])
-                if ss.bloq_clave:
-                    st.caption(
-                        f"{len(bloqueos_de(ss.bloq_clave)):,} modelo-color × tienda bloqueados"
-                    )
+                from forusight.data import bloqueos as B
+
+                # sin archivo nuevo se usan los bloqueos guardados (reporte 1003 del 28/09)
+                ss.bloq_clave = (
+                    registrar_bloqueos([a.getvalue() for a in archivos_b or []]) or "defecto"
+                )
+                origen = "subidos" if ss.bloq_clave != "defecto" else f"del {B.FECHA_POR_DEFECTO}"
+                st.caption(
+                    f"Bloqueos {origen}: {len(bloqueos_de(ss.bloq_clave)):,} modelo-color × tienda"
+                )
             except Exception as exc:
                 st.error(f"No se pudo leer el reporte de bloqueos: {exc}")
-                ss.bloq_clave = ""
+                ss.bloq_clave = "defecto"
             from forusight.data.github_store import config_github
 
             if config_github(secretos()) is not None:
@@ -711,28 +693,6 @@ def barra_lateral() -> None:
                     value=ss.get("pend_github", True),
                     help="Lee las aprobaciones guardadas en GitHub.",
                 )
-            if ss.fuente == "bigquery" and not ss.get("reporte"):
-                archivos_n = st.file_uploader(
-                    "Reportes de distribución recientes (niveles)",
-                    type=["xlsx"],
-                    accept_multiple_files=True,
-                    key="niveles_uploader",
-                    help="Reportes de Neogística de los últimos días: se usa el Nivel Máximo del "
-                    "último reporte de cada tienda para cuadrar con él.",
-                )
-                try:
-                    ss.niveles_clave = registrar_niveles(
-                        [(a.getvalue(), a.name) for a in archivos_n or []]
-                    )
-                    if ss.niveles_clave:
-                        nv = _NIVELES[ss.niveles_clave]
-                        st.caption(
-                            f"Niveles de {nv['tienda_id'].nunique()} tiendas · "
-                            f"{len(nv):,} tienda × SKU"
-                        )
-                except Exception as exc:
-                    st.error(f"No se pudo leer el reporte: {exc}")
-                    ss.niveles_clave = ""
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(
                     "Stock CD con reservas (opcional)",
@@ -740,6 +700,10 @@ def barra_lateral() -> None:
                     key="cd_uploader",
                 )
                 ss.cd_archivo = (archivo.getvalue(), archivo.name) if archivo else None
+            if paginas and len(paginas) > 1:
+                st.caption("Configuración")
+                for pg in paginas:
+                    st.page_link(pg)
             if ss.fuente != "synthetic" and st.button(
                 "Volver a leer BigQuery",
                 width="stretch",

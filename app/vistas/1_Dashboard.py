@@ -1,46 +1,16 @@
-import numpy as np
+"""Vista única: generar la distribución, aprobarla (queda guardada) y descargar el archivo."""
+
 import pandas as pd
 import streamlit as st
+from app.components.aprobacion import aprobar
 from app.components.archivo import boton_archivo
-from app.components.estado import entradas_de_la_corrida, secretos
-from app.components.ui import (
-    apiladas,
-    hero,
-    html,
-    issue_box,
-    kpi_row,
-    medidor,
-    mini_tabla,
-    ranking,
-    section,
-    stepper,
-)
-
-from forusight.engine import disponibilidad as DISP
-from forusight.engine.reasons import DESCRIPCION_CODIGOS
+from app.components.estado import entradas_de_la_corrida
+from app.components.login import puede
+from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
 ss = st.session_state
 res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
-FLUJO = [
-    ("Datos", "venta 12 semanas + último stock"),
-    ("Necesidad", "demanda, curva de tallas, afinidad"),
-    ("Distribución", "stock del CD 320"),
-    ("Tiendas y cadenas", "cada marca a su cadena"),
-    ("Archivo Forusight", "listo para enviar"),
-]
-ESTADOS = {
-    "Tiene y vende": "#16A34A",
-    "Tiene sin venta": "#F59E0B",
-    "Quiebre": "#DC2626",
-    "Nunca tuvo": "#CBD5E1",
-}
-NOMBRE_ESTADO = {
-    "TUVO_Y_VENDE": "Tiene y vende",
-    "TUVO_SIN_VENTA": "Tiene sin venta",
-    "QUIEBRE": "Quiebre",
-    "NUNCA_TUVO": "Nunca tuvo",
-}
 
 
 def _fecha(x) -> str:
@@ -52,9 +22,8 @@ if res is None:
         "Forusight",
         "Distribución del CD 320 a tiendas por modelo, talla y cantidad, con el motivo de "
         "cada envío.",
-        eyebrow="Dashboard",
+        eyebrow="Reposición",
     )
-    stepper(FLUJO, 1)
     issue_box(
         "info",
         "Empieza aquí",
@@ -63,14 +32,6 @@ if res is None:
     st.stop()
 
 r = res.resumen
-from forusight.data.bq_client import claves_fuera_de_bigquery  # noqa: E402
-
-for seccion, clave, valor in claves_fuera_de_bigquery(secretos()):
-    issue_box(
-        "warn",
-        f"`{clave}` está en [{seccion}], no en [bigquery]",
-        f"La app no la lee ({valor}). Muévela debajo de [bigquery] en los secrets.",
-    )
 entradas = entradas_de_la_corrida()
 tiendas = entradas.dim_tienda if entradas is not None else pd.DataFrame(columns=["tienda_id"])
 cols_t = [c for c in ("tienda_id", "nombre", "cadena") if c in tiendas.columns]
@@ -78,31 +39,18 @@ det = res.detalle.merge(tiendas[cols_t].drop_duplicates("tienda_id"), on="tienda
 if "nombre" not in det:
     det["nombre"] = pd.NA
 det["tienda"] = det["nombre"].astype("string").fillna(det["tienda_id"].astype("string"))
-tiene_cadena = "cadena" in det.columns and det["cadena"].notna().any()
-grupo = "cadena" if tiene_cadena else "categoria"
-etiqueta = {"cadena": "cadena", "categoria": "categoría"}[grupo]
 env = det[det["cantidad"] > 0]
 
 meta = [f"Semana {_fecha(r['fecha_corte'])}"]
-if diag.get("fecha_foto"):
-    # el corte de fecha F es el cierre del día anterior
-    cierre = pd.Timestamp(diag["fecha_foto"]) - pd.Timedelta(days=1)
-    meta.append(f"Stock al cierre del {_fecha(cierre)}")
-meta += list(diag.get("marcas") or [])
-if entradas is not None and getattr(entradas, "reporte", None) is not None:
-    from forusight.data.reporte import coincidencia
-
+if diag.get("fecha_foto"):  # el corte de fecha F es el cierre del día anterior
     meta.append(
-        f"Coincide con el reporte: {coincidencia(entradas.reporte, res.detalle)['pct_filas']:.1%}"
+        f"Stock al cierre del {_fecha(pd.Timestamp(diag['fecha_foto']) - pd.Timedelta(days=1))}"
     )
-elif diag.get("fuente_venta"):
-    tabla_v = str(diag["fuente_venta"]).split(".")[-1]
-    hasta = _fecha(diag.get("venta_hasta"))
-    meta.append(f"Venta: {tabla_v}" + (f" hasta {hasta}" if hasta else ""))
+meta += list(diag.get("marcas") or [])
 if diag.get("dia_reposicion"):
     from forusight.data.calendario import dia_semana
 
-    nombres = {
+    dias = {
         "LU": "lunes",
         "MA": "martes",
         "MI": "miércoles",
@@ -112,160 +60,94 @@ if diag.get("dia_reposicion"):
         "DO": "domingo",
     }
     meta.append(
-        f"Reposición del {nombres[dia_semana(diag['dia_reposicion'])]} "
-        f"{_fecha(diag['dia_reposicion'])}: {diag.get('tiendas_hoy', 0)} de "
-        f"{diag.get('tiendas_total', 0)} tiendas"
+        f"Reposición del {dias[dia_semana(diag['dia_reposicion'])]} "
+        f"{_fecha(diag['dia_reposicion'])}"
         + (f" · rutas: {', '.join(diag['malls_hoy'])}" if diag.get("malls_hoy") else "")
     )
-pend_d = diag.get("pendientes") or {}
-if pend_d.get("unidades"):
-    meta.append(f"Descontados {pend_d['unidades']:,} u. aún no recibidas")
+aprobada = ss.get("aprobacion_confirmada") == res.run_id
+if aprobada and ss.get("aprobacion_info"):
+    info = ss.aprobacion_info
+    meta.append(f"Aprobada {info['hora']} · {info['usuario']}")
 hero(
     f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
-    f"Distribución sugerida desde el CD {r['cd_id']}: "
-    f"{env['modelo_color_id'].nunique():,} modelos-color en "
-    f"{env['talla'].nunique():,} tallas.",
-    eyebrow="Dashboard",
+    f"Distribución sugerida desde el CD {r['cd_id']}.",
+    eyebrow="Aprobada" if aprobada else "Propuesta",
     meta=meta,
 )
-stepper(FLUJO, 5 if ss.get("aprobacion_confirmada") == res.run_id else 4)
-_, zona_boton = st.columns([3, 1])
-with zona_boton:
+
+# --- acciones: aprobar (queda guardado) y descargar el archivo Forusight
+a1, a2 = st.columns(2, gap="medium")
+with a1:
+    if aprobada:
+        st.button(
+            "Aprobada", icon=":material/verified:", width="stretch", disabled=True, key="aprobada"
+        )
+    elif st.button(
+        "Aprobar y guardar",
+        type="primary",
+        icon=":material/task_alt:",
+        width="stretch",
+        disabled=not puede("aprobar"),
+        help="Aprueba la distribución tal cual; el análisis se hace en el Excel.",
+        key="btn_aprobar",
+    ):
+        nivel, msg = aprobar(res)
+        (st.toast if nivel == "ok" else st.info)(msg)
+        st.rerun()
+with a2:
     boton_archivo("archivo_dashboard")
 
-quiebres = det.loc[det["estado_mc"] == "QUIEBRE", ["tienda_id", "modelo_color_id"]]
+# --- KPI
+env_mc = env["modelo_color_id"].nunique()
 kpi_row(
     [
-        (
-            "Unidades a enviar",
-            f"{r['unidades_a_distribuir']:,}",
-            f"de {r['necesidad_total']:,} de necesidad",
-            "truck",
-        ),
-        (
-            "Tiendas con envío",
-            f"{r['tiendas_con_envio']}",
-            f"de {det['tienda_id'].nunique()} evaluadas",
-            "store",
-        ),
-        (
-            "Modelos-color",
-            f"{env['modelo_color_id'].nunique():,}",
-            "con al menos un envío",
-            "layers",
-        ),
+        ("Unidades a enviar", f"{r['unidades_a_distribuir']:,}", "desde el CD", "truck"),
+        ("Tiendas con envío", f"{r['tiendas_con_envio']}", "de la ruta de hoy", "store"),
+        ("Cantidad de modelos color", f"{env_mc:,}", "con al menos un envío", "layers"),
         (
             f"Stock CD {r['cd_id']}",
             f"{r['stock_cd_disponible']:,}",
             "unidades disponibles",
             "package",
         ),
-        ("En quiebre", f"{len(quiebres.drop_duplicates()):,}", "tienda × modelo-color", "flame"),
     ]
 )
 
 c1, c2 = st.columns([1.5, 1], gap="medium")
 with c1, st.container(key="card_tiendas"):
-    section("Unidades por tienda", "Las 12 tiendas que más reciben", "store")
+    section("Unidades por tienda", "Tiendas de la ruta con envío", "store")
+    tiene_cadena = "cadena" in env and env["cadena"].notna().any()
     por_t = (
         env.groupby(["tienda", "cadena" if tiene_cadena else "tienda_id"], as_index=False)[
             "cantidad"
         ]
         .sum()
-        .nlargest(12, "cantidad")
+        .sort_values("cantidad", ascending=False)
     )
     filas = [
         (x.tienda, float(x.cantidad), x.cadena if tiene_cadena else "") for x in por_t.itertuples()
     ]
     html(ranking(filas) if filas else "<p>Ninguna tienda recibe en esta corrida.</p>")
-with c2:
-    with st.container(key="card_disponibilidad"):
-        section(
-            "Disponibilidad de tallas",
-            "SKU disponibles / SKU activos; la talla que el CD no tiene no resta",
-            "target",
-        )
+with c2, st.container(key="card_disponibilidad"):
+    hoy = r.get("disponibilidad_retail")
+    if hoy is None:  # corridas anteriores a este indicador
+        from forusight.engine import disponibilidad as DISP
+
         k = DISP.kpis(det)
-        if k.get("activos"):
-            meta = f"meta {DISP.META:.0%} · mínimo {DISP.MINIMO:.0%}"
-            html(
-                medidor(
-                    "Hoy",
-                    k["simple_antes"],
-                    f"{k['activos']:,} SKU activos · ponderada por venta {k['ponderada_antes']:.1%}"
-                    f" · {meta}",
-                )
-                + medidor(
-                    "Después del envío",
-                    k["simple_despues"],
-                    f"ponderada por venta {k['ponderada_despues']:.1%} · quiebre "
-                    f"{1 - k['simple_despues']:.1%} · {meta}",
-                )
-            )
-            if k["wos_despues"] == k["wos_despues"]:  # no NaN
-                st.caption(
-                    f"Semanas de cobertura (WOS): {k['wos_antes']:.1f} hoy → "
-                    f"{k['wos_despues']:.1f} después del envío"
-                )
-        if tiene_cadena:
-            pt = DISP.por_tienda(det).merge(
-                det[["tienda_id", "cadena"]].drop_duplicates("tienda_id"), on="tienda_id"
-            )
-            pc = pt.groupby("cadena").apply(
-                lambda g: pd.Series(
-                    {
-                        "a": np.average(g["disp_antes"], weights=g["flujo"] + 1),
-                        "d": np.average(g["disp_despues"], weights=g["flujo"] + 1),
-                    }
-                ),
-                include_groups=False,
-            )
-            filas = [(c, f"{x.a:.1%}", f"{x.d:.1%}") for c, x in pc.sort_index().iterrows()]
-            html(mini_tabla(filas, ["Cadena", "Hoy", "Después"], num={1, 2}))
-    with st.container(key="card_cadenas"):
-        section(f"Por {etiqueta}", "Cómo se reparte el envío", "grid")
-        por_c = env.groupby(grupo, as_index=False)["cantidad"].sum().nlargest(10, "cantidad")
-        html(ranking([(str(x[0]), float(x[1]), "") for x in por_c.itertuples(index=False)]))
-
-with st.container(key="card_estados"):
-    section(
-        "Disponibilidad en tienda",
-        f"Cada tienda × modelo-color por {etiqueta}: separa falta de venta de falta de stock",
-        "target",
-    )
-    mc = det.drop_duplicates(["tienda_id", "modelo_color_id"]).assign(
-        estado=lambda d: d["estado_mc"].map(NOMBRE_ESTADO)
-    )
-    tabla = mc.groupby([grupo, "estado"]).size().unstack(fill_value=0)
-    tabla = tabla.loc[tabla.sum(axis=1).sort_values(ascending=False).index]
-    grupos = {str(g): {k: int(v) for k, v in fila.items()} for g, fila in tabla.iterrows()}
-    html(apiladas(grupos, ESTADOS))
-
-m1, m2 = st.columns(2, gap="medium")
-with m1, st.container(key="card_modelos"):
-    section("Modelos que más salen", "Unidades, tiendas y tallas por modelo-color", "trending-up")
-    top = (
-        env.groupby("modelo_color_id")
-        .agg(u=("cantidad", "sum"), t=("tienda_id", "nunique"), s=("talla", "nunique"))
-        .nlargest(10, "u")
-        .reset_index()
-    )
-    filas = [(x.modelo_color_id, int(x.t), int(x.s), int(x.u)) for x in top.itertuples()]
+        hoy, despues, activos = (
+            k.get("simple_antes", 1.0),
+            k.get("simple_despues", 1.0),
+            k.get("activos", 0),
+        )
+    else:
+        despues, activos = (
+            r.get("disponibilidad_retail_despues", hoy),
+            r.get("sku_activos_retail", 0),
+        )
     html(
-        mini_tabla(filas, ["Modelo-color", "Tiendas", "Tallas", "Unidades"], num={1, 2, 3}, barra=3)
-        if filas
-        else "<p>Sin envíos.</p>"
+        velocimetro(
+            hoy,
+            "Disponibilidad del retail",
+            f"Después del envío: {despues:.1%} · {activos:,} SKU activos · meta ≥ 93 %",
+        )
     )
-with m2, st.container(key="card_motivos"):
-    section("Por qué sí y por qué no", "Filas tienda × talla por motivo", "info")
-    mot = (
-        det.groupby("motivo_codigo")
-        .agg(f=("sku", "size"), u=("cantidad", "sum"))
-        .sort_values("f", ascending=False)
-        .reset_index()
-    )
-    filas = [
-        (DESCRIPCION_CODIGOS.get(x.motivo_codigo, x.motivo_codigo), int(x.u), int(x.f))
-        for x in mot.itertuples()
-    ]
-    html(mini_tabla(filas, ["Motivo", "Unidades", "Filas"], num={1, 2}, barra=2))

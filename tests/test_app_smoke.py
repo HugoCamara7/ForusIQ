@@ -6,14 +6,7 @@ import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
 RAIZ = Path(__file__).resolve().parents[1]
-PAGINAS = [
-    "1_Dashboard",
-    "2_Recomendaciones",
-    "3_Revision_Aprobacion",
-    "4_Exportacion",
-    "7_Tiendas_Cadenas",
-    "5_Parametros",
-]
+PAGINAS = ["1_Dashboard", "5_Parametros"]  # vista única + configuración
 
 
 def _app(monkeypatch, secrets=None):
@@ -28,7 +21,7 @@ def _app(monkeypatch, secrets=None):
 
 
 def _en_dashboard(app) -> bool:
-    return any('class="hero"' in m.value and ">Dashboard<" in m.value for m in app.markdown)
+    return any('class="hero"' in m.value for m in app.markdown)
 
 
 @pytest.mark.parametrize("pagina", PAGINAS)
@@ -39,6 +32,20 @@ def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
     assert app.session_state.resultado is not None
     app.switch_page(f"app/vistas/{pagina}.py").run()
     assert not app.exception, app.exception
+
+
+def test_vista_unica_aprobar_y_velocimetro(monkeypatch):
+    app = _app(monkeypatch)
+    app.sidebar.button[0].click().run()
+    res = app.session_state.resultado
+    assert any('class="gauge"' in m.value for m in app.markdown)  # disponibilidad del retail
+    etiquetas = [b.label for b in app.button]
+    assert "Aprobar y guardar" in etiquetas
+    next(b for b in app.button if b.label == "Aprobar y guardar").click().run()
+    assert not app.exception, app.exception
+    assert app.session_state.aprobacion_confirmada == res.run_id
+    assert "Aprobada" in [b.label for b in app.button]
+    assert not any(u.label == "Reporte de distribución del día" for u in app.get("file_uploader"))
 
 
 USUARIOS = {

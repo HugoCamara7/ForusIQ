@@ -223,6 +223,14 @@ def ejecutar(
         mc[KEY_MC + ["dias_12s"]].rename(columns={"dias_12s": "dias_12s_mc"}), on=KEY_MC, how="left"
     )
     det = asignar_codigos(det, params)
+    # Disponibilidad de TODO el retail (todas las tiendas, antes de quedarse con las de hoy).
+    from forusight.engine import disponibilidad as DISP
+
+    disp_retail = DISP.kpis(
+        det.rename(
+            columns={"stock_disponible": "stock_tienda", "cd_disponible": "stock_cd_disponible"}
+        )
+    )
     if "recibe_hoy" in base.tiendas:  # el resultado sólo lista las tiendas que reponen hoy
         hoy = set(
             base.tiendas.loc[base.tiendas["recibe_hoy"].fillna(True).astype(bool), "tienda_id"]
@@ -259,6 +267,9 @@ def ejecutar(
         "stock_cd_disponible": int(base.cd["disponible"].sum()),
         "iteraciones_asignacion": res.iteraciones,
         "fill_rate": float(np.round(det["cantidad"].sum() / max(det["necesidad"].sum(), 1), 4)),
+        "disponibilidad_retail": disp_retail.get("simple_antes"),
+        "disponibilidad_retail_despues": disp_retail.get("simple_despues"),
+        "sku_activos_retail": disp_retail.get("activos", 0),
     }
     return EngineResult(
         run_id=run_id,

@@ -29,19 +29,10 @@ if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic"):
     st.stop()
 
 inicializar()
+# Una sola vista (generar, aprobar y descargar). Parámetros y Conexión quedan en «Más opciones».
 paginas = [
     st.Page(
-        "app/vistas/1_Dashboard.py", title="Dashboard", icon=":material/dashboard:", default=True
-    ),
-    st.Page("app/vistas/2_Recomendaciones.py", title="Recomendaciones", icon=":material/list_alt:"),
-    st.Page(
-        "app/vistas/3_Revision_Aprobacion.py",
-        title="Revisión y aprobación",
-        icon=":material/fact_check:",
-    ),
-    st.Page("app/vistas/4_Exportacion.py", title="Exportación", icon=":material/download:"),
-    st.Page(
-        "app/vistas/7_Tiendas_Cadenas.py", title="Tiendas y cadenas", icon=":material/storefront:"
+        "app/vistas/1_Dashboard.py", title="Forusight", icon=":material/dashboard:", default=True
     ),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
 ]
@@ -49,6 +40,6 @@ if puede("conexion"):
     paginas.append(
         st.Page("app/vistas/6_Conexion.py", title="Conexión", icon=":material/database:")
     )
-nav = st.navigation(paginas)
-barra_lateral()
+nav = st.navigation(paginas, position="hidden")
+barra_lateral(paginas)
 nav.run()
