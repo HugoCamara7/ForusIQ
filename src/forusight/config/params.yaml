@@ -122,8 +122,8 @@ reposicion_venta:               # reponer lo vendido desde la ruta anterior del 
   descontar_venta_post_corte: false  # el reporte no resta de la posición la venta del día         # días de venta diaria que se leen de BigQuery
 
 surtido:                        # qué se puede reponer
-  temporadas_reponer: []        # vacío = todas (como el reporte); p. ej. ["INVIERNO 2026", "VERANO 2026"]
-  temporadas_en_bigquery: false # activar cuando ARTI traiga la temporada comercial correcta
+  temporadas_reponer: ["INVIERNO 2026", "VERANO 2026"]   # las demás no se reponen (vacío = todas)
+  temporadas_en_bigquery: false # usar ARTI si el modelo-color no está en el maestro de temporadas
 
 referencia:                     # niveles del último reporte de distribución de cada tienda
   usar_nivel_del_reporte: true  # nivel máximo y punto de reorden del reporte (subido en la barra lateral)

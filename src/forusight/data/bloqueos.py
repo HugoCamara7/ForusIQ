@@ -77,6 +77,10 @@ def normalizar(d: pd.DataFrame) -> pd.DataFrame:
             "tienda_id": d["tienda_id"].map(codigo_tienda),
             "modelo_color_id": d["modelo_color_id"].astype("string").str.strip().str.upper(),
             "motivo": d.get("motivo", pd.Series("", index=d.index)).astype("string"),
+            "temporada": d.get("temporada", pd.Series(pd.NA, index=d.index))
+            .astype("string")
+            .str.strip()
+            .str.upper(),
         }
     ).dropna(subset=["modelo_color_id"])
     out = out.loc[out["tienda_id"].ne("")]

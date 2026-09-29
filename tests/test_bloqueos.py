@@ -141,3 +141,28 @@ def test_niveles_referencia_toma_el_ultimo_reporte_de_cada_tienda():
         ]
     ).set_index("tienda_id")
     assert nv.loc["8", "nivel_ref"] == 3 and nv.loc["16", "nivel_ref"] == 5
+
+
+def test_temporada_comercial_del_maestro_y_filtro():
+    from forusight.data import temporadas as T
+    from forusight.export.archivo import construir_tabla
+
+    e = Escenario()
+    viejo = e.modelo("HP1-NEG", tallas=("38",))
+    nuevo = e.modelo("HP2-NEG", tallas=("38",))
+    e.tienda("8", nombre="HP JOCKEY")
+    e.venta_constante("8", viejo + nuevo, unidades=2)
+    for s in viejo + nuevo:
+        e.stock_tienda("8", s, 0)
+        e.stock_cd(s, 20)
+    p = params(calendario={"aplicar": False})
+    inp = e.inputs()
+    maestro = pd.Series({"HP1-NEG": "VERANO 2025", "HP2-NEG": "VERANO 2026"})
+    inp.dim_producto = T.aplicar(inp.dim_producto, maestro)
+    res = ejecutar(inp, p, CORTE)
+    d = res.detalle.set_index("sku")
+    assert d.loc[viejo[0], "cantidad"] == 0 and d.loc[viejo[0], "motivo_codigo"] == "NO_TEMPORADA"
+    assert d.loc[nuevo[0], "cantidad"] > 0
+    t = construir_tabla(res.detalle, inp.ventas, inp.dim_producto, res.tiendas, p, CORTE)
+    assert set(t["Temporada comercial"]) == {"VERANO 2026"}  # lo que no se repone no se lista
+    assert T.por_defecto().get("HP10201162490-N11") is not None  # maestro guardado

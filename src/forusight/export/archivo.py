@@ -113,6 +113,9 @@ def construir_tabla(
     # Sólo reposición (Revision de stock): los modelos nuevos para la tienda (carga de pedidos)
     # no son de Forusight y no van en el archivo.
     d = d.loc[~d["es_introduccion"].fillna(False).astype(bool) | (d["cantidad"] > 0)]
+    # Bloqueados para la tienda o de temporadas que no se reponen: no van en el archivo.
+    fuera = d["motivo_codigo"].isin(["NO_BLOQUEO_TIENDA", "NO_TEMPORADA"]) & (d["cantidad"] <= 0)
+    d = d.loc[~fuera]
     vr = d["venta_desde_ruta"] if "venta_desde_ruta" in d else pd.Series(0.0, index=d.index)
     activos = (
         (vr.fillna(0) > 0)

@@ -79,9 +79,11 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Prenda": (PRODUCTO, "Tipo de prenda.", "Tal cual.", "ARTI (si la columna existe)", REP),
     "Temporada comercial": (
         PRODUCTO,
-        "Temporada del producto (p. ej. VERANO 2026).",
-        "Tal cual.",
-        "ARTI (si la columna existe)",
+        "Temporada comercial del modelo-color (p. ej. VERANO 2026). Sólo se reponen INVIERNO "
+        "2026 y VERANO 2026 (Parámetros → surtido); lo demás no aparece en el archivo.",
+        "Maestro de temporadas: reportes de Neogística y reporte 1003 de bloqueos (ARTI no "
+        "trae la temporada comercial).",
+        "config/temporadas.csv.gz + reportes subidos",
         REP,
     ),
     "Código Centro": (

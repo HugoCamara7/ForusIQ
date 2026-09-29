@@ -169,6 +169,19 @@ def _correr_motor(
 
     vr = VR.resumir(getattr(inputs, "venta_diaria", None), dt, dia, diag.get("fecha_foto"))
     bloq = bloqueos_de(bloq_clave)
+    from forusight.data import temporadas as TEMP
+
+    maestro = TEMP.combinar(
+        TEMP.por_defecto(),
+        _TEMPORADAS.get(bloq_clave),
+        _TEMPORADAS.get(niveles_clave),
+    )
+    inputs = replace(
+        inputs,
+        dim_producto=TEMP.aplicar(
+            inputs.dim_producto, maestro, params.surtido.temporadas_en_bigquery
+        ),
+    )
     niveles = _NIVELES.get(niveles_clave) if niveles_clave else None
     if niveles is not None:
         edad = pd.Timestamp(dia) - pd.to_datetime(niveles["fecha_ref"])
@@ -253,12 +266,19 @@ def registrar_bloqueos(archivos: list[bytes]) -> str:
         return ""
     clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a in archivos)).hexdigest()[:12]
     if clave not in _BLOQUEOS:
-        _BLOQUEOS[clave] = B.unir([_leer_bloqueo(a) for a in archivos])
+        partes = [_leer_bloqueo(a) for a in archivos]
+        _BLOQUEOS[clave] = B.unir(partes)
+        t = pd.concat([p[["modelo_color_id", "temporada"]] for p in partes]).dropna()
+        _TEMPORADAS[clave] = pd.Series(
+            t["temporada"].to_numpy(), index=t["modelo_color_id"].to_numpy()
+        ).pipe(lambda x: x[~x.index.duplicated()])
     return clave
 
 
 #: Niveles de referencia (reportes de distribución recientes), por huella del contenido.
 _NIVELES: dict[str, pd.DataFrame] = {}
+#: Temporadas comerciales aprendidas de los archivos subidos (modelo-color → temporada).
+_TEMPORADAS: dict[str, pd.Series] = {}
 
 
 def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
@@ -269,11 +289,15 @@ def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
         return ""
     clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a, _ in archivos)).hexdigest()[:12]
     if clave not in _NIVELES:
+        from forusight.data import temporadas as TEMP
+
         partes = []
         for contenido, nombre in archivos:
             df, fecha = _leer_reporte(contenido)
             partes.append((df, fecha if fecha is not None else R.fecha_de_nombre(nombre)))
         _NIVELES[clave] = R.niveles_referencia(partes)
+        orden = sorted(partes, key=lambda p: p[1] if p[1] is not None else pd.Timestamp(0))
+        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in orden])
     return clave
 
 

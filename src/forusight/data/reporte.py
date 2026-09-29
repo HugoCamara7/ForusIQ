@@ -500,9 +500,15 @@ def resultado_desde_reporte(dist: pd.DataFrame, run_id: str, fecha_corte, cd_id:
 
 
 def tabla_para_archivo(
-    reporte: pd.DataFrame, detalle: pd.DataFrame, cantidad: pd.Series | None
+    reporte: pd.DataFrame,
+    detalle: pd.DataFrame,
+    cantidad: pd.Series | None,
+    quitar: np.ndarray | None = None,
 ) -> pd.DataFrame:
-    """Filas del reporte con cantidad, pendiente y motivo recalculados (o aprobados)."""
+    """Filas del reporte con cantidad, pendiente y motivo recalculados (o aprobados).
+
+    ``quitar``: filas que no van en el archivo (bloqueadas o fuera de temporada, sin envío).
+    """
     out = reporte.copy()
     q = (cantidad if cantidad is not None else detalle["cantidad"]).to_numpy(dtype="int64")
     nec = detalle["necesidad"].to_numpy(dtype="int64")
@@ -525,6 +531,9 @@ def tabla_para_archivo(
         )
     if "Monto Pedido Final [$]" in out and "Costo [$/un]" in out:
         out["Monto Pedido Final [$]"] = q * _num(out["Costo [$/un]"])
+    if quitar is not None:
+        out = out.loc[~(np.asarray(quitar, dtype=bool) & (out[Q].to_numpy() <= 0))]
+        out = out.reset_index(drop=True)
     wk = semanas(out)
     # VTA 2 SEM = última semana cerrada + semana en curso, como fórmula viva (igual al reporte)
     actual = "Demanda Periodo Actual"

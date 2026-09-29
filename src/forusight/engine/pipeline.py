@@ -133,8 +133,10 @@ def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams):
     from forusight.data.bloqueos import fuera_de_surtido
 
     temp = None
-    if params.surtido.temporadas_en_bigquery and "temporada" in dim_producto:
-        temp = sku["sku"].map(dim_producto.drop_duplicates("sku").set_index("sku")["temporada"])
+    if "temporada_comercial" in dim_producto:  # maestro de temporadas (data/temporadas.py)
+        temp = sku["sku"].map(
+            dim_producto.drop_duplicates("sku").set_index("sku")["temporada_comercial"]
+        )
     bloq, fuera = fuera_de_surtido(
         sku["tienda_id"], sku["modelo_color_id"], temp, bloqueos, params.surtido.temporadas_reponer
     )

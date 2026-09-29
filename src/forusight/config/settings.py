@@ -262,12 +262,11 @@ class ReferenciaParams(_Section):
 class SurtidoParams(_Section):
     """Qué se puede reponer: temporadas comerciales activas y modelos bloqueados por tienda."""
 
-    #: Sólo se reponen estas temporadas comerciales (vacío = todas). Vacío por defecto: el
-    #: reporte de distribución repone también otras temporadas (ESCOLAR, VERANO 2025…), y con el
-    #: filtro la coincidencia baja 5–38 %. Para activarlo: ["INVIERNO 2026", "VERANO 2026"].
-    temporadas_reponer: list[str] = Field(default_factory=list)
-    #: Aplicar el filtro de temporadas cuando la corrida usa BigQuery (ARTI debe traer la
-    #: temporada comercial correcta; con el reporte del día se usa la del reporte).
+    #: Sólo se reponen estas temporadas comerciales (vacío = todas). La temporada sale del
+    #: maestro de temporadas (reportes de Neogística y de bloqueos), no de ARTI.
+    temporadas_reponer: list[str] = Field(default_factory=lambda: ["INVIERNO 2026", "VERANO 2026"])
+    #: Usar la temporada de ARTI cuando el modelo-color no está en el maestro de temporadas
+    #: (ARTI no trae la temporada comercial: apagado).
     temporadas_en_bigquery: bool = False
 
 

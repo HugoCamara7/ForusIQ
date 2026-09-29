@@ -35,9 +35,20 @@ def _excel(run_id: str, aprob: str, _res, _entradas, _params, cd_id: str, _canti
 
 def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
     if getattr(entradas, "reporte", None) is not None:  # corrida sobre el reporte del día
+        from app.components.estado import bloqueos_de
+        from forusight.data.bloqueos import fuera_de_surtido
         from forusight.data.reporte import tabla_para_archivo
 
-        return tabla_para_archivo(entradas.reporte, res.detalle, cantidad)
+        rep = entradas.reporte
+        mc = rep["Código Modelo"].astype("string") + "-" + rep["Código Color"].astype("string")
+        bloq, fuera = fuera_de_surtido(
+            rep["Código Centro"].astype(str).str.lstrip("0"),
+            mc,
+            rep.get("Temporada comercial"),
+            bloqueos_de(st.session_state.get("bloq_clave", "defecto")),
+            params.surtido.temporadas_reponer,
+        )
+        return tabla_para_archivo(rep, res.detalle, cantidad, (bloq | fuera).to_numpy())
     return construir_tabla(
         res.detalle,
         entradas.ventas,
