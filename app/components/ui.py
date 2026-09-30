@@ -205,6 +205,10 @@ def app_styles() -> None:
         height:340px; border-radius:50%; background:rgba(255,255,255,.09); }}
     .hero::before {{ content:""; position:absolute; right:120px; bottom:-150px; width:260px;
         height:260px; border-radius:50%; background:rgba(0,159,227,.18); }}
+    .hero .hero-logo {{ position:absolute; top:24px; right:30px; z-index:1; }}
+    .hero .hero-logo img {{ width:230px; height:auto; display:block; }}
+    @media (min-width: 901px) {{ .hero h1 {{ padding-right:260px !important; }} }}
+    @media (max-width: 900px) {{ .hero .hero-logo {{ display:none; }} }}
     .hero h1 {{ margin:0; padding:0; font-size:28px; font-weight:950; color:#FFFFFF; }}
     .hero p {{ margin:8px 0 0; color:#D8E4FF; font-size:14.5px; font-weight:650; max-width:820px; }}
     .hero .eyebrow {{ display:inline-block; margin-bottom:10px; padding:5px 12px;
@@ -364,7 +368,9 @@ def hero(
     titulo: str, subtitulo: str, eyebrow: str = "Reposición CD 320", meta: list[str] | None = None
 ) -> None:
     chips = "".join(f"<span>{escape(m)}</span>" for m in (meta or []) if m)
-    html(f"""<div class="hero"><span class="eyebrow">{escape(eyebrow)}</span>
+    logo = forusight_logo_html("forusight_logo_blanco.png")
+    html(f"""<div class="hero"><div class="hero-logo">{logo}</div>
+        <span class="eyebrow">{escape(eyebrow)}</span>
         <h1>{escape(titulo)}</h1><p>{escape(subtitulo)}</p>
         {f'<div class="meta">{chips}</div>' if chips else ""}</div>""")
 
