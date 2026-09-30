@@ -91,6 +91,11 @@ def niveles(
     mc = [s["tienda_id"], s["modelo_color_id"]]
     s4_mc = s["venta_4s"].clip(lower=0).groupby(mc).transform("sum")
     cat = PLAN.clave_categoria(s["marca"], s["categoria"], s["prenda"], s["genero"])
+    if len(m.claves) and "categoria_k" in m.claves:  # categoría con los nombres del reporte
+        cat_rep = (
+            m.claves.dropna(subset=["categoria_k"]).groupby("sku")["categoria_k"].agg(PLAN._moda)
+        )
+        cat = s["sku"].map(cat_rep).fillna(cat)
     k = cat.map(m.k.set_index("categoria_k")["k"]) if len(m.k) else pd.Series(np.nan, index=s.index)
     k = k.astype(float).fillna(s["categoria"].map(PLAN.K_BASE)).fillna(PLAN.K_DEFECTO)
     nacional = semanal.groupby("sku")["unidades"].sum() if len(semanal) else pd.Series(dtype=float)
@@ -146,6 +151,8 @@ def niveles(
         evalua = evalua | (listada & reciente.to_numpy())
     elif p.universo == "listada":
         evalua = evalua | listada
+    # Clave de un reporte de hace pocos días: el reporte ya decidió que se evalúa.
+    evalua = evalua | (usa_rep & listada)
     nivel = np.where(evalua, nivel, 0)
 
     # Banda nivel − reorden: 1 en el 87 % de las filas; la clave conserva la de su último reporte.
@@ -153,6 +160,10 @@ def niveles(
     if p.banda_reporte:
         b = (ref["nivel"] - ref["rop"]).where(ref["nivel"] > 0)
         banda = np.clip(b.fillna(1).to_numpy(), 1, None)
+
+    # Reporte reciente sin espacio en la tienda (motivo Almacenamiento): no se pide.
+    alm = ref["almacenamiento"] if "almacenamiento" in ref else pd.Series(False, index=s.index)
+    sin_espacio = usa_rep & alm.fillna(False).astype(bool).to_numpy()
 
     ue = ref["ue"]
     if len(m.claves):
@@ -164,7 +175,9 @@ def niveles(
             "sku": s["sku"].to_numpy(),
             "nivel_ref": nivel.astype(float),
             "rop_ref": np.where(
-                evalua, np.where(usa_rep, ref["rop"].fillna(-1).to_numpy(), nivel - banda), -1
+                evalua & ~sin_espacio,
+                np.where(usa_rep, ref["rop"].fillna(-1).to_numpy(), nivel - banda),
+                -1,
             ).astype(float),
             "ue_ref": ue.astype(float),
             "smt_ref": np.where(evalua, smt, 0).astype(float),

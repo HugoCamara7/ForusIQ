@@ -221,7 +221,7 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
         pedido = np.maximum(nivel - np.ceil(pos), 0)
         if "ue_ref" in out:  # unidad de empaque: múltiplos de la UE, mínimo una
             ue = out["ue_ref"].fillna(1).clip(lower=1).to_numpy()
-            pedido = np.where(pedido > 0, np.maximum(np.round(pedido / ue), 1) * ue, 0)
+            pedido = np.where(pedido > 0, np.maximum(np.floor(pedido / ue + 0.5), 1) * ue, 0)
         bruta = np.where(ref, np.where(pide, pedido, 0), bruta)
         out["stock_objetivo"] = np.where(ref, nivel, out["stock_objetivo"]).astype("int64")
         if "pronostico_ref" in out:
@@ -231,7 +231,8 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     bruta = bruta.astype("int64")
     tope = params.tope_tienda.max_unidades_por_sku
     bloqueada = out["bloqueo_mc"].ne("") & ~(sobre & (bruta > 0)) & ~ref
-    normal = np.where(bloqueada, 0, np.minimum(bruta, tope)).astype("int64")
+    # con el nivel del reporte no hay tope por SKU (el reporte ya lo decidió; y rompería la UE)
+    normal = np.where(bloqueada, 0, np.where(ref, bruta, np.minimum(bruta, tope))).astype("int64")
     # Reponer lo vendido desde la ruta anterior es obligatorio: ninguna otra regla (sobrestock,
     # sin demanda en 12 semanas, talla "nunca tuvo", modelo agotado, tope por SKU) lo anula.
     # Sólo puede quedar sin enviar si el CD no tiene stock o no alcanza para todas las tiendas.
@@ -242,14 +243,13 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
         elif params.reposicion_venta.solo_bajo_punto_reorden:
             # Como el reporte: lo vendido se repone cuando la talla llegó a su punto de reorden.
             piso = np.where(ref & ~pide, 0, piso)
-            piso = np.where(~ref & (bruta <= 0), 0, piso)
     else:
         piso = np.zeros(len(out), dtype="int64")
     out["piso_venta"] = piso
     out["repone_venta_ruta"] = piso > normal
     out["necesidad_bruta"] = np.maximum(bruta, piso)
     out["necesidad"] = np.maximum(normal, piso).astype("int64")
-    out["tope_sku_aplicado"] = ~bloqueada & (bruta > tope) & (piso < bruta)
+    out["tope_sku_aplicado"] = ~bloqueada & ~ref & (bruta > tope) & (piso < bruta)
     out["motivo_bloqueo"] = np.where(
         piso > 0,
         "",
