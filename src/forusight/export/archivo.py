@@ -261,7 +261,8 @@ def construir_tabla(
 
 # ------------------------------------------------------------------ Excel estilo Forus
 
-LOGO = Path(__file__).resolve().parents[3] / "assets" / "forus_logo.png"
+ASSETS = Path(__file__).resolve().parents[3] / "assets"
+LOGO, LOGO_FORUSIGHT = ASSETS / "forus_logo.png", ASSETS / "forusight_logo.png"
 NAVY, AZUL_FORUS, ACENTO = "#17269A", "#2367FF", "#009FE3"
 CEBRA, TINTA, GRIS_TXT = "#F5F7FC", "#0F172A", "#64748B"
 Q_COL, P_COL = "Cantidad Pedida Final [un]", "Pendiente Reposición"
@@ -345,12 +346,19 @@ class _Libro:
         return self._cache[clave]
 
     def portada(self, ws, titulo: str, subtitulo: str, kpis: list[tuple[str, str]], ancho: int):
-        """Logo de Forus, título, subtítulo y fila de indicadores (filas 0 a 4)."""
+        """Logos de Forusight y Forus, título, subtítulo y fila de indicadores (filas 0 a 4)."""
         ws.hide_gridlines(2)
         ws.set_row(0, 30), ws.set_row(1, 22), ws.set_row(2, 16), ws.set_row(3, 26)
+        if LOGO_FORUSIGHT.exists():
+            ws.insert_image(
+                0,
+                0,
+                str(LOGO_FORUSIGHT),
+                {"x_scale": 0.2, "y_scale": 0.2, "x_offset": 6, "y_offset": 8},
+            )
         if LOGO.exists():
             ws.insert_image(
-                0, 0, str(LOGO), {"x_scale": 0.085, "y_scale": 0.085, "x_offset": 6, "y_offset": 6}
+                2, 0, str(LOGO), {"x_scale": 0.06, "y_scale": 0.06, "x_offset": 8, "y_offset": 4}
             )
         ws.write(0, 2, titulo, self.f(bold=True, font_size=18, font_color=NAVY, valign="vcenter"))
         ws.write(1, 2, subtitulo, self.f(font_size=10, font_color=GRIS_TXT, valign="top"))
