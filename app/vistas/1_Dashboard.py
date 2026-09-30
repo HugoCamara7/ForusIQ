@@ -13,6 +13,12 @@ res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
 
 
+def _aprobar(res) -> None:
+    nivel, msg = aprobar(res)
+    if nivel == "ok":
+        st.toast(msg, icon=":material/verified:")
+
+
 def _fecha(x) -> str:
     return pd.Timestamp(x).strftime("%d/%m/%Y") if x else ""
 
@@ -82,20 +88,29 @@ with a1:
         st.button(
             "Aprobada", icon=":material/verified:", width="stretch", disabled=True, key="aprobada"
         )
-    elif st.button(
-        "Aprobar y guardar",
-        type="primary",
-        icon=":material/task_alt:",
-        width="stretch",
-        disabled=not puede("aprobar"),
-        help="Aprueba la distribución tal cual; el análisis se hace en el Excel.",
-        key="btn_aprobar",
-    ):
-        nivel, msg = aprobar(res)
-        (st.toast if nivel == "ok" else st.info)(msg)
-        st.rerun()
+    else:
+        st.button(
+            "Aprobar y guardar",
+            type="primary",
+            icon=":material/task_alt:",
+            width="stretch",
+            disabled=not puede("aprobar"),
+            help="Aprueba la distribución tal cual; el análisis se hace en el Excel.",
+            key="btn_aprobar",
+            # el callback corre antes del script: esta misma corrida ya se dibuja aprobada
+            # (con st.rerun() el toast/aviso se descartaba antes de llegar al navegador)
+            on_click=_aprobar,
+            args=(res,),
+        )
 with a2:
     boton_archivo("archivo_dashboard")
+info_ap = ss.get("aprobacion_info") or {}
+if aprobada and info_ap.get("nivel") in ("info", "warn"):
+    issue_box(
+        "warn" if info_ap["nivel"] == "warn" else "info",
+        "Aprobada en esta sesión, pero no quedó guardada",
+        info_ap.get("mensaje", ""),
+    )
 
 # --- KPI
 env_mc = env["modelo_color_id"].nunique()

@@ -358,7 +358,7 @@ class _Libro:
             )
         if LOGO.exists():
             ws.insert_image(
-                2, 0, str(LOGO), {"x_scale": 0.06, "y_scale": 0.06, "x_offset": 8, "y_offset": 4}
+                2, 0, str(LOGO), {"x_scale": 0.2, "y_scale": 0.2, "x_offset": 8, "y_offset": 4}
             )
         ws.write(0, 2, titulo, self.f(bold=True, font_size=18, font_color=NAVY, valign="vcenter"))
         ws.write(1, 2, subtitulo, self.f(font_size=10, font_color=GRIS_TXT, valign="top"))

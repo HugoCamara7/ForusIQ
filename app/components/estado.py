@@ -559,6 +559,7 @@ def ejecutar_corrida() -> EngineResult:
             ss.aprobacion = None
         ss.resultado, ss.diagnostico = res, diag
         ss.ultima_carga = ("reporte", ss.reporte[0], marcas)
+        ss.entradas_corrida = _entradas_reporte(ss.reporte[0], marcas)[0]
         return res
     cd = ss.get("cd_archivo") or (None, "")
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
@@ -586,11 +587,17 @@ def ejecutar_corrida() -> EngineResult:
         cd[1],
         marcas,
     )
+    # Se guarda la referencia (sin copiar): si la caché vence (TTL 1 h) o desaloja la entrada
+    # (max_entries=4, compartida entre usuarios), un rerun cualquiera NO vuelve a leer BigQuery
+    # y el Excel se arma con las mismas entradas que produjeron `res`.
+    ss.entradas_corrida = cargar_entradas(*ss.ultima_carga)[0]
     return res
 
 
 def entradas_de_la_corrida() -> EngineInputs | None:
     """Entradas de la última corrida (desde la caché: no vuelve a leer BigQuery)."""
+    if (fijas := st.session_state.get("entradas_corrida")) is not None:
+        return fijas
     carga = st.session_state.get("ultima_carga")
     if not carga:
         return None
@@ -627,12 +634,13 @@ def _selector_marcas() -> None:
         ss.marcas = [m for m in opciones if m in pedidas] or [
             m for m in opciones if any(p[:5] in m for p in pedidas)
         ][:1]
-    ss.marcas = st.multiselect(
-        "Marca",
-        opciones,
-        default=[m for m in ss.marcas if m in opciones],
-        help="Marcas del maestro ARTI (MARCA_MA)",
-    )
+    # Con `key` la identidad del widget no depende de `default`: si se pasa default=ss.marcas,
+    # cada cambio crea un widget NUEVO y la siguiente selección se pierde (y se cierra la lista).
+    # El estado del widget se crea una vez desde ss.marcas (valor persistente entre páginas).
+    if "sb_marcas" not in ss or any(m not in opciones for m in ss.sb_marcas):
+        ss.sb_marcas = [m for m in (ss.marcas or []) if m in opciones]
+    st.multiselect("Marca", opciones, key="sb_marcas", help="Marcas del maestro ARTI (MARCA_MA)")
+    ss.marcas = list(ss.sb_marcas)
 
 
 def _selector_marcas_reporte() -> None:
@@ -654,6 +662,18 @@ def _selector_marcas_reporte() -> None:
     )
 
 
+def _semana_a_lunes() -> None:
+    """El motor arma las semanas desde el corte: un día que no es lunes descuadra la venta."""
+    ss = st.session_state
+    d = pd.Timestamp(ss.sb_semana)
+    ss.sb_semana = (d - pd.Timedelta(days=d.weekday())).date()
+
+
+def _cambiar_fuente() -> None:
+    ss = st.session_state
+    ss.fuente = ss.sb_fuente or ss.fuente
+
+
 def barra_lateral(paginas: list | None = None) -> None:
     """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
@@ -670,12 +690,17 @@ def barra_lateral(paginas: list | None = None) -> None:
         ss.reporte = None
         if ss.fuente == "bigquery":
             _selector_marcas()
-        ss.fecha_corte = st.date_input(
+        if "sb_semana" not in ss:
+            ss.sb_semana = ss.fecha_corte
+        st.date_input(
             "Semana (lunes)",
-            value=ss.fecha_corte,
+            key="sb_semana",
             format="DD/MM/YYYY",
-            help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
+            on_change=_semana_a_lunes,
+            help="Venta de las 12 semanas previas (se ajusta al lunes); el stock es el último "
+            "corte disponible.",
         )
+        ss.fecha_corte = ss.sb_semana
         if st.button(
             "Ejecutar corrida",
             type="primary",
@@ -713,19 +738,27 @@ def barra_lateral(paginas: list | None = None) -> None:
 
         with st.expander("Más opciones", icon=":material/tune:"):
             if len(opciones) > 1:
-                ss.fuente = (
-                    st.segmented_control(
-                        "Datos", opciones, default=ss.fuente, format_func=FUENTES.get
-                    )
-                    or ss.fuente
+                if ss.get("sb_fuente") != ss.fuente:
+                    ss.sb_fuente = ss.fuente
+                # on_change corre ANTES del script: la barra ya se dibuja con la fuente nueva
+                st.segmented_control(
+                    "Datos",
+                    opciones,
+                    key="sb_fuente",
+                    format_func=FUENTES.get,
+                    required=True,
+                    on_change=_cambiar_fuente,
                 )
             if not ss.get("reporte"):
-                ss.dia_reposicion = st.date_input(
+                if "sb_dia" not in ss:
+                    ss.sb_dia = ss.get("dia_reposicion") or pd.Timestamp.today().date()
+                st.date_input(
                     "Día de reposición",
-                    value=ss.get("dia_reposicion") or pd.Timestamp.today().date(),
+                    key="sb_dia",
                     format="DD/MM/YYYY",
                     help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
+                ss.dia_reposicion = ss.sb_dia
             archivos_p = st.file_uploader(
                 "Envíos aún no recibidos (opcional)",
                 type=["csv", "xlsx"],
@@ -759,11 +792,14 @@ def barra_lateral(paginas: list | None = None) -> None:
             from forusight.data.github_store import config_github
 
             if config_github(secretos()) is not None:
-                ss.pend_github = st.toggle(
+                if "sb_pend_github" not in ss:
+                    ss.sb_pend_github = ss.get("pend_github", True)
+                st.toggle(
                     f"Descontar aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días",
-                    value=ss.get("pend_github", True),
+                    key="sb_pend_github",
                     help="Lee las aprobaciones guardadas en GitHub.",
                 )
+                ss.pend_github = ss.sb_pend_github
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(
                     "Stock CD con reservas (opcional)",

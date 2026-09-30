@@ -1,5 +1,6 @@
 """Forusight · reposición y distribución CD 320 → tiendas (Azaleia / Forus)."""
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -23,7 +24,16 @@ def _acceso() -> None:
     """Página vacía: sin sesión la navegación sólo tiene el acceso (menú oculto)."""
 
 
-if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic"):
+def _precargar() -> None:
+    """Lee las marcas de ARTI mientras se ve el login: la app entra ya lista, sin pantalla vacía."""
+    from app.components.estado import marcas_arti
+
+    if fuente_por_defecto() == "bigquery":
+        with contextlib.suppress(Exception):  # el error se muestra luego en la barra lateral
+            marcas_arti("bigquery")
+
+
+if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic", al_ingresar=_precargar):
     # Sin esto Streamlit sigue mostrando el menú de la ejecución anterior en el login.
     st.navigation([st.Page(_acceso, title="Acceso", url_path="acceso")], position="hidden").run()
     st.stop()

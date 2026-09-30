@@ -88,5 +88,6 @@ def boton_archivo(key: str, en_barra: bool = False) -> None:
         icon=":material/download:",
         width="stretch",
         key=key,
+        on_click="ignore",  # descargar no necesita volver a correr toda la app
         help="Aprobado" if cantidad is not None else "Propuesta de la corrida (sin aprobar)",
     )
