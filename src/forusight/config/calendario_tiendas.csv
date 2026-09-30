@@ -50,11 +50,11 @@ codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
 146,CLB MINKA,Minka,3.0,7.0,reportes
 147,RKF CAYMA,Provincia,3.0,2.33,reportes
 148,RKF ICA,Provincia,4.0,2.33,reportes
-149,VANS PLAZA NORTE,Plaza Norte,2.0,3.5,reportes
+149,VANS PLAZA NORTE,Plaza Norte,2.0,2.33,reportes
 150,VANS JOCKEY PLAZA,Jockey Plaza,2.0,2.33,reportes
 152,VANS PARQUE LA MOLINA,La Molina,2.5,7.0,reportes
 153,VANS SAN MIGUEL,Plaza San Miguel,3.0,3.5,reportes
 155,VANS TRUJILLO,Provincia,2.0,2.33,reportes
 156,VANS PIURA,Provincia,3.0,2.33,reportes
 157,VANS CHICLAYO,Provincia,2.0,2.33,reportes
-159,FB MINKA,Minka,3.0,7.0,reportes
+159,FB MINKA,Minka,3.0,3.5,reportes

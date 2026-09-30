@@ -26,7 +26,7 @@ CONFIG = Path(__file__).resolve().parents[1] / "config"
 
 @lru_cache(maxsize=1)
 def catalogo_tiendas() -> pd.DataFrame:
-    """55 tiendas de los reportes de distribución: código, nombre, centro comercial, zona, cadena."""
+    """56 tiendas de los reportes de distribución: código, nombre, centro comercial, zona, cadena."""
     return pd.read_csv(CONFIG / "tiendas_forus.csv", dtype=str)
 
 
