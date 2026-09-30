@@ -297,7 +297,8 @@ def entradas_desde_reporte(df: pd.DataFrame):
             "tienda_id": t["tienda_id"],
             "sku": t["sku"],
             "stock_disponible": _num(t[FISICO]),
-            "stock_transito": pos - _num(t[FISICO]),
+            # comprometido/backorder pueden dejar la posición bajo el físico: tránsito >= 0
+            "stock_transito": (pos - _num(t[FISICO])).clip(lower=0),
         }
     )
     mc_de_sku = pd.Series(
