@@ -50,7 +50,7 @@ rotacion:
 exhibicion:                     # PENDIENTE (i)
   minimo_por_talla_core: 1
   minimo_por_talla_activa: 1     # reponer lo vendido: cada talla de un modelo que la tienda vende queda con >= 1
-  completar_curva: true          # talla que nunca tuvo, de un modelo que vende: recibe su mínimo (como el reporte)
+  completar_curva: false         # talla que nunca tuvo: sólo si el maestro de planificación la trae (30/09: 723 u extra, 5 % de acierto)
   minimo_por_categoria: {}      # ej.: {"BOTA": 2}
   tallas_core_default: ["36", "37", "38", "39"]
   tallas_core_por_genero:          # claves = valor de GENERO_MA en ARTI (mayúsculas)
@@ -105,7 +105,10 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
     C: {factor_cobertura: 0.9, importancia: 0.25}
 
 recepcion:                      # envíos aprobados que aún no llegan (no están en el corte de stock)
-  dias_pendiente: 3             # aprobaciones de los últimos 3 días se descuentan del CD (L-M-V)
+  dias_pendiente: 3             # aprobaciones de los últimos 3 días cuentan como tránsito (L-M-V)
+  descontar_del_cd: false       # el corte del CD ya descuenta lo despachado: no restarlo dos veces
+  transito_solo_provincia: true # en Lima el envío llega al día siguiente
+  usar_transito_bigquery: false # stock_bi.transito es salida de la tienda origen, no llegada del CD
 
 calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
   aplicar: true                 # en un día sólo reciben las tiendas que reponen ese día
@@ -119,13 +122,23 @@ stock_cd:                       # qué parte del CD 320 se reparte a tiendas
 reposicion_venta:               # reponer lo vendido desde la ruta anterior del mall
   reponer_venta_desde_ruta: true  # necesidad = max(nivel máximo − posición, venta desde la ruta anterior)
   dias_venta_diaria: 14
+  solo_bajo_punto_reorden: true # como el reporte: lo vendido se repone cuando la talla llega a su punto de reorden
   descontar_venta_post_corte: false  # el reporte no resta de la posición la venta del día         # días de venta diaria que se leen de BigQuery
 
 surtido:                        # qué se puede reponer
-  temporadas_reponer: ["INVIERNO 2026", "VERANO 2026"]   # las demás no se reponen (vacío = todas)
+  temporadas_reponer: ["INVIERNO 2026", "VERANO 2026", "INVIERNO 2027"]   # las demás no se reponen (vacío = todas)
   temporadas_en_bigquery: false # usar ARTI si el modelo-color no está en el maestro de temporadas
 
 referencia:                     # niveles del último reporte de distribución de cada tienda
   usar_nivel_del_reporte: true  # nivel máximo y punto de reorden del reporte (subido en la barra lateral)
-  reponer_venta_con_nivel_del_reporte: false  # el reporte no repone la venta por encima de su nivel
+  reponer_venta_con_nivel_del_reporte: true   # con el nivel del reporte, lo vendido se repone al llegar al punto de reorden
   dias_maximos: 10              # antigüedad máxima del reporte de referencia
+
+nivel_neo:                      # nivel y punto de reorden con la estructura del reporte (engine/nivel_neo.py)
+  activo: true                  # pronóstico = k × venta 4 semanas × curva nacional; nivel = max(SMT, ceil(d + z·√d)); reorden = nivel − 1
+  z: 0.84
+  nivel_reporte_como_piso: false  # no: la fórmula se pasa en tallas de alta rotación
+  dias_maximos: 60              # antigüedad máxima del maestro de planificación (SMT por tienda × SKU)
+  dias_nivel_reporte: 3         # clave de un reporte de <= 3 días: su nivel y reorden tal cual (89,7 % el 30/09)
+  banda_reporte: false          # con la fórmula, reorden = nivel − 1
+  universo: listada_reciente    # talla con stock/tránsito/venta y modelo con venta reciente, o talla de un reporte reciente

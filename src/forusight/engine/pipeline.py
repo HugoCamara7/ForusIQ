@@ -72,6 +72,9 @@ COLUMNAS_EXTRA = [
     "etapa",
     "prioridad_inicial",
     "motivo_parcial",
+    "rop_ref",
+    "smt_ref",
+    "ue_ref",
 ]
 
 
@@ -95,6 +98,8 @@ class EngineInputs:
     bloqueos: pd.DataFrame | None = None
     #: Opcional: nivel máximo / punto de reorden del último reporte de cada tienda.
     niveles_ref: pd.DataFrame | None = None
+    #: Opcional: maestro de planificación (SMT, nivel, UE por tienda×SKU; k por categoría).
+    planificacion: object | None = None
 
     def validadas(self) -> EngineInputs:
         return EngineInputs(
@@ -104,6 +109,7 @@ class EngineInputs:
             venta_reciente=self.venta_reciente,
             bloqueos=self.bloqueos,
             niveles_ref=self.niveles_ref,
+            planificacion=self.planificacion,
             ventas=validar("ventas", self.ventas),
             stock_tienda=validar("stock_tienda", self.stock_tienda),
             stock_cd=validar("stock_cd", self.stock_cd),
@@ -208,9 +214,16 @@ def ejecutar(
     for c in ("venta_desde_ruta", "venta_post_corte"):
         sku[c] = sku[c].fillna(0).astype(float) if c in sku else 0.0
     nr = inp.niveles_ref
+    if (nr is None or not len(nr)) and params.nivel_neo.activo:
+        from forusight.engine.nivel_neo import niveles
+
+        nr = niveles(sku, base.semanal, base.tiendas, inp.dim_producto, inp.planificacion, params)
     if nr is not None and len(nr):
+        extra = [c for c in ("ue_ref", "pronostico_ref", "smt_ref") if c in nr]
         sku = sku.merge(
-            nr[["tienda_id", "sku", "nivel_ref", "rop_ref"]].drop_duplicates(["tienda_id", "sku"]),
+            nr[["tienda_id", "sku", "nivel_ref", "rop_ref", *extra]].drop_duplicates(
+                ["tienda_id", "sku"]
+            ),
             on=["tienda_id", "sku"],
             how="left",
         )
@@ -222,6 +235,9 @@ def ejecutar(
     det = res.filas.merge(
         mc[KEY_MC + ["dias_12s"]].rename(columns={"dias_12s": "dias_12s_mc"}), on=KEY_MC, how="left"
     )
+    for c in ("rop_ref", "smt_ref", "ue_ref"):  # sólo con nivel del reporte / nivel_neo
+        if c not in det:
+            det[c] = np.nan
     det = asignar_codigos(det, params)
     # Disponibilidad de TODO el retail (todas las tiendas, antes de quedarse con las de hoy).
     from forusight.engine import disponibilidad as DISP

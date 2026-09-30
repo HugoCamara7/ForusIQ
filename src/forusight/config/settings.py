@@ -235,6 +235,14 @@ class RecepcionParams(_Section):
     """Envíos aprobados que todavía no llegan a la tienda (no están en el corte de stock)."""
 
     dias_pendiente: int = Field(3, ge=0, le=14)
+    #: El corte del CD en BigQuery ya descuenta lo despachado (98 % de los SKU el 28→30/09):
+    #: restar otra vez las aprobaciones lo contaba dos veces.
+    descontar_del_cd: bool = True
+    #: En Lima el despacho llega al día siguiente (0,4 % sigue en tránsito); en provincia no.
+    transito_solo_provincia: bool = False
+    #: stock_bi.transito es la salida de la tienda ORIGEN (traspasos), no lo que viene del CD:
+    #: no se suma a la posición.
+    usar_transito_bigquery: bool = True
 
 
 class ReposicionVentaParams(_Section):
@@ -245,6 +253,9 @@ class ReposicionVentaParams(_Section):
     #: no lo hace (posición = físico + tránsito): apagado para cuadrar con el reporte.
     descontar_venta_post_corte: bool = False
     dias_venta_diaria: int = Field(14, ge=7, le=31)
+    #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden
+    #: (el reporte nunca envía con posición > punto de reorden; 7 reportes, 12.106 u).
+    solo_bajo_punto_reorden: bool = False
 
 
 class ReferenciaParams(_Section):
@@ -306,6 +317,25 @@ class AsignacionParams(_Section):
     pesos_prioridad: PesosPrioridad = Field(default_factory=PesosPrioridad)
 
 
+class NivelNeoParams(_Section):
+    """Nivel máximo y punto de reorden con la estructura del reporte (engine/nivel_neo.py)."""
+
+    activo: bool = False  # params.yaml lo activa
+    z: float = Field(0.84, ge=0, le=3)
+    #: La clave de un reporte reciente no baja del nivel que tenía en ese reporte.
+    nivel_reporte_como_piso: bool = False
+    #: Antigüedad máxima del maestro de planificación (SMT/nivel por tienda × SKU).
+    dias_maximos: int = Field(60, ge=1, le=365)
+    #: Qué tienda × talla se evalúa: "venta" (stock/tránsito/venta de la talla y venta reciente
+    #: del modelo en la tienda), "listada_reciente" (+ tallas de un reporte reciente si el modelo
+    #: vendió) o "listada" (+ toda talla de un reporte reciente).
+    universo: Literal["venta", "listada_reciente", "listada"] = "listada_reciente"
+    #: Distancia nivel − punto de reorden de la clave en su último reporte (si no, 1).
+    banda_reporte: bool = False
+    #: Clave de un reporte de hace <= N días: nivel y reorden del reporte tal cual (0 = nunca).
+    dias_nivel_reporte: int = Field(3, ge=0, le=30)
+
+
 class EngineParams(_Section):
     """Contrato de parámetros del motor (versionable; se guarda con cada corrida)."""
 
@@ -327,6 +357,7 @@ class EngineParams(_Section):
     reposicion_venta: ReposicionVentaParams = Field(default_factory=ReposicionVentaParams)
     surtido: SurtidoParams = Field(default_factory=SurtidoParams)
     referencia: ReferenciaParams = Field(default_factory=ReferenciaParams)
+    nivel_neo: NivelNeoParams = Field(default_factory=NivelNeoParams)
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:
