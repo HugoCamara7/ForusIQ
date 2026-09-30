@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -162,7 +163,7 @@ def _correr_motor(
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
     pend = _pend_df(pend_csv)
-    inputs = PEND.aplicar_a_entradas(inputs, pend)
+    inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
@@ -182,11 +183,19 @@ def _correr_motor(
             inputs.dim_producto, maestro, params.surtido.temporadas_en_bigquery
         ),
     )
-    niveles = _NIVELES.get(niveles_clave) if niveles_clave else None
-    if niveles is not None:
-        edad = pd.Timestamp(dia) - pd.to_datetime(niveles["fecha_ref"])
-        niveles = niveles.loc[edad <= pd.Timedelta(days=params.referencia.dias_maximos)]
-    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr, bloqueos=bloq, niveles_ref=niveles)
+    from forusight.data import planificacion as PLAN
+
+    plan = maestro_planificacion(niveles_clave)
+    plan_vig = PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos)
+    niveles = None
+    inputs = replace(
+        inputs,
+        dim_tienda=dt,
+        venta_reciente=vr,
+        bloqueos=bloq,
+        niveles_ref=niveles,
+        planificacion=plan_vig,
+    )
     diag = {
         **diag,
         "pendientes": _resumen_pend(pend),
@@ -196,7 +205,8 @@ def _correr_motor(
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
         "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
-        "niveles_ref": int(len(niveles)) if niveles is not None else 0,
+        "niveles_ref": 0,
+        "planificacion": resumen_planificacion(plan, dia),
     }
     firma = hashlib.sha1(
         "|".join(
@@ -282,30 +292,80 @@ def registrar_bloqueos(archivos: list[bytes]) -> str:
     return clave
 
 
-#: Niveles de referencia (reportes de distribución recientes), por huella del contenido.
-_NIVELES: dict[str, pd.DataFrame] = {}
 #: Temporadas comerciales aprendidas de los archivos subidos (modelo-color → temporada).
 _TEMPORADAS: dict[str, pd.Series] = {}
 
 
-def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
-    """Nivel máximo del último reporte de cada tienda; devuelve su huella ('' si no hay)."""
+#: Maestros de planificación de los reportes subidos en la sesión, por huella del contenido.
+_PLANIF: dict[str, object] = {}
+CARPETA_PLAN = "planificacion"
+
+
+def registrar_planificacion(archivos: list[tuple[bytes, str]]) -> str:
+    """Reportes de distribución (Neogística) → maestro de planificación (SMT, nivel, reorden y
+    UE por tienda × SKU; k por categoría) y temporadas. Se guarda en GitHub si está
+    configurado. Devuelve la huella ('' si no hay archivos)."""
+    from forusight.data import planificacion as PLAN
     from forusight.data import reporte as R
+    from forusight.data import temporadas as TEMP
 
     if not archivos:
         return ""
     clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a, _ in archivos)).hexdigest()[:12]
-    if clave not in _NIVELES:
-        from forusight.data import temporadas as TEMP
-
+    if clave not in _PLANIF:
         partes = []
         for contenido, nombre in archivos:
             df, fecha = _leer_reporte(contenido)
-            partes.append((df, fecha if fecha is not None else R.fecha_de_nombre(nombre)))
-        _NIVELES[clave] = R.niveles_referencia(partes)
-        orden = sorted(partes, key=lambda p: p[1] if p[1] is not None else pd.Timestamp(0))
-        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in orden])
+            fecha = fecha if fecha is not None else R.fecha_de_nombre(nombre)
+            if fecha is None:
+                raise ValueError(f"{nombre}: no se encontró la fecha del reporte.")
+            partes.append((df, pd.Timestamp(fecha)))
+        partes.sort(key=lambda p: p[1])
+        ms = [PLAN.desde_reporte(df, f) for df, f in partes]
+        _PLANIF[clave] = PLAN.combinar(*ms)
+        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in partes])
+        store = _store_bloqueos()
+        if store is not None:
+            for m, (_, f) in zip(ms, partes, strict=True):
+                with contextlib.suppress(Exception):  # sin GitHub se usa igual en esta sesión
+                    store.guardar(
+                        f"{CARPETA_PLAN}/{f:%Y%m%d}.csv.gz",
+                        PLAN.a_bytes(m),
+                        f"forusight: maestro de planificación del {f:%d/%m/%Y}",
+                    )
+            _planif_github.clear()
     return clave
+
+
+@st.cache_data(ttl=_TTL, show_spinner="Leyendo maestro de planificación…", max_entries=2)
+def _planif_github(huella: str) -> list[bytes]:
+    store = _store_bloqueos()
+    if store is None:
+        return []
+    try:
+        archivos = sorted(store.listar(CARPETA_PLAN), key=lambda f: f.get("name", ""))[-30:]
+        return [c for f in archivos if (c := store.leer(f["path"]))]
+    except Exception:
+        return []
+
+
+def maestro_planificacion(clave: str = ""):
+    """Maestro vigente: el guardado en el repositorio + GitHub + los reportes de la sesión."""
+    from forusight.data import planificacion as PLAN
+
+    gh = [PLAN.desde_bytes(b) for b in _planif_github(huella_config())]
+    return PLAN.combinar(PLAN.por_defecto(), *gh, _PLANIF.get(clave))
+
+
+def resumen_planificacion(m, dia) -> dict:
+    if m is None or m.claves.empty:
+        return {"claves": 0}
+    f = pd.to_datetime(m.claves["fecha"])
+    return {
+        "claves": int(len(m.claves)),
+        "ultimo_reporte": f.max().date().isoformat(),
+        "dias": int((pd.Timestamp(dia) - f.max()).days),
+    }
 
 
 def _bloqueos_base(clave: str) -> pd.DataFrame | None:
@@ -765,7 +825,8 @@ def barra_lateral(paginas: list | None = None) -> None:
                 accept_multiple_files=True,
                 key="pend_uploader",
                 help="Aprobación (CSV) o archivo Forusight de corridas anteriores que todavía no "
-                "llegan a la tienda: se descuentan del CD y cuentan como tránsito.",
+                "llegan a la tienda: cuentan como tránsito (en provincia; en Lima llega al día "
+                "siguiente). El CD de BigQuery ya viene sin lo despachado.",
             )
             ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
             archivos_b = st.file_uploader(
@@ -789,13 +850,38 @@ def barra_lateral(paginas: list | None = None) -> None:
             except Exception as exc:
                 st.error(f"No se pudo leer el reporte de bloqueos: {exc}")
                 ss.bloq_clave = "defecto"
+            archivos_n = st.file_uploader(
+                "Reportes de distribución (Neogística)",
+                type=["xlsx"],
+                accept_multiple_files=True,
+                key="plan_uploader",
+                help="Actualizan el maestro de planificación (stock mínimo, nivel, reorden y "
+                "empaque por tienda × SKU; factor de pronóstico por categoría). Sube el más "
+                "reciente de cada ruta: con un reporte de hasta 3 días la tienda cuadra ~90 %.",
+            )
+            try:
+                ss.niveles_clave = registrar_planificacion(
+                    [(a.getvalue(), a.name) for a in archivos_n or []]
+                )
+                info = resumen_planificacion(
+                    maestro_planificacion(ss.niveles_clave),
+                    ss.get("dia_reposicion") or pd.Timestamp.today(),
+                )
+                if info.get("claves"):
+                    st.caption(
+                        f"Planificación: {info['claves']:,} tienda × SKU · último reporte del "
+                        f"{_ddmm(info['ultimo_reporte'])} (hace {info['dias']} días)"
+                    )
+            except Exception as exc:
+                st.error(f"No se pudo leer el reporte de distribución: {exc}")
+                ss.niveles_clave = ""
             from forusight.data.github_store import config_github
 
             if config_github(secretos()) is not None:
                 if "sb_pend_github" not in ss:
                     ss.sb_pend_github = ss.get("pend_github", True)
                 st.toggle(
-                    f"Descontar aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días",
+                    f"Aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días como tránsito",
                     key="sb_pend_github",
                     help="Lee las aprobaciones guardadas en GitHub.",
                 )

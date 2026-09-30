@@ -167,10 +167,10 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Pronóstico Demanda [un/semana]": (
         NIVELES,
         "Demanda semanal esperada de la talla en la tienda.",
-        "0,5 × (demanda del modelo-color × participación de la talla en la curva) + 0,5 × (venta "
-        "12 semanas de la talla ÷ semanas que el modelo estuvo en la tienda). Demanda del modelo "
-        "= venta ÷ semanas con exposición, con más peso a las últimas 4 semanas si hay "
-        "tendencia.",
+        "k × venta de las 4 últimas semanas cerradas del modelo-color en la tienda × participación "
+        "de la talla (venta nacional de 12 semanas, entre las tallas que la tienda vendió en 12 "
+        "semanas). k = factor del planificador por marca × clase × prenda × género, tomado del "
+        "último reporte de distribución (base 0,325 calzado/accesorios, 0,35 vestuario).",
         "Motor Forusight sobre ft_pe_venta_retail + stock_bi",
         REP,
     ),
@@ -189,22 +189,32 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "config/calendario_tiendas.csv + config/rutas_mall.csv",
         REP,
     ),
+    "Punto Reorden [un]": (
+        NIVELES,
+        "Posición a la que la talla vuelve a pedir (como el reporte de distribución).",
+        "Nivel Máximo − 1; si la tienda × SKU está en un reporte de distribución de hasta 3 días, "
+        "el punto de reorden de ese reporte. Se pide sólo si Posición ≤ Punto Reorden.",
+        "Motor Forusight + maestro de planificación",
+        REP,
+    ),
     "Nivel Máximo [un]": (
         NIVELES,
         "Stock que la talla debe tener para cubrir hasta la próxima ruta.",
-        "máx(1 si la tienda vende el modelo; redondeo(d·c + 0,5·√(d·c))), con d = Pronóstico y "
-        "c = cobertura en semanas = (Leadtime + Período Revisión) ÷ 7 × factor de la tienda "
-        "(prioridad A ×1,25, B ×1, C ×0,9; liquidadoras DH, SE, FB ×0,75). Talla que la "
-        "tienda nunca tuvo, de un modelo-color que vende: 1 (se completa la curva, como el "
-        "reporte). Modelo que la tienda no vende ni tiene: 0.",
-        "Motor Forusight",
+        "máx(Stock Mínimo Total; redondeo hacia arriba(d + 0,84·√d)), con d = Pronóstico × "
+        "(Leadtime + Período Revisión) ÷ 7 (la misma fórmula del reporte de distribución). Si "
+        "la tienda × SKU está en un reporte de hasta 3 días, el nivel de ese reporte. Talla sin "
+        "stock, tránsito ni venta, o modelo sin venta reciente en la tienda: 0 (no se evalúa, "
+        "como en el reporte).",
+        "Motor Forusight + maestro de planificación",
         REP,
     ),
     "Stock Mínimo Total": (
         NIVELES,
-        "Mínimo de exhibición de la talla.",
-        "Mínimo de exhibición si la talla es core; si no, 0.",
-        "Parámetros (exhibición)",
+        "Piso del nivel máximo que fija el planificador por tienda × SKU.",
+        "Del último reporte de distribución que traía la tienda × SKU (maestro de "
+        "planificación); si no está: el más frecuente del SKU en otras tiendas, luego de la "
+        "marca × prenda × talla, luego de la marca × prenda; si nada, 1.",
+        "Maestro de planificación (reportes de Neogística)",
         REP,
     ),
     "Código Centro Origen": (
@@ -249,16 +259,13 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Cantidad Pedida Final [un]": (
         RESULTADO,
         "Unidades a enviar del CD 320 a la tienda. Es la cantidad que se sube a SIAL.",
-        "Necesidad = máx(Nivel Máximo − Posición; Venta desde ruta anterior), en empaques "
-        "completos. Lo vendido desde la ruta anterior se repone siempre (ninguna regla lo "
-        "anula). Se reparte el Stock en CD por SKU: si alcanza, cada tienda recibe su "
-        "necesidad; si no, primero lo vendido (una unidad por tienda por vuelta, por prioridad), "
-        "luego quiebres y luego por prioridad (riesgo de quiebre, venta, "
-        "prioridad A/B/C de la tienda, curva rota). Sólo reciben las tiendas cuyo mall tiene "
-        "ruta ese día. 0 si el modelo-color está bloqueado para la tienda (reporte 1003) o su "
-        "temporada comercial no se repone, si el modelo se agotó sin venta en 4 semanas o si "
-        "el modelo es nuevo para la tienda. La talla nueva de un modelo que la tienda vende "
-        "recibe 1 (se completa la curva).",
+        "Si Posición ≤ Punto Reorden: Nivel Máximo − Posición (o lo vendido desde la ruta "
+        "anterior, si es mayor), en múltiplos de la unidad de empaque; si no, 0 (como el reporte: "
+        "no se envía con la talla sobre su punto de reorden). Se reparte el Stock en CD por SKU: "
+        "si alcanza, cada tienda recibe su necesidad; si no, primero lo vendido, luego quiebres "
+        "y luego por prioridad (riesgo de quiebre, venta, prioridad A/B/C, curva rota). Sólo "
+        "reciben las tiendas cuyo mall tiene ruta ese día. 0 si el modelo-color está bloqueado "
+        "para la tienda (reporte 1003) o su temporada comercial no se repone.",
         "Motor Forusight",
         "Misma regla del reporte (punto de reorden → nivel máximo); se recalcula",
     ),
