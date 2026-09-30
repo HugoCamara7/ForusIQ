@@ -41,6 +41,11 @@ def html(markup: str, sidebar: bool = False) -> None:
     (st.sidebar if sidebar else st).markdown(markup, unsafe_allow_html=True)
 
 
+def forusight_logo_html(archivo: str = "forusight_logo.png") -> str:
+    src = image_data_uri(ASSETS / archivo)
+    return f'<img src="{src}" alt="Forusight">' if src else "<strong>FORUSIGHT</strong>"
+
+
 def forus_logo_html() -> str:
     src = image_data_uri(ASSETS / "forus_logo.png")
     return (
@@ -94,6 +99,7 @@ def login_styles() -> None:
         width:56px; height:56px; border-radius:14px; background:#FFFFFF; display:grid;
         place-items:center; box-shadow:0 10px 22px rgba(15,23,42,.14); font-size:26px;
     }}
+    .login-forusight-logo img {{ width:min(340px, 88%); height:auto; display:block; margin:0 auto; }}
     .login-head h1 {{ margin:0; padding:0; font-size:28px; line-height:1.14; font-weight:950; color:#FFFFFF; }}
     .login-head p {{ margin:10px 0 0; color:#EAF2FF; font-size:15px; font-weight:750; }}
     .st-key-login_form_area {{ padding:24px 32px 26px; background:#FFFFFF; color-scheme:light; }}

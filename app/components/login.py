@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app.components.ui import brand_strip, forus_logo_html, html, login_styles
+from app.components.ui import (
+    brand_strip,
+    forus_logo_html,
+    forusight_logo_html,
+    html,
+    login_styles,
+)
 from forusight import auth
 from forusight.data.bq_client import leer_st_secrets
 
@@ -40,10 +46,8 @@ def requerir_login(modo_demo: bool) -> bool:
         <div class="login-head">
             <div class="login-logo-row">
                 <div class="login-forus-logo">{forus_logo_html()}</div>
-                <div class="login-divider"></div>
-                <div class="login-app-badge">👟</div>
             </div>
-            <h1>Forusight</h1>
+            <div class="login-forusight-logo">{forusight_logo_html("forusight_logo_blanco.png")}</div>
             <p>Reposición y distribución CD 320 → tiendas</p>
         </div>
         """)

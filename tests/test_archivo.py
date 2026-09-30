@@ -147,7 +147,7 @@ def test_excel_estilo_forus_con_dinamica_sial_y_diccionario(corrida):
     assert ws["C1"].value.startswith("Forusight") and "23/09/2026" in ws["C2"].value
     assert ws["A7"].value == "Código SKU" and ws.auto_filter.ref.startswith("A7")
     assert ws["A6"].value == "PRODUCTO" and ws["A7"].font.b
-    assert len(ws._images) == 1  # logo de Forus
+    assert len(ws._images) == 2  # logos de Forusight y Forus
     j = list(t.columns).index("Cantidad Pedida Final [un]") + 1
     assert ws.cell(8, j).fill.fgColor.rgb.endswith("FFF1CC") and ws.cell(8, j).font.b
     assert ws.max_row == 7 + len(t)

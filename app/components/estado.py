@@ -658,7 +658,9 @@ def barra_lateral(paginas: list | None = None) -> None:
     """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
     raiz = Path(__file__).resolve().parents[2] / "assets"
-    st.logo(str(raiz / "forus_logo.png"), size="large", icon_image=str(raiz / "forus_icon.png"))
+    st.logo(
+        str(raiz / "forusight_logo.png"), size="large", icon_image=str(raiz / "forusight_icon.png")
+    )
     with st.sidebar:
         html('<div class="sb-sec">Nueva corrida</div>', sidebar=True)
         opciones = fuentes_disponibles()
