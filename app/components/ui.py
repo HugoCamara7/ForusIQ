@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
@@ -28,6 +29,7 @@ BRAND_LOGOS = [
 ]
 
 
+@lru_cache(maxsize=32)  # se lee y codifica una vez por proceso, no en cada rerun
 def image_data_uri(path: Path) -> str:
     path = Path(path)
     if not path.exists():
@@ -151,6 +153,9 @@ def app_styles() -> None:
              --brand-accent:{BRAND_ACCENT}; --bg-main:#F6F8FC; --line:#E3EAF6;
              --text-main:#0F172A; --text-muted:#64748B; }}
     .stApp {{ background:var(--bg-main); color:var(--text-main); }}
+    /* Tras ingresar, el login de la corrida anterior sigue en pantalla (elementos «stale»)
+       hasta que la página lo reemplaza, pero ya sin sus estilos: logos a tamaño natural. */
+    .st-key-login_card, .st-key-login_foot {{ display:none !important; }}
     header[data-testid="stHeader"] {{ background:transparent; }}
     div[data-testid="stDecoration"], footer {{ display:none !important; }}
     .block-container, [data-testid="stMainBlockContainer"] {{

@@ -71,6 +71,7 @@ COLUMNAS: list[Col] = [
     _num("Pronóstico Demanda [un/semana]", "#,##0.00", "#87A6C4"),
     _num("Leadtime [días]", ancho=10),
     _num("Período Revisión [días]", "#,##0.0"),
+    _num("Punto Reorden [un]", "#,##0.0"),
     _num("Nivel Máximo [un]", "#,##0.0", "#C88946"),
     _num("Stock Mínimo Total"),
     Col("Código Centro Origen", ancho=15, siempre=True),
@@ -230,8 +231,17 @@ def construir_tabla(
     out["Pronóstico Demanda [un/semana]"] = d["demanda_semanal"].round(6)
     out["Leadtime [días]"] = lead
     out["Período Revisión [días]"] = revision
+    out["Punto Reorden [un]"] = (
+        d["rop_ref"].where(d["rop_ref"].ge(0))
+        if "rop_ref" in d
+        else pd.Series(np.nan, index=d.index)
+    ).fillna((d["stock_objetivo"] - 1).clip(lower=0))
     out["Nivel Máximo [un]"] = d["stock_objetivo"]
-    out["Stock Mínimo Total"] = d["minimo_exhibicion"].where(d["es_core"], 0)
+    out["Stock Mínimo Total"] = (
+        d["smt_ref"].where(d["smt_ref"].notna(), d["minimo_exhibicion"].where(d["es_core"], 0))
+        if "smt_ref" in d
+        else d["minimo_exhibicion"].where(d["es_core"], 0)
+    )
     out["Código Centro Origen"] = str(cd_id)
     out["Stock en CD"] = d["stock_cd_disponible"]
     out["Stock Físico [un]"] = d["stock_tienda"]
@@ -243,7 +253,11 @@ def construir_tabla(
     out["Motivo Pendiente Reposición"] = np.where(
         d["pendiente"] > 0, np.where(almacenamiento, "Almacenamiento", "Stock CD"), SIN_PENDIENTE
     )
-    out["Unidad Empaque Distribución"] = params.asignacion.multiplo_envio
+    out["Unidad Empaque Distribución"] = (
+        d["ue_ref"].fillna(params.asignacion.multiplo_envio)
+        if "ue_ref" in d
+        else params.asignacion.multiplo_envio
+    )
     out["Alcance Posición Stock Actual [semanas]"] = posicion / fc
     out["Alcance Posición Stock Final [semanas]"] = (posicion + d["cantidad"]) / fc
     if "motivo_texto" in d:
@@ -358,7 +372,7 @@ class _Libro:
             )
         if LOGO.exists():
             ws.insert_image(
-                2, 0, str(LOGO), {"x_scale": 0.06, "y_scale": 0.06, "x_offset": 8, "y_offset": 4}
+                2, 0, str(LOGO), {"x_scale": 0.2, "y_scale": 0.2, "x_offset": 8, "y_offset": 4}
             )
         ws.write(0, 2, titulo, self.f(bold=True, font_size=18, font_color=NAVY, valign="vcenter"))
         ws.write(1, 2, subtitulo, self.f(font_size=10, font_color=GRIS_TXT, valign="top"))

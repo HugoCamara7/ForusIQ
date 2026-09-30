@@ -101,15 +101,41 @@ def sumar(partes: list[pd.DataFrame]) -> pd.DataFrame:
     return pd.concat(partes).groupby(["tienda_id", "sku"], as_index=False)["cantidad"].sum()
 
 
-def aplicar_a_entradas(inputs, pend: pd.DataFrame):
-    """Descuenta del CD (comprometido) y suma como tránsito en la tienda destino."""
+def preparar_transito(inputs, params):
+    """stock_bi.transito es la salida de la tienda ORIGEN (traspasos entre tiendas), no lo que
+    viene del CD (30/09: 2 u en común con el tránsito del reporte en 796): sin él por defecto."""
+    from dataclasses import replace
+
+    if params.recepcion.usar_transito_bigquery:
+        return inputs
+    st = inputs.stock_tienda.copy()
+    st["stock_transito"] = 0.0
+    return replace(inputs, stock_tienda=st)
+
+
+def aplicar_a_entradas(inputs, pend: pd.DataFrame, params=None):
+    """Suma como tránsito en la tienda destino (y, si se pide, descuenta del CD).
+
+    Con ``params``: ``recepcion.descontar_del_cd`` (el corte del CD de BigQuery ya descuenta lo
+    despachado) y ``recepcion.transito_solo_provincia`` (en Lima llega al día siguiente)."""
     from dataclasses import replace
 
     if pend is None or pend.empty:
         return inputs
-    por_sku = pend.groupby("sku")["cantidad"].sum()
+    rec = params.recepcion if params is not None else None
+    if rec is not None and rec.transito_solo_provincia and "zona" in inputs.dim_tienda:
+        zona = inputs.dim_tienda.set_index("tienda_id")["zona"].astype("string").str.upper()
+        prov = set(zona.index[zona.str.contains("PROVINCIA", na=False)])
+        pend_tr = pend.loc[pend["tienda_id"].isin(prov)]
+    else:
+        pend_tr = pend
     cd = inputs.stock_cd.copy()
-    cd["comprometido"] = cd["comprometido"] + cd["sku"].map(por_sku).fillna(0)
+    if rec is None or rec.descontar_del_cd:
+        por_sku = pend.groupby("sku")["cantidad"].sum()
+        cd["comprometido"] = cd["comprometido"] + cd["sku"].map(por_sku).fillna(0)
+    pend = pend_tr
+    if pend.empty:
+        return replace(inputs, stock_cd=cd)
     st = inputs.stock_tienda.copy()
     st = st.merge(pend.rename(columns={"cantidad": "_pend"}), on=["tienda_id", "sku"], how="outer")
     st["stock_disponible"] = st["stock_disponible"].fillna(0.0)

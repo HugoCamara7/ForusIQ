@@ -1,3 +1,5 @@
+import hashlib
+
 import streamlit as st
 import yaml
 from app.components.estado import SETTINGS
@@ -60,12 +62,29 @@ OPCIONES = {
 }
 
 
+def huella_params() -> str:
+    return hashlib.sha1(ss.params.model_dump_json().encode()).hexdigest()[:8]
+
+
+def _aplicar_yaml(clave: str) -> None:
+    """Callback: corre antes del script, así el formulario ya se dibuja con los valores nuevos."""
+    try:
+        ss.params = EngineParams.model_validate(yaml.safe_load(ss[clave]) or {})
+        ss.flash_params = ("ok", "YAML válido y aplicado a la sesión.")
+    except (ValidationError, yaml.YAMLError) as exc:
+        ss.flash_params = ("error", str(exc))
+
+
+# Las claves llevan la huella de ss.params: si los parámetros cambian por otra vía (YAML,
+# Conexión), el formulario se vuelve a crear con los valores vigentes en vez de conservar los
+# viejos (que «Aplicar a la sesión» volvería a imponer).
+VER = huella_params()
 tab_form, tab_yaml = st.tabs(["Formulario", "YAML avanzado"])
 with tab_form, st.form("form_params"):
     nuevos = {}
     for seccion in EngineParams.model_fields:
         with st.expander(seccion.replace("_", " ").capitalize()):
-            nuevos[seccion] = widgets(getattr(ss.params, seccion), seccion)
+            nuevos[seccion] = widgets(getattr(ss.params, seccion), f"{VER}.{seccion}")
     if st.form_submit_button("Aplicar a la sesión", type="primary"):
         try:
             ss.params = EngineParams.model_validate(nuevos)
@@ -74,14 +93,12 @@ with tab_form, st.form("form_params"):
             st.error(str(exc))
 
 with tab_yaml:
-    texto = st.text_area("params.yaml", value=dump_params(ss.params), height=480)
+    if flash := ss.pop("flash_params", None):
+        (st.success if flash[0] == "ok" else st.error)(flash[1])
+    clave_yaml = f"yaml_{huella_params()}"  # huella de AHORA (el formulario pudo cambiarla)
+    st.text_area("params.yaml", value=dump_params(ss.params), height=480, key=clave_yaml)
     c1, c2 = st.columns(2)
-    if c1.button("Validar y aplicar YAML"):
-        try:
-            ss.params = EngineParams.model_validate(yaml.safe_load(texto) or {})
-            st.success("YAML válido y aplicado a la sesión.")
-        except (ValidationError, yaml.YAMLError) as exc:
-            st.error(str(exc))
+    c1.button("Validar y aplicar YAML", on_click=_aplicar_yaml, args=(clave_yaml,))
     if c2.button(
         "Guardar en params.yaml", disabled=not puede("parametros"), help="Sólo administradores"
     ):

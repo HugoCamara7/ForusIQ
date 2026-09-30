@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -162,7 +163,7 @@ def _correr_motor(
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
     pend = _pend_df(pend_csv)
-    inputs = PEND.aplicar_a_entradas(inputs, pend)
+    inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
@@ -182,11 +183,19 @@ def _correr_motor(
             inputs.dim_producto, maestro, params.surtido.temporadas_en_bigquery
         ),
     )
-    niveles = _NIVELES.get(niveles_clave) if niveles_clave else None
-    if niveles is not None:
-        edad = pd.Timestamp(dia) - pd.to_datetime(niveles["fecha_ref"])
-        niveles = niveles.loc[edad <= pd.Timedelta(days=params.referencia.dias_maximos)]
-    inputs = replace(inputs, dim_tienda=dt, venta_reciente=vr, bloqueos=bloq, niveles_ref=niveles)
+    from forusight.data import planificacion as PLAN
+
+    plan = maestro_planificacion(niveles_clave)
+    plan_vig = PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos)
+    niveles = None
+    inputs = replace(
+        inputs,
+        dim_tienda=dt,
+        venta_reciente=vr,
+        bloqueos=bloq,
+        niveles_ref=niveles,
+        planificacion=plan_vig,
+    )
     diag = {
         **diag,
         "pendientes": _resumen_pend(pend),
@@ -196,7 +205,8 @@ def _correr_motor(
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
         "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
-        "niveles_ref": int(len(niveles)) if niveles is not None else 0,
+        "niveles_ref": 0,
+        "planificacion": resumen_planificacion(plan, dia),
     }
     firma = hashlib.sha1(
         "|".join(
@@ -282,30 +292,80 @@ def registrar_bloqueos(archivos: list[bytes]) -> str:
     return clave
 
 
-#: Niveles de referencia (reportes de distribución recientes), por huella del contenido.
-_NIVELES: dict[str, pd.DataFrame] = {}
 #: Temporadas comerciales aprendidas de los archivos subidos (modelo-color → temporada).
 _TEMPORADAS: dict[str, pd.Series] = {}
 
 
-def registrar_niveles(archivos: list[tuple[bytes, str]]) -> str:
-    """Nivel máximo del último reporte de cada tienda; devuelve su huella ('' si no hay)."""
+#: Maestros de planificación de los reportes subidos en la sesión, por huella del contenido.
+_PLANIF: dict[str, object] = {}
+CARPETA_PLAN = "planificacion"
+
+
+def registrar_planificacion(archivos: list[tuple[bytes, str]]) -> str:
+    """Reportes de distribución (Neogística) → maestro de planificación (SMT, nivel, reorden y
+    UE por tienda × SKU; k por categoría) y temporadas. Se guarda en GitHub si está
+    configurado. Devuelve la huella ('' si no hay archivos)."""
+    from forusight.data import planificacion as PLAN
     from forusight.data import reporte as R
+    from forusight.data import temporadas as TEMP
 
     if not archivos:
         return ""
     clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a, _ in archivos)).hexdigest()[:12]
-    if clave not in _NIVELES:
-        from forusight.data import temporadas as TEMP
-
+    if clave not in _PLANIF:
         partes = []
         for contenido, nombre in archivos:
             df, fecha = _leer_reporte(contenido)
-            partes.append((df, fecha if fecha is not None else R.fecha_de_nombre(nombre)))
-        _NIVELES[clave] = R.niveles_referencia(partes)
-        orden = sorted(partes, key=lambda p: p[1] if p[1] is not None else pd.Timestamp(0))
-        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in orden])
+            fecha = fecha if fecha is not None else R.fecha_de_nombre(nombre)
+            if fecha is None:
+                raise ValueError(f"{nombre}: no se encontró la fecha del reporte.")
+            partes.append((df, pd.Timestamp(fecha)))
+        partes.sort(key=lambda p: p[1])
+        ms = [PLAN.desde_reporte(df, f) for df, f in partes]
+        _PLANIF[clave] = PLAN.combinar(*ms)
+        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in partes])
+        store = _store_bloqueos()
+        if store is not None:
+            for m, (_, f) in zip(ms, partes, strict=True):
+                with contextlib.suppress(Exception):  # sin GitHub se usa igual en esta sesión
+                    store.guardar(
+                        f"{CARPETA_PLAN}/{f:%Y%m%d}.csv.gz",
+                        PLAN.a_bytes(m),
+                        f"forusight: maestro de planificación del {f:%d/%m/%Y}",
+                    )
+            _planif_github.clear()
     return clave
+
+
+@st.cache_data(ttl=_TTL, show_spinner="Leyendo maestro de planificación…", max_entries=2)
+def _planif_github(huella: str) -> list[bytes]:
+    store = _store_bloqueos()
+    if store is None:
+        return []
+    try:
+        archivos = sorted(store.listar(CARPETA_PLAN), key=lambda f: f.get("name", ""))[-30:]
+        return [c for f in archivos if (c := store.leer(f["path"]))]
+    except Exception:
+        return []
+
+
+def maestro_planificacion(clave: str = ""):
+    """Maestro vigente: el guardado en el repositorio + GitHub + los reportes de la sesión."""
+    from forusight.data import planificacion as PLAN
+
+    gh = [PLAN.desde_bytes(b) for b in _planif_github(huella_config())]
+    return PLAN.combinar(PLAN.por_defecto(), *gh, _PLANIF.get(clave))
+
+
+def resumen_planificacion(m, dia) -> dict:
+    if m is None or m.claves.empty:
+        return {"claves": 0}
+    f = pd.to_datetime(m.claves["fecha"])
+    return {
+        "claves": int(len(m.claves)),
+        "ultimo_reporte": f.max().date().isoformat(),
+        "dias": int((pd.Timestamp(dia) - f.max()).days),
+    }
 
 
 def _bloqueos_base(clave: str) -> pd.DataFrame | None:
@@ -559,6 +619,7 @@ def ejecutar_corrida() -> EngineResult:
             ss.aprobacion = None
         ss.resultado, ss.diagnostico = res, diag
         ss.ultima_carga = ("reporte", ss.reporte[0], marcas)
+        ss.entradas_corrida = _entradas_reporte(ss.reporte[0], marcas)[0]
         return res
     cd = ss.get("cd_archivo") or (None, "")
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
@@ -586,11 +647,17 @@ def ejecutar_corrida() -> EngineResult:
         cd[1],
         marcas,
     )
+    # Se guarda la referencia (sin copiar): si la caché vence (TTL 1 h) o desaloja la entrada
+    # (max_entries=4, compartida entre usuarios), un rerun cualquiera NO vuelve a leer BigQuery
+    # y el Excel se arma con las mismas entradas que produjeron `res`.
+    ss.entradas_corrida = cargar_entradas(*ss.ultima_carga)[0]
     return res
 
 
 def entradas_de_la_corrida() -> EngineInputs | None:
     """Entradas de la última corrida (desde la caché: no vuelve a leer BigQuery)."""
+    if (fijas := st.session_state.get("entradas_corrida")) is not None:
+        return fijas
     carga = st.session_state.get("ultima_carga")
     if not carga:
         return None
@@ -627,12 +694,13 @@ def _selector_marcas() -> None:
         ss.marcas = [m for m in opciones if m in pedidas] or [
             m for m in opciones if any(p[:5] in m for p in pedidas)
         ][:1]
-    ss.marcas = st.multiselect(
-        "Marca",
-        opciones,
-        default=[m for m in ss.marcas if m in opciones],
-        help="Marcas del maestro ARTI (MARCA_MA)",
-    )
+    # Con `key` la identidad del widget no depende de `default`: si se pasa default=ss.marcas,
+    # cada cambio crea un widget NUEVO y la siguiente selección se pierde (y se cierra la lista).
+    # El estado del widget se crea una vez desde ss.marcas (valor persistente entre páginas).
+    if "sb_marcas" not in ss or any(m not in opciones for m in ss.sb_marcas):
+        ss.sb_marcas = [m for m in (ss.marcas or []) if m in opciones]
+    st.multiselect("Marca", opciones, key="sb_marcas", help="Marcas del maestro ARTI (MARCA_MA)")
+    ss.marcas = list(ss.sb_marcas)
 
 
 def _selector_marcas_reporte() -> None:
@@ -654,6 +722,18 @@ def _selector_marcas_reporte() -> None:
     )
 
 
+def _semana_a_lunes() -> None:
+    """El motor arma las semanas desde el corte: un día que no es lunes descuadra la venta."""
+    ss = st.session_state
+    d = pd.Timestamp(ss.sb_semana)
+    ss.sb_semana = (d - pd.Timedelta(days=d.weekday())).date()
+
+
+def _cambiar_fuente() -> None:
+    ss = st.session_state
+    ss.fuente = ss.sb_fuente or ss.fuente
+
+
 def barra_lateral(paginas: list | None = None) -> None:
     """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
     ss = st.session_state
@@ -670,12 +750,17 @@ def barra_lateral(paginas: list | None = None) -> None:
         ss.reporte = None
         if ss.fuente == "bigquery":
             _selector_marcas()
-        ss.fecha_corte = st.date_input(
+        if "sb_semana" not in ss:
+            ss.sb_semana = ss.fecha_corte
+        st.date_input(
             "Semana (lunes)",
-            value=ss.fecha_corte,
+            key="sb_semana",
             format="DD/MM/YYYY",
-            help="Venta de las 12 semanas previas; el stock es el último corte disponible.",
+            on_change=_semana_a_lunes,
+            help="Venta de las 12 semanas previas (se ajusta al lunes); el stock es el último "
+            "corte disponible.",
         )
+        ss.fecha_corte = ss.sb_semana
         if st.button(
             "Ejecutar corrida",
             type="primary",
@@ -713,26 +798,35 @@ def barra_lateral(paginas: list | None = None) -> None:
 
         with st.expander("Más opciones", icon=":material/tune:"):
             if len(opciones) > 1:
-                ss.fuente = (
-                    st.segmented_control(
-                        "Datos", opciones, default=ss.fuente, format_func=FUENTES.get
-                    )
-                    or ss.fuente
+                if ss.get("sb_fuente") != ss.fuente:
+                    ss.sb_fuente = ss.fuente
+                # on_change corre ANTES del script: la barra ya se dibuja con la fuente nueva
+                st.segmented_control(
+                    "Datos",
+                    opciones,
+                    key="sb_fuente",
+                    format_func=FUENTES.get,
+                    required=True,
+                    on_change=_cambiar_fuente,
                 )
             if not ss.get("reporte"):
-                ss.dia_reposicion = st.date_input(
+                if "sb_dia" not in ss:
+                    ss.sb_dia = ss.get("dia_reposicion") or pd.Timestamp.today().date()
+                st.date_input(
                     "Día de reposición",
-                    value=ss.get("dia_reposicion") or pd.Timestamp.today().date(),
+                    key="sb_dia",
                     format="DD/MM/YYYY",
                     help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
+                ss.dia_reposicion = ss.sb_dia
             archivos_p = st.file_uploader(
                 "Envíos aún no recibidos (opcional)",
                 type=["csv", "xlsx"],
                 accept_multiple_files=True,
                 key="pend_uploader",
                 help="Aprobación (CSV) o archivo Forusight de corridas anteriores que todavía no "
-                "llegan a la tienda: se descuentan del CD y cuentan como tránsito.",
+                "llegan a la tienda: cuentan como tránsito (en provincia; en Lima llega al día "
+                "siguiente). El CD de BigQuery ya viene sin lo despachado.",
             )
             ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
             archivos_b = st.file_uploader(
@@ -756,14 +850,42 @@ def barra_lateral(paginas: list | None = None) -> None:
             except Exception as exc:
                 st.error(f"No se pudo leer el reporte de bloqueos: {exc}")
                 ss.bloq_clave = "defecto"
+            archivos_n = st.file_uploader(
+                "Reportes de distribución (Neogística)",
+                type=["xlsx"],
+                accept_multiple_files=True,
+                key="plan_uploader",
+                help="Actualizan el maestro de planificación (stock mínimo, nivel, reorden y "
+                "empaque por tienda × SKU; factor de pronóstico por categoría). Sube el más "
+                "reciente de cada ruta: con un reporte de hasta 3 días la tienda cuadra ~90 %.",
+            )
+            try:
+                ss.niveles_clave = registrar_planificacion(
+                    [(a.getvalue(), a.name) for a in archivos_n or []]
+                )
+                info = resumen_planificacion(
+                    maestro_planificacion(ss.niveles_clave),
+                    ss.get("dia_reposicion") or pd.Timestamp.today(),
+                )
+                if info.get("claves"):
+                    st.caption(
+                        f"Planificación: {info['claves']:,} tienda × SKU · último reporte del "
+                        f"{_ddmm(info['ultimo_reporte'])} (hace {info['dias']} días)"
+                    )
+            except Exception as exc:
+                st.error(f"No se pudo leer el reporte de distribución: {exc}")
+                ss.niveles_clave = ""
             from forusight.data.github_store import config_github
 
             if config_github(secretos()) is not None:
-                ss.pend_github = st.toggle(
-                    f"Descontar aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días",
-                    value=ss.get("pend_github", True),
+                if "sb_pend_github" not in ss:
+                    ss.sb_pend_github = ss.get("pend_github", True)
+                st.toggle(
+                    f"Aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días como tránsito",
+                    key="sb_pend_github",
                     help="Lee las aprobaciones guardadas en GitHub.",
                 )
+                ss.pend_github = ss.sb_pend_github
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(
                     "Stock CD con reservas (opcional)",

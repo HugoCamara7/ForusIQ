@@ -202,11 +202,14 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
     # Nivel de referencia del último reporte de distribución de la tienda: manda sobre el
     # nivel propio (el reporte ya decidió la curva, el surtido y el pronóstico de la talla).
+    # (o el nivel con la estructura del reporte, engine/nivel_neo.py, que llega por la misma vía).
     ref = (
         out["nivel_ref"].notna().to_numpy()
-        if "nivel_ref" in out and params.referencia.usar_nivel_del_reporte
+        if "nivel_ref" in out
+        and (params.referencia.usar_nivel_del_reporte or params.nivel_neo.activo)
         else np.zeros(len(out), dtype=bool)
     )
+    pide = np.ones(len(out), dtype=bool)
     if ref.any():
         nivel = out["nivel_ref"].fillna(0).to_numpy()
         rop = (
@@ -214,9 +217,15 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
             if "rop_ref" in out
             else nivel - 1
         )
-        pide = np.ceil(pos.to_numpy()) <= rop
-        bruta = np.where(ref, np.where(pide, np.maximum(nivel - np.ceil(pos), 0), 0), bruta)
+        pide = np.where(ref, np.ceil(pos.to_numpy()) <= rop, True)
+        pedido = np.maximum(nivel - np.ceil(pos), 0)
+        if "ue_ref" in out:  # unidad de empaque: múltiplos de la UE, mínimo una
+            ue = out["ue_ref"].fillna(1).clip(lower=1).to_numpy()
+            pedido = np.where(pedido > 0, np.maximum(np.round(pedido / ue), 1) * ue, 0)
+        bruta = np.where(ref, np.where(pide, pedido, 0), bruta)
         out["stock_objetivo"] = np.where(ref, nivel, out["stock_objetivo"]).astype("int64")
+        if "pronostico_ref" in out:
+            out["demanda_sku"] = np.where(ref, out["pronostico_ref"].fillna(0), out["demanda_sku"])
         talla_nueva = talla_nueva & ~ref
         agotado = agotado & ~ref
     bruta = bruta.astype("int64")
@@ -230,6 +239,10 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
         piso = np.ceil(out["venta_desde_ruta"].fillna(0).clip(lower=0).to_numpy()).astype("int64")
         if not params.referencia.reponer_venta_con_nivel_del_reporte:
             piso = np.where(ref, 0, piso)  # con el nivel del reporte, manda su regla
+        elif params.reposicion_venta.solo_bajo_punto_reorden:
+            # Como el reporte: lo vendido se repone cuando la talla llegó a su punto de reorden.
+            piso = np.where(ref & ~pide, 0, piso)
+            piso = np.where(~ref & (bruta <= 0), 0, piso)
     else:
         piso = np.zeros(len(out), dtype="int64")
     out["piso_venta"] = piso
@@ -264,7 +277,8 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     # las N tallas con mayor share.
     out["requerido_curva"] = False
     out["req_curva"] = 0
-    intro = out["es_introduccion"] & ~bloqueada
+    # (con el nivel del reporte cada talla se decide sola, como en el reporte)
+    intro = out["es_introduccion"] & ~bloqueada & ~ref
     if intro.any():
         sub = out.loc[intro]
         tiene_core = sub.groupby(KEY_MC, sort=False)["es_core"].transform("any")

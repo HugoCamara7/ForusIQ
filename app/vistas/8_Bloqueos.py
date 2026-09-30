@@ -16,6 +16,54 @@ from forusight.data import bloqueos as B
 from forusight.data import cadenas as CAD
 
 ss = st.session_state
+
+
+def _modelos_elegidos() -> list[str]:
+    pegados = ss.get("blq_texto", "") or ""
+    return list(
+        dict.fromkeys(list(ss.get("blq_modelos") or []) + pegados.replace(",", "\n").split())
+    )
+
+
+def _bloquear() -> None:
+    """Callback: lee los widgets ya actualizados, guarda y limpia el formulario."""
+    try:
+        nuevos = B.nuevos_manuales(
+            list(ss.blq_tiendas),
+            _modelos_elegidos(),
+            B.BLOQUEAR,
+            ss.get("blq_motivo", ""),
+            usuario_actual(),
+        )
+        ss.flash_bloqueos = (
+            "ok",
+            f"Bloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}.",
+        )
+        ss.blq_tiendas, ss.blq_modelos, ss.blq_texto, ss.blq_motivo = [], [], "", ""
+    except Exception as exc:
+        ss.flash_bloqueos = ("error", f"No se pudo guardar el bloqueo: {exc}")
+
+
+def _desbloquear(marcados: pd.DataFrame) -> None:
+    try:
+        nuevos = pd.concat(
+            [
+                B.nuevos_manuales(
+                    [t], [m], B.DESBLOQUEAR, ss.get("dbl_motivo", ""), usuario_actual()
+                )
+                for t, m in zip(marcados["tienda_id"], marcados["modelo_color_id"], strict=True)
+            ],
+            ignore_index=True,
+        )
+        ss.flash_bloqueos = (
+            "ok",
+            f"Desbloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}.",
+        )
+        ss.dbl_motivo = ""
+    except Exception as exc:
+        ss.flash_bloqueos = ("error", f"No se pudo guardar el desbloqueo: {exc}")
+
+
 hero(
     "Bloqueos de productos",
     "Un modelo-color bloqueado para una tienda no se repone ahí, aunque la tienda lo venda. "
@@ -51,6 +99,8 @@ kpi_row(
         ),
     ]
 )
+if flash := ss.pop("flash_bloqueos", None):  # mensaje del último guardado (sobrevive al rerun)
+    (st.success if flash[0] == "ok" else st.error)(flash[1])
 editable = puede("aprobar")
 if not editable:
     st.info("Tu rol permite ver los bloqueos, no cambiarlos (rol `aprobador` o `admin`).")
@@ -85,16 +135,14 @@ with st.container(key="card_bloquear"):
     )
     motivo = st.text_input("Motivo", key="blq_motivo", placeholder="p. ej. Colección no activa")
     modelos = list(dict.fromkeys(de_corrida + pegados.replace(",", "\n").split()))
-    if st.button(
+    st.button(
         f"Bloquear {len(modelos) * len(elegidas):,} modelo-color × tienda",
         type="primary",
         icon=":material/lock:",
         disabled=not (editable and modelos and elegidas),
         key="btn_bloquear",
-    ):
-        nuevos = B.nuevos_manuales(elegidas, modelos, B.BLOQUEAR, motivo, usuario_actual())
-        st.success(f"Bloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}.")
-        st.rerun()
+        on_click=_bloquear,
+    )
 
 # ---------------------------------------------------------------- consultar y desbloquear
 with st.container(key="card_desbloquear"):
@@ -149,23 +197,14 @@ with st.container(key="card_desbloquear"):
         )
         marcados = editado.loc[editado["desbloquear"]]
         motivo_d = st.text_input("Motivo del desbloqueo", key="dbl_motivo")
-        if st.button(
+        st.button(
             f"Desbloquear {len(marcados):,} seleccionados",
             icon=":material/lock_open:",
             disabled=not (editable and len(marcados)),
             key="btn_desbloquear",
-        ):
-            nuevos = pd.concat(
-                [
-                    B.nuevos_manuales([t], [m], B.DESBLOQUEAR, motivo_d, usuario_actual())
-                    for t, m in zip(marcados["tienda_id"], marcados["modelo_color_id"], strict=True)
-                ],
-                ignore_index=True,
-            )
-            st.success(
-                f"Desbloqueado. Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}."
-            )
-            st.rerun()
+            on_click=_desbloquear,
+            args=(marcados,),
+        )
 
 # ---------------------------------------------------------------- historial
 with st.expander("Historial de cambios manuales", icon=":material/history:"):

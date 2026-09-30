@@ -29,7 +29,7 @@ def puede(accion: str) -> bool:
     return auth.puede(rol_actual(), accion)
 
 
-def requerir_login(modo_demo: bool) -> bool:
+def requerir_login(modo_demo: bool, al_ingresar=None) -> bool:
     """True si hay sesión. Sin usuarios configurados sólo se entra en modo demo."""
     ss = st.session_state
     if ss.get("authenticated"):
@@ -52,17 +52,22 @@ def requerir_login(modo_demo: bool) -> bool:
         </div>
         """)
         brand_strip()
-        with st.container(key="login_form_area"), st.form("login_form"):
-            usuario = st.text_input("Correo electrónico", placeholder="nombre.apellido@forus.pe")
-            clave = st.text_input("Contraseña", type="password", placeholder="********")
-            entrar = st.form_submit_button("Ingresar", type="primary", width="stretch")
+        with st.container(key="login_form_area"):
+            with st.form("login_form"):
+                usuario = st.text_input(
+                    "Correo electrónico", placeholder="nombre.apellido@forus.pe"
+                )
+                clave = st.text_input("Contraseña", type="password", placeholder="********")
+                entrar = st.form_submit_button("Ingresar", type="primary", width="stretch")
+            aviso = st.empty()  # spinner de la precarga, dentro de la tarjeta
         html('<div class="login-note">Sistema exclusivo para personal autorizado</div>')
-    html("""
-    <div class="login-foot">
-        <strong>Reposición Azaleia</strong>
-        CD 320 &bull; Tiendas &bull; Área de Producto
-    </div>
-    """)
+    with st.container(key="login_foot"):
+        html("""
+        <div class="login-foot">
+            <strong>Reposición Azaleia</strong>
+            CD 320 &bull; Tiendas &bull; Área de Producto
+        </div>
+        """)
 
     if not auth.usuarios(secrets):
         st.error(
@@ -72,6 +77,11 @@ def requerir_login(modo_demo: bool) -> bool:
         return False
     if entrar:
         if auth.verificar(usuario, clave, secrets):
+            if (
+                al_ingresar is not None
+            ):  # p. ej. leer las marcas de ARTI con el login aún en pantalla
+                with aviso.container():
+                    al_ingresar()
             ss.authenticated = True
             ss.auth_user = auth.normalizar(usuario)
             ss.auth_rol = auth.rol(usuario, secrets)
@@ -81,6 +91,6 @@ def requerir_login(modo_demo: bool) -> bool:
 
 
 def cerrar_sesion() -> None:
-    for k in ("authenticated", "auth_user", "auth_rol", "sin_login"):
-        st.session_state.pop(k, None)
+    # corrida, aprobación, marcas y bloqueos del usuario anterior no deben verse al reingresar
+    st.session_state.clear()
     st.rerun()

@@ -104,7 +104,6 @@ def test_columnas_son_del_reporte_y_en_su_orden(corrida):
         "Clase Demanda Frecuencia",
         "Backorder [un]",
         "Monto Pedido Final [$]",
-        "Punto Reorden [un]",
     ):
         assert omitida not in t.columns
 
