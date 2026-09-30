@@ -154,6 +154,7 @@ def _correr_motor(
     dia_reposicion: str = "",
     bloq_clave: str = "",
     niveles_clave: str = "",
+    plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -253,6 +254,7 @@ def correr_motor(
         dia_reposicion,
         bloq_clave,
         niveles_clave,
+        huella_planificacion(niveles_clave),
     )
 
 
@@ -327,10 +329,12 @@ def registrar_planificacion(archivos: list[tuple[bytes, str]]) -> str:
         store = _store_bloqueos()
         if store is not None:
             for m, (_, f) in zip(ms, partes, strict=True):
+                contenido = PLAN.a_bytes(m)
+                huella = hashlib.sha1(contenido).hexdigest()[:8]
                 with contextlib.suppress(Exception):  # sin GitHub se usa igual en esta sesión
-                    store.guardar(
-                        f"{CARPETA_PLAN}/{f:%Y%m%d}.csv.gz",
-                        PLAN.a_bytes(m),
+                    store.guardar(  # un archivo por reporte (varias rutas/marcas en un día)
+                        f"{CARPETA_PLAN}/{f:%Y%m%d}_{huella}.csv.gz",
+                        contenido,
                         f"forusight: maestro de planificación del {f:%d/%m/%Y}",
                     )
             _planif_github.clear()
@@ -343,17 +347,32 @@ def _planif_github(huella: str) -> list[bytes]:
     if store is None:
         return []
     try:
-        archivos = sorted(store.listar(CARPETA_PLAN), key=lambda f: f.get("name", ""))[-30:]
+        archivos = sorted(store.listar(CARPETA_PLAN), key=lambda f: f.get("name", ""))[-90:]
         return [c for f in archivos if (c := store.leer(f["path"]))]
     except Exception:
         return []
+
+
+def huella_planificacion(clave: str = "") -> str:
+    """Huella del maestro vigente (repo + GitHub + sesión), para la caché de la corrida."""
+    from forusight.data import planificacion as PLAN
+
+    h = hashlib.sha1(clave.encode())
+    if PLAN.RUTA_CLAVES.exists():
+        h.update(str(PLAN.RUTA_CLAVES.stat().st_mtime_ns).encode())
+    for b in _planif_github(huella_config()):
+        h.update(hashlib.sha1(b).digest())
+    return h.hexdigest()[:12]
 
 
 def maestro_planificacion(clave: str = ""):
     """Maestro vigente: el guardado en el repositorio + GitHub + los reportes de la sesión."""
     from forusight.data import planificacion as PLAN
 
-    gh = [PLAN.desde_bytes(b) for b in _planif_github(huella_config())]
+    gh = []
+    for b in _planif_github(huella_config()):
+        with contextlib.suppress(Exception):  # un archivo dañado no frena la corrida
+            gh.append(PLAN.desde_bytes(b))
     return PLAN.combinar(PLAN.por_defecto(), *gh, _PLANIF.get(clave))
 
 

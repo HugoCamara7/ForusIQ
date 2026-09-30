@@ -24,7 +24,17 @@ CONFIG = Path(__file__).resolve().parents[1] / "config"
 RUTA_CLAVES = CONFIG / "planificacion_claves.csv.gz"
 RUTA_K = CONFIG / "planificacion_k.csv"
 
-COLS_CLAVES = ["tienda_id", "sku", "smt", "nivel", "rop", "ue", "fecha"]
+COLS_CLAVES = [
+    "tienda_id",
+    "sku",
+    "smt",
+    "nivel",
+    "rop",
+    "ue",
+    "almacenamiento",
+    "categoria_k",
+    "fecha",
+]
 COLS_K = ["categoria_k", "k", "fecha"]
 #: k base por clase (fines de septiembre 2026), si la categoría no está en el maestro.
 K_BASE = {"CALZADO": 0.325, "ACCESORIOS": 0.325, "VESTUARIO": 0.35}
@@ -76,6 +86,19 @@ def desde_reporte(df: pd.DataFrame, fecha) -> Maestro:
             "nivel": R._num(df[R.MAX]),
             "rop": R._num(df[R.ROP]),
             "ue": ue.where(ue >= 1, 1.0),
+            # la tienda no tiene espacio para ese grupo: el reporte no envía (motivo Almacenamiento)
+            "almacenamiento": (
+                df[R.MOT].astype("string").str.strip().eq("Almacenamiento").fillna(False)
+                if R.MOT in df
+                else False
+            ),
+            # categoría del reporte (la prenda de ARTI no siempre se llama igual: ZAPATILLA/S…)
+            "categoria_k": clave_categoria(
+                *[
+                    df.get(c, pd.Series(pd.NA, index=df.index))
+                    for c in ("Marca", "Clase", "Prenda", "Género")
+                ]
+            ).to_numpy(),
             "fecha": fecha,
         }
     ).drop_duplicates(["tienda_id", "sku"], keep="last")
@@ -139,6 +162,9 @@ def por_defecto() -> Maestro:
         if RUTA_K.exists()
         else pd.DataFrame(columns=COLS_K)
     )
+    for col, v in (("almacenamiento", False), ("categoria_k", pd.NA)):
+        if col not in c:
+            c[col] = v
     return Maestro(c[COLS_CLAVES], k[COLS_K])
 
 
@@ -171,6 +197,9 @@ def desde_bytes(contenido: bytes) -> Maestro:
         dtype={"tienda_id": "string", "sku": "string", "categoria_k": "string"},
         parse_dates=["fecha"],
     )
+    for col, v in (("almacenamiento", False), ("categoria_k", pd.NA)):
+        if col not in t:
+            t[col] = v
     c = t.loc[t["tipo"].eq("clave"), COLS_CLAVES].reset_index(drop=True)
     k = t.loc[t["tipo"].eq("k"), COLS_K].reset_index(drop=True)
     return Maestro(c, k)

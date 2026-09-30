@@ -80,6 +80,15 @@ hero(
     eyebrow="Aprobada" if aprobada else "Propuesta",
     meta=meta,
 )
+plan = diag.get("planificacion") or {}
+if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_reporte:
+    issue_box(
+        "warn",
+        f"El último reporte de Neogística cargado es del {_fecha(plan['ultimo_reporte'])} "
+        f"(hace {plan['dias']} días)",
+        "Para reponer al mismo ritmo que Neogística, sube el reporte de distribución de hoy en "
+        "Más opciones → «Reportes de distribución (Neogística)» y vuelve a ejecutar la corrida.",
+    )
 
 # --- acciones: aprobar (queda guardado) y descargar el archivo Forusight
 a1, a2 = st.columns(2, gap="medium")
