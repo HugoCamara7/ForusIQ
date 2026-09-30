@@ -256,8 +256,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "luego quiebres y luego por prioridad (riesgo de quiebre, venta, "
         "prioridad A/B/C de la tienda, curva rota). Sólo reciben las tiendas cuyo mall tiene "
         "ruta ese día. 0 si el modelo-color está bloqueado para la tienda (reporte 1003) o su "
-        "temporada comercial no se repone; 0 si la talla nunca se tuvo ni vendió, si el modelo se agotó sin venta "
-        "en 4 semanas o si el modelo es nuevo para la tienda.",
+        "temporada comercial no se repone, si el modelo se agotó sin venta en 4 semanas o si "
+        "el modelo es nuevo para la tienda. La talla nueva de un modelo que la tienda vende "
+        "recibe 1 (se completa la curva).",
         "Motor Forusight",
         "Misma regla del reporte (punto de reorden → nivel máximo); se recalcula",
     ),
@@ -312,8 +313,8 @@ HOJAS = [
     ("Resumen", "Totales de la corrida y unidades por tienda."),
     (
         "Distribución",
-        "Una fila por tienda × SKU con todas las columnas. Filtrada en Cantidad Pedida Final "
-        "> 0 (quita el filtro para ver las filas sin envío).",
+        "Una fila por tienda × SKU de las tiendas en ruta, se envíe o no, con todas las "
+        "columnas y el motivo (filtra Cantidad Pedida Final > 0 para ver sólo lo que sale).",
     ),
     (
         "Dinámica",
