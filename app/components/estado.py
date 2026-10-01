@@ -258,7 +258,7 @@ def correr_motor(
     )
 
 
-#: Bloqueos subidos (reporte 1003), por huella del contenido. Se pasa sólo la huella a las
+#: Bloqueos subidos (reporte de bloqueos), por huella del contenido. Se pasa sólo la huella a las
 #: funciones en caché para no volver a hashear archivos de varios MB en cada interacción.
 _BLOQUEOS: dict[str, pd.DataFrame] = {}
 
@@ -396,7 +396,7 @@ def _bloqueos_base(clave: str) -> pd.DataFrame | None:
 
 
 def bloqueos_de(clave: str) -> pd.DataFrame | None:
-    """Bloqueos efectivos: reporte 1003 (guardado o subido) + mantenedor (bloquear/desbloquear).
+    """Bloqueos efectivos: reporte de bloqueos (guardado o subido) + mantenedor (bloquear/desbloquear).
 
     ``clave`` = «base» o «base|huella de los manuales» (la huella cambia la caché)."""
     from forusight.data import bloqueos as B
@@ -849,7 +849,7 @@ def barra_lateral(paginas: list | None = None) -> None:
             )
             ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
             archivos_b = st.file_uploader(
-                "Reporte de bloqueos (1003)",
+                "Reporte de bloqueos",
                 type=["xlsx"],
                 accept_multiple_files=True,
                 key="bloq_uploader",
@@ -858,7 +858,7 @@ def barra_lateral(paginas: list | None = None) -> None:
             try:
                 from forusight.data import bloqueos as B
 
-                # sin archivo nuevo se usan los bloqueos guardados (reporte 1003 del 28/09)
+                # sin archivo nuevo se usan los bloqueos guardados (reporte de bloqueos del 28/09)
                 ss.bloq_clave = (
                     registrar_bloqueos([a.getvalue() for a in archivos_b or []]) or "defecto"
                 )

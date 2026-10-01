@@ -7,7 +7,7 @@ los del archivo original.
 
 Versión RESUMIDA: sólo se escriben las columnas que Forusight tiene con dato real; las que
 no tienen fuente (costos, clases de demanda, backorder, …) se omiten en vez de inventarse.
-Filas: todo lo evaluado con actividad (stock, venta, envío o pendiente).
+Filas: todo lo evaluado con actividad (stock, venta o envío).
 """
 
 from __future__ import annotations
@@ -80,8 +80,6 @@ COLUMNAS: list[Col] = [
     _num("Stock Trán. Int. [un]", "#,##0.0", "#C4A687"),
     _num("Posición Stock [un]", "#,##0.0", "#C4A687", siempre=True),
     Col("Cantidad Pedida Final [un]", "#C2C567", "#,##0", 10, True, rojo=True, siempre=True),
-    _num("Pendiente Reposición", "#,##0.0", ancho=15, siempre=True),
-    Col("Motivo Pendiente Reposición", ancho=40, siempre=True),
     _num("Unidad Empaque Distribución", ancho=15),
     _num("Alcance Posición Stock Actual [semanas]", "#,##0.0"),
     _num("Alcance Posición Stock Final [semanas]", "#,##0.0"),
@@ -89,7 +87,6 @@ COLUMNAS: list[Col] = [
 ]
 SEMANA = Col("", "#A4C4C4", "#,##0", 12, True)
 GRUPO_PLANIFICACION = {"VESTUARIO": "VST", "CALZADO": "CLZ", "ACCESORIOS": "ACC"}
-SIN_PENDIENTE = "Sin Reposición Pendiente"
 
 
 def _vacio_a_na(s: pd.Series) -> pd.Series:
@@ -177,9 +174,6 @@ def construir_tabla(
     )
     posicion = (d["stock_tienda"] + d["stock_transito"] - post.fillna(0)).clip(lower=0)
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
-    almacenamiento = d["motivo_codigo"].eq("NO_TOPE_TIENDA") | d["motivo_parcial"].eq(
-        "PARCIAL_TOPE"
-    )
 
     out = pd.DataFrame(
         {
@@ -249,10 +243,6 @@ def construir_tabla(
         out["Stock Trán. Int. [un]"] = d["stock_transito"]
     out["Posición Stock [un]"] = posicion
     out["Cantidad Pedida Final [un]"] = d["cantidad"]
-    out["Pendiente Reposición"] = d["pendiente"]
-    out["Motivo Pendiente Reposición"] = np.where(
-        d["pendiente"] > 0, np.where(almacenamiento, "Almacenamiento", "Stock CD"), SIN_PENDIENTE
-    )
     out["Unidad Empaque Distribución"] = (
         d["ue_ref"].fillna(params.asignacion.multiplo_envio)
         if "ue_ref" in d
@@ -279,12 +269,12 @@ ASSETS = Path(__file__).resolve().parents[3] / "assets"
 LOGO, LOGO_FORUSIGHT = ASSETS / "forus_logo.png", ASSETS / "forusight_logo.png"
 NAVY, AZUL_FORUS, ACENTO = "#17269A", "#2367FF", "#009FE3"
 CEBRA, TINTA, GRIS_TXT = "#F5F7FC", "#0F172A", "#64748B"
-Q_COL, P_COL = "Cantidad Pedida Final [un]", "Pendiente Reposición"
+Q_COL = "Cantidad Pedida Final [un]"
 FILAS_PRODUCTO = ["Código Modelo", "Modelo", "Código Color", "Talla", "Descripción SKU"]
 
 
 def resumen_por_tienda(tabla: pd.DataFrame) -> pd.DataFrame:
-    """Unidades, SKU y pendiente por tienda (como la dinámica del equipo)."""
+    """Unidades y SKU con envío por tienda (como la dinámica del equipo)."""
     g = [c for c in ("Código Centro", "Nombre Centro", "Centro Comercial") if c in tabla]
     t = tabla.assign(_sku=tabla[Q_COL].gt(0))
     r = (
@@ -293,7 +283,6 @@ def resumen_por_tienda(tabla: pd.DataFrame) -> pd.DataFrame:
             **{
                 "Unidades a enviar": (Q_COL, "sum"),
                 "SKU con envío": ("_sku", "sum"),
-                "Pendiente": (P_COL, "sum"),
             }
         )
         .reset_index()
@@ -771,10 +760,6 @@ def _kpis(tabla: pd.DataFrame) -> list[tuple[str, str]]:
         ("Tiendas", f"{env['Código Centro'].nunique() if len(env) else 0}"),
         ("SKU", f"{env['Código SKU'].nunique() if 'Código SKU' in env and len(env) else 0}"),
     ]
-    if P_COL in tabla:
-        k.append(
-            ("Pendiente", f"{int(pd.to_numeric(tabla[P_COL], errors='coerce').fillna(0).sum()):,}")
-        )
     return k
 
 

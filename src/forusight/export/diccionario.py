@@ -81,7 +81,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         PRODUCTO,
         "Temporada comercial del modelo-color (p. ej. VERANO 2026). Sólo se reponen INVIERNO "
         "2026 y VERANO 2026 (Parámetros → surtido); lo demás no aparece en el archivo.",
-        "Maestro de temporadas: reportes de Neogística y reporte 1003 de bloqueos (ARTI no "
+        "Maestro de temporadas: reportes de Neogística y reporte de bloqueos (ARTI no "
         "trae la temporada comercial).",
         "config/temporadas.csv.gz + reportes subidos",
         REP,
@@ -265,30 +265,16 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "si alcanza, cada tienda recibe su necesidad; si no, primero lo vendido, luego quiebres "
         "y luego por prioridad (riesgo de quiebre, venta, prioridad A/B/C, curva rota). Sólo "
         "reciben las tiendas cuyo mall tiene ruta ese día. 0 si el modelo-color está bloqueado "
-        "para la tienda (reporte 1003) o su temporada comercial no se repone.",
+        "para la tienda (reporte de bloqueos) o su temporada comercial no se repone.",
         "Motor Forusight",
         "Misma regla del reporte (punto de reorden → nivel máximo); se recalcula",
     ),
-    "Pendiente Reposición": (
-        RESULTADO,
-        "Necesidad que no se pudo enviar.",
-        "Necesidad − Cantidad Pedida Final.",
-        "Calculada",
-        "Necesidad − Cantidad",
-    ),
-    "Motivo Pendiente Reposición": (
-        RESULTADO,
-        "Por qué quedó pendiente.",
-        "Sin Reposición Pendiente (se envió todo) · Stock CD (el CD no alcanzó) · "
-        "Almacenamiento (tope de la tienda).",
-        "Calculado",
-        "Sin Reposición Pendiente · Stock CD · Distribución · Almacenamiento",
-    ),
     "Unidad Empaque Distribución": (
         RESULTADO,
-        "Múltiplo de envío.",
-        "1 (se envía por unidad).",
-        "Parámetros (asignación)",
+        "Múltiplo de envío (empaque).",
+        "La unidad de empaque del último reporte de distribución de Neogística (6, 12 o 24 en "
+        "accesorios); si no está, 1. Se envían empaques completos.",
+        "Maestro de planificación",
         REP,
     ),
     "Alcance Posición Stock Actual [semanas]": (

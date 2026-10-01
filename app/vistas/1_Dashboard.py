@@ -2,21 +2,13 @@
 
 import pandas as pd
 import streamlit as st
-from app.components.aprobacion import aprobar
 from app.components.archivo import boton_archivo
 from app.components.estado import entradas_de_la_corrida
-from app.components.login import puede
 from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
 ss = st.session_state
 res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
-
-
-def _aprobar(res) -> None:
-    nivel, msg = aprobar(res)
-    if nivel == "ok":
-        st.toast(msg, icon=":material/verified:")
 
 
 def _fecha(x) -> str:
@@ -90,28 +82,8 @@ if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_
         "Más opciones → «Reportes de distribución (Neogística)» y vuelve a ejecutar la corrida.",
     )
 
-# --- acciones: aprobar (queda guardado) y descargar el archivo Forusight
-a1, a2 = st.columns(2, gap="medium")
-with a1:
-    if aprobada:
-        st.button(
-            "Aprobada", icon=":material/verified:", width="stretch", disabled=True, key="aprobada"
-        )
-    else:
-        st.button(
-            "Aprobar y guardar",
-            type="primary",
-            icon=":material/task_alt:",
-            width="stretch",
-            disabled=not puede("aprobar"),
-            help="Aprueba la distribución tal cual; el análisis se hace en el Excel.",
-            key="btn_aprobar",
-            # el callback corre antes del script: esta misma corrida ya se dibuja aprobada
-            # (con st.rerun() el toast/aviso se descartaba antes de llegar al navegador)
-            on_click=_aprobar,
-            args=(res,),
-        )
-with a2:
+# --- acción única: aprobar, guardar y descargar el archivo Forusight
+with st.container(key="accion_archivo"):
     boton_archivo("archivo_dashboard")
 info_ap = ss.get("aprobacion_info") or {}
 if aprobada and info_ap.get("nivel") in ("info", "warn"):

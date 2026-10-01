@@ -39,12 +39,16 @@ def test_vista_unica_aprobar_y_velocimetro(monkeypatch):
     app.sidebar.button[0].click().run()
     res = app.session_state.resultado
     assert any('class="gauge"' in m.value for m in app.markdown)  # disponibilidad del retail
-    etiquetas = [b.label for b in app.button]
-    assert "Aprobar y guardar" in etiquetas
-    next(b for b in app.button if b.label == "Aprobar y guardar").click().run()
+    descargas = [b.label for b in app.get("download_button")]
+    assert "Aprobar y descargar" in descargas  # un solo botón: aprueba, guarda y descarga
+    assert "Aprobar y guardar" not in [b.label for b in app.button]
+    from app.components.aprobacion import base_aprobacion
+
+    app.session_state["aprobacion"] = base_aprobacion(res.detalle)
+    app.session_state["aprobacion_confirmada"] = res.run_id
+    app.run()
     assert not app.exception, app.exception
-    assert app.session_state.aprobacion_confirmada == res.run_id
-    assert "Aprobada" in [b.label for b in app.button]
+    assert "Descargar archivo aprobado" in [b.label for b in app.get("download_button")]
     assert not any(u.label == "Reporte de distribución del día" for u in app.get("file_uploader"))
 
 

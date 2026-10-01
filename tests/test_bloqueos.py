@@ -1,4 +1,4 @@
-"""Reporte 1003 de bloqueos y temporadas a reponer."""
+"""Reporte de bloqueos y temporadas a reponer."""
 
 import io
 
