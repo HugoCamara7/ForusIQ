@@ -69,7 +69,6 @@ NEOGISTICA = [
     "Alcance Posición Stock Final [semanas]",
     "Monto Pedido Final [$]",
 ]
-MOTIVOS = {"Sin Reposición Pendiente", "Stock CD", "Almacenamiento"}
 
 
 @pytest.fixture(scope="module")
@@ -110,11 +109,8 @@ def test_columnas_son_del_reporte_y_en_su_orden(corrida):
 
 def test_valores_operativos(corrida):
     t = _tabla(corrida)
-    assert set(t["Motivo Pendiente Reposición"]) <= MOTIVOS
-    assert (
-        t.loc[t["Pendiente Reposición"] > 0, "Motivo Pendiente Reposición"]
-        != "Sin Reposición Pendiente"
-    ).all()
+    # «Pendiente» se quitó del archivo: confundía (el motivo de cada fila está en Motivo Forusight)
+    assert not any("Pendiente" in c for c in t.columns)
     assert (t["Código Centro Origen"] == "320").all()
     pos = t["Stock Físico [un]"] + t.get("Stock Trán. Int. [un]", 0)
     assert (t["Posición Stock [un]"] == pos).all()
@@ -122,7 +118,7 @@ def test_valores_operativos(corrida):
     # sólo filas con actividad (resumido)
     act = (
         (t["Cantidad Pedida Final [un]"] > 0)
-        | (t["Pendiente Reposición"] > 0)
+        | (t["Nivel Máximo [un]"] > 0)  # necesidad sin cubrir
         | (t["Stock Físico [un]"] > 0)
         | (t[[c for c in t if c[:2] == "20"]].sum(axis=1) > 0)
         | (t.get("Stock Trán. Int. [un]", 0) > 0)

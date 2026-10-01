@@ -80,7 +80,7 @@ kpi_row(
     [
         ("Bloqueos vigentes", f"{len(efectivos):,}", "modelo-color × tienda", "shield"),
         (
-            "Del reporte 1003",
+            "Del reporte de bloqueos",
             f"{int(efectivos['origen'].astype(str).str.startswith('reporte').sum()):,}",
             f"cargado del {B.FECHA_POR_DEFECTO} o subido",
             "layers",

@@ -62,12 +62,27 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
     )
 
 
+def _aprobar_al_descargar(res) -> None:
+    """Callback del botón: aprueba la propuesta tal cual y la guarda (corre antes del script)."""
+    from app.components.aprobacion import aprobar
+
+    nivel, msg = aprobar(res)
+    if nivel == "ok":
+        st.toast(msg, icon=":material/verified:")
+
+
 def boton_archivo(key: str, en_barra: bool = False) -> None:
+    """Un solo botón: aprueba, guarda y descarga el archivo Forusight."""
+    from app.components.login import puede
+
     ss = st.session_state
     res = ss.get("resultado")
     entradas = entradas_de_la_corrida() if res is not None else None
     if res is None or entradas is None:
         return
+    aprobada = ss.get("aprobacion_confirmada") == res.run_id
+    puede_aprobar = puede("aprobar")
+    # se aprueba la propuesta tal cual: el archivo es el mismo antes y después de aprobar
     cantidad = cantidad_aprobada()
     aprob = (
         hashlib.sha1(pd.util.hash_pandas_object(cantidad, index=False).values).hexdigest()
@@ -79,15 +94,31 @@ def boton_archivo(key: str, en_barra: bool = False) -> None:
     def generar() -> bytes:
         return _excel(res.run_id, aprob, res, entradas, params, cd_id, cantidad)
 
+    if aprobada:
+        etiqueta, ayuda = (
+            "Descargar archivo aprobado",
+            "La distribución ya está aprobada y guardada.",
+        )
+    elif puede_aprobar:
+        etiqueta = "Aprobar y descargar"
+        ayuda = "Aprueba la distribución tal cual, la guarda (cuenta como tránsito en la próxima "
+        ayuda += "corrida) y descarga el archivo Forusight."
+    else:
+        etiqueta, ayuda = "Descargar propuesta", "Tu rol no aprueba: descarga la propuesta."
+    extra = (
+        {"on_click": _aprobar_al_descargar, "args": (res,)}
+        if puede_aprobar and not aprobada
+        else {"on_click": "ignore"}  # descargar no necesita volver a correr toda la app
+    )
     (st.sidebar if en_barra else st).download_button(
-        "Descargar archivo Forusight" if not en_barra else "Descargar archivo",
+        etiqueta,
         data=generar,
         file_name=nombre_archivo(pd.Timestamp.today()),
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary",
-        icon=":material/download:",
+        icon=":material/verified:" if aprobada else ":material/download:",
         width="stretch",
         key=key,
-        on_click="ignore",  # descargar no necesita volver a correr toda la app
-        help="Aprobado" if cantidad is not None else "Propuesta de la corrida (sin aprobar)",
+        help=ayuda,
+        **extra,
     )

@@ -1,4 +1,4 @@
-"""Reporte 1003 - Modelos Bloqueados (Neogística): modelo-color bloqueado por tienda.
+"""Reporte de bloqueos de Neogística («Modelos Bloqueados»): modelo-color bloqueado por tienda.
 
 Cada fila es un SKU de un modelo-color bloqueado en un centro («Colección No Activa en
 Tienda», bloqueos pedidos por el negocio, concentración…). Un modelo-color bloqueado en una
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-#: Bloqueos por defecto (reporte 1003 del 28/09/2026, las 4 partes). Se usan cuando no se
+#: Bloqueos por defecto (reporte de bloqueos del 28/09/2026, las 4 partes). Se usan cuando no se
 #: sube un reporte más reciente en la barra lateral.
 POR_DEFECTO = Path(__file__).resolve().parents[1] / "config" / "bloqueos.csv.gz"
 FECHA_POR_DEFECTO = "28/09/2026"
@@ -24,7 +24,7 @@ def por_defecto() -> pd.DataFrame:
     if not POR_DEFECTO.exists():
         return pd.DataFrame(columns=["tienda_id", "modelo_color_id", "motivo"])
     d = pd.read_csv(POR_DEFECTO, dtype=str)
-    return d.assign(motivo="reporte 1003 del " + FECHA_POR_DEFECTO)
+    return d.assign(motivo="reporte de bloqueos del " + FECHA_POR_DEFECTO)
 
 
 COLUMNAS = {
@@ -36,7 +36,7 @@ COLUMNAS = {
 }
 
 
-#: Orden de columnas del reporte 1003 (para las partes que vienen sin cabecera).
+#: Orden de columnas del reporte de bloqueos (para las partes que vienen sin cabecera).
 POSICIONES = {"modelo_color_id": 0, "sku": 1, "tienda_id": 2, "temporada": 13, "motivo": 14}
 
 
@@ -66,7 +66,9 @@ def leer(contenido: bytes) -> pd.DataFrame:
             idx = dict(POSICIONES)
         d = pd.DataFrame({k: [f[i] if i < len(f) else None for f in datos] for k, i in idx.items()})
         return normalizar(d)
-    raise ValueError("El archivo no tiene la columna «Código modelo color (s)» del reporte 1003.")
+    raise ValueError(
+        "El archivo no tiene la columna «Código modelo color (s)» del reporte de bloqueos."
+    )
 
 
 def normalizar(d: pd.DataFrame) -> pd.DataFrame:
@@ -153,12 +155,12 @@ def vigentes(manuales: pd.DataFrame) -> pd.DataFrame:
 
 
 def aplicar_manuales(base: pd.DataFrame | None, manuales: pd.DataFrame | None) -> pd.DataFrame:
-    """Bloqueos efectivos = reporte 1003 + bloqueos manuales − desbloqueos manuales.
+    """Bloqueos efectivos = reporte de bloqueos + bloqueos manuales − desbloqueos manuales.
 
     Un desbloqueo con tienda «*» libera el modelo-color en todas las tiendas; un bloqueo con
     tienda «*» queda como fila «*» (fuera_de_surtido la aplica a todas)."""
     b = base.copy() if base is not None else pd.DataFrame(columns=["tienda_id", "modelo_color_id"])
-    b = b.assign(origen=b.get("motivo", "reporte 1003"))
+    b = b.assign(origen=b.get("motivo", "reporte de bloqueos"))
     v = vigentes(manuales)
     if v.empty:
         return b

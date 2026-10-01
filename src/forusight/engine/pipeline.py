@@ -94,7 +94,7 @@ class EngineInputs:
     #: Opcional: venta desde la última ruta y posterior al corte, por tienda×SKU
     #: (engine.venta_reciente.resumir).
     venta_reciente: pd.DataFrame | None = None
-    #: Opcional: modelo-color bloqueado por tienda (reporte 1003 de bloqueos).
+    #: Opcional: modelo-color bloqueado por tienda (reporte de bloqueos).
     bloqueos: pd.DataFrame | None = None
     #: Opcional: nivel máximo / punto de reorden del último reporte de cada tienda.
     niveles_ref: pd.DataFrame | None = None

@@ -2,7 +2,7 @@
 
 La columna de temporada de ARTI no es la temporada comercial (coincide con el reporte de
 distribución sólo en el 14 % de los SKU), así que la temporada sale de los reportes de
-Neogística y del reporte 1003 de bloqueos: cada modelo-color tiene una sola temporada
+Neogística y del reporte de bloqueos: cada modelo-color tiene una sola temporada
 comercial. ``config/temporadas.csv.gz`` guarda las de los reportes del 02 al 28/09/2026; los
 reportes que se suben en la app la completan y actualizan.
 """
