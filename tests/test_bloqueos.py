@@ -192,3 +192,32 @@ def test_mantenedor_bloquear_desbloquear_y_todas_las_tiendas():
     # el historial se guarda y se vuelve a leer igual
     csv = m2.to_csv(index=False).encode("utf-8-sig")
     assert B.leer_manuales(csv)["accion"].tolist() == m2["accion"].tolist()
+
+
+def test_carga_excel_mod_col_y_tienda():
+    import io
+
+    import pandas as pd
+
+    from forusight.data import bloqueos as B
+
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {"MOD-COL": ["hp1-n11", "HP2-AZU", "HP3-ROJ"], "Cod Tienda": ["008", None, "59"]}
+    ).to_excel(buf, index=False)
+    carga = B.leer_carga(buf.getvalue(), "carga.xlsx")
+    assert carga.values.tolist() == [["8", "HP1-N11"], ["*", "HP2-AZU"], ["59", "HP3-ROJ"]]
+    nuevos = B.nuevos_desde_carga(carga, B.BLOQUEAR, "colección", "ana")
+    efectivos = B.aplicar_manuales(None, nuevos)
+    tiendas = pd.Series(["8", "2", "2", "59"])
+    mc = pd.Series(["HP1-N11", "HP1-N11", "HP2-AZU", "HP3-ROJ"])
+    bloq, _ = B.fuera_de_surtido(tiendas, mc, None, efectivos, [])
+    # HP1 sólo en la 8; HP2 sin tienda = todas; HP3 sólo en la 59
+    assert bloq.tolist() == [True, False, True, True]
+    # sin la columna Mod-Col el archivo se rechaza
+    buf2 = io.BytesIO()
+    pd.DataFrame({"x": [1]}).to_excel(buf2, index=False)
+    import pytest
+
+    with pytest.raises(ValueError):
+        B.leer_carga(buf2.getvalue(), "malo.xlsx")

@@ -145,6 +145,65 @@ def nuevos_manuales(
     return pd.DataFrame(filas, columns=COLUMNAS_MANUALES)
 
 
+#: Carga masiva por Excel: una fila por modelo-color (y tienda; vacía = todas las tiendas).
+PLANTILLA_COLUMNAS = ["Mod-Col", "Cod Tienda"]
+_ALIAS_MC = {"modcol", "modelocolor", "codmodcol", "codigomodelocolor", "codigomodelocolors", "mc"}
+_ALIAS_TIENDA = {"codtienda", "codigotienda", "tienda", "codcentro", "codigocentro", "centro"}
+
+
+def _norm_col(c) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(c)).encode("ascii", "ignore").decode().lower()
+    return "".join(ch for ch in t if ch.isalnum())
+
+
+def plantilla_excel() -> bytes:
+    """Excel de ejemplo con las columnas Mod-Col y Cod Tienda."""
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {"Mod-Col": ["HP10201162490-N11", "HP10201162490-N11"], "Cod Tienda": ["8", ""]}
+    ).to_excel(buf, index=False, sheet_name="Bloqueos")
+    return buf.getvalue()
+
+
+def leer_carga(contenido: bytes, nombre: str = "") -> pd.DataFrame:
+    """Excel/CSV con Mod-Col y Cod Tienda → (tienda_id, modelo_color_id). Sin tienda = «*»."""
+    from forusight.data.fuentes import codigo_tienda
+
+    if str(nombre).lower().endswith(".csv"):
+        df = pd.read_csv(io.BytesIO(contenido), dtype=str, sep=None, engine="python")
+    else:
+        df = pd.read_excel(io.BytesIO(contenido), dtype=str)
+    cols = {_norm_col(c): c for c in df.columns}
+    mc = next((cols[a] for a in cols if a in _ALIAS_MC), None)
+    if mc is None:
+        raise ValueError(
+            "El archivo debe tener la columna «Mod-Col» (y opcionalmente «Cod Tienda»)."
+        )
+    ti = next((cols[a] for a in cols if a in _ALIAS_TIENDA), None)
+    out = pd.DataFrame(
+        {
+            "modelo_color_id": df[mc].astype("string").str.strip().str.upper(),
+            "tienda_id": df[ti].astype("string").str.strip() if ti else pd.NA,
+        }
+    )
+    out = out.loc[out["modelo_color_id"].fillna("").ne("")]
+    t = out["tienda_id"].fillna("").astype(str)
+    out["tienda_id"] = [
+        TODAS if (x == "" or x == TODAS or x.upper() in ("TODAS", "NAN")) else codigo_tienda(x)
+        for x in t
+    ]
+    return out.drop_duplicates().reset_index(drop=True)[["tienda_id", "modelo_color_id"]]
+
+
+def nuevos_desde_carga(carga: pd.DataFrame, accion: str, motivo: str, usuario: str) -> pd.DataFrame:
+    ahora = pd.Timestamp.now(tz="America/Lima").strftime("%Y-%m-%d %H:%M")
+    return carga.assign(accion=accion, motivo=str(motivo).strip(), usuario=usuario, fecha=ahora)[
+        COLUMNAS_MANUALES
+    ].reset_index(drop=True)
+
+
 def vigentes(manuales: pd.DataFrame) -> pd.DataFrame:
     """Última acción por tienda × modelo-color (la más reciente manda)."""
     if manuales is None or manuales.empty:

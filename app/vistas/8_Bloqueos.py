@@ -1,5 +1,5 @@
 """Mantenedor de bloqueos: bloquear un modelo-color en una o todas las tiendas (no se repone)
-o sacarlo del bloqueo. Los cambios quedan guardados y se aplican en la próxima corrida."""
+o sacarlo del bloqueo, a mano o con un Excel (Mod-Col, Cod Tienda). Los cambios quedan guardados y se aplican en la próxima corrida."""
 
 import pandas as pd
 import streamlit as st
@@ -23,6 +23,24 @@ def _modelos_elegidos() -> list[str]:
     return list(
         dict.fromkeys(list(ss.get("blq_modelos") or []) + pegados.replace(",", "\n").split())
     )
+
+
+def _cargar_excel(carga: pd.DataFrame, accion: str) -> None:
+    """Callback de la carga masiva: guarda los movimientos y limpia el archivo subido."""
+    try:
+        nuevos = B.nuevos_desde_carga(
+            carga, accion, ss.get("blq_excel_motivo", ""), usuario_actual()
+        )
+        hecho = "Bloqueados" if accion == B.BLOQUEAR else "Desbloqueados"
+        ss.flash_bloqueos = (
+            "ok",
+            f"{hecho} {len(nuevos):,} modelo-color × tienda desde el Excel. "
+            f"Guardado en {guardar_bloqueos_manuales(nuevos, usuario_actual())}.",
+        )
+        ss.blq_excel_n = ss.get("blq_excel_n", 0) + 1  # vacía el archivo subido
+        ss.blq_excel_motivo = ""
+    except Exception as exc:
+        ss.flash_bloqueos = ("error", f"No se pudo guardar la carga: {exc}")
 
 
 def _bloquear() -> None:
@@ -143,6 +161,78 @@ with st.container(key="card_bloquear"):
         key="btn_bloquear",
         on_click=_bloquear,
     )
+
+# ---------------------------------------------------------------- carga masiva por Excel
+with st.container(key="card_excel"):
+    section(
+        "Cargar Excel",
+        "Columnas Mod-Col y Cod Tienda; sin Cod Tienda, el modelo-color aplica a todas las tiendas",
+        "upload",
+    )
+    c1, c2 = st.columns([3, 1])
+    archivo = c1.file_uploader(
+        "Excel con Mod-Col y Cod Tienda",
+        type=["xlsx", "xls", "csv"],
+        key=f"blq_excel_{ss.get('blq_excel_n', 0)}",
+        help="Una fila por modelo-color (p. ej. HP10201162490-N11). Cod Tienda vacío = todas.",
+    )
+    c2.download_button(
+        "Plantilla",
+        B.plantilla_excel(),
+        file_name="plantilla_bloqueos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        icon=":material/download:",
+        width="stretch",
+        on_click="ignore",
+        key="blq_plantilla",
+    )
+    if archivo is not None:
+        try:
+            carga = B.leer_carga(archivo.getvalue(), archivo.name)
+        except Exception as exc:
+            st.error(f"No se pudo leer el archivo: {exc}")
+            carga = None
+        if carga is not None and len(carga):
+            todas = int(carga["tienda_id"].eq(B.TODAS).sum())
+            st.caption(
+                f"{carga['modelo_color_id'].nunique():,} modelos-color · "
+                f"{len(carga) - todas:,} por tienda · {todas:,} para todas las tiendas"
+            )
+            st.dataframe(
+                carga.assign(tienda=lambda d: d["tienda_id"].map(nombre).fillna("")).rename(
+                    columns={
+                        "modelo_color_id": "Mod-Col",
+                        "tienda_id": "Cod Tienda",
+                        "tienda": "Tienda",
+                    }
+                ),
+                hide_index=True,
+                width="stretch",
+                height=220,
+            )
+            accion = st.segmented_control(
+                "Acción",
+                [B.BLOQUEAR, B.DESBLOQUEAR],
+                default=B.BLOQUEAR,
+                format_func={B.BLOQUEAR: "Bloquear", B.DESBLOQUEAR: "Desbloquear"}.get,
+                key="blq_excel_accion",
+                required=True,
+            )
+            st.text_input(
+                "Motivo", key="blq_excel_motivo", placeholder="p. ej. Colección no activa"
+            )
+            st.button(
+                f"{'Bloquear' if accion == B.BLOQUEAR else 'Desbloquear'} {len(carga):,} "
+                "modelo-color × tienda",
+                type="primary",
+                icon=":material/lock:" if accion == B.BLOQUEAR else ":material/lock_open:",
+                disabled=not editable,
+                key="btn_excel",
+                on_click=_cargar_excel,
+                args=(carga, accion),
+            )
+        elif carga is not None:
+            st.warning("El archivo no tiene filas con Mod-Col.")
 
 # ---------------------------------------------------------------- consultar y desbloquear
 with st.container(key="card_desbloquear"):
