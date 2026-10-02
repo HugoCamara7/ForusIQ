@@ -106,6 +106,7 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
 
 recepcion:                      # tránsito = pedidos del sistema hacia la tienda (tablas de pedidos)
   transito_pedidos: true
+  dias_pedidos: 15                    # sólo pedidos creados en los últimos 15 días (más antiguos = sin cerrar)
   estados_transito: [1, 2, 3, 6, 7]   # Aprobado, en Picking, Documentado, en Transporte, Prerecepcionado
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
   recepcionados_post_corte: true      # recepcionado desde el corte (stock = cierre de ayer) = tránsito

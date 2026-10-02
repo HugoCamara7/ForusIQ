@@ -165,7 +165,7 @@ def _correr_motor(
     # Tránsito: pedidos del sistema hacia la tienda (data.transito).
     transito_pedidos = TR.usa_pedidos(inputs, params)
     if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
-        inputs = TR.aplicar_pedidos(inputs, params)
+        inputs = TR.aplicar_pedidos(inputs, params, diag.get("fecha_foto"))
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
