@@ -254,6 +254,12 @@ class RecepcionParams(_Section):
     #: El stock es el cierre de ayer y los pedidos están al minuto: lo recepcionado desde la
     #: fecha del corte todavía no está en el stock de la tienda, así que cuenta como tránsito.
     recepcionados_post_corte: bool = True
+    #: El disponible del CD (cierre de ayer) no descuenta los pedidos a tiendas (la reserva de
+    #: pedidos es de eCommerce y wholesale): se resta lo aprobado / en picking y lo documentado
+    #: desde el corte, para no repartir dos veces lo mismo.
+    descontar_pedidos_del_cd: bool = True
+    #: Clasificaciones que salen del CD: 1 Reposición, 2 Llenado de canal.
+    clasificaciones_desde_cd: list[int] = Field(default_factory=lambda: [1, 2])
 
 
 class ReposicionVentaParams(_Section):

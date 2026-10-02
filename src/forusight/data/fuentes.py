@@ -527,6 +527,12 @@ def sql_pedidos(
             else "FALSE"
         )
         + " AS recibido_post_corte",
+        (
+            f"IFNULL(SAFE_CAST({h('fecha_documento')} AS DATE) >= @fecha_foto, FALSE)"
+            if "fecha_documento" in m_h
+            else "FALSE"
+        )
+        + " AS documentado_post_corte",
         f"SUM({cant}) AS unidades",
     ]
     where = "TRUE"
@@ -538,7 +544,7 @@ def sql_pedidos(
     return (
         f"SELECT {', '.join(sel)}\nFROM {_t(cabecera)} AS h\nJOIN {_t(detalle)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6"
     )
 
 
@@ -558,8 +564,9 @@ def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Seri
 
 def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
     """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos),
-    recibido_post_corte, unidades."""
-    cols = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte", "unidades"]
+    recibido_post_corte, documentado_post_corte, unidades."""
+    marcas = ["recibido_post_corte", "documentado_post_corte"]
+    cols = ["tienda_id", "sku", "estado", "clasificacion", *marcas, "unidades"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     p = pd.DataFrame(
@@ -568,16 +575,12 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
             "sku": sku_canonico(df["id_producto"]),
             "estado": codigo_pedido(df["estado"], _NOMBRES_ESTADO),
             "clasificacion": codigo_pedido(df["clasificacion"], _NOMBRES_CLASIFICACION),
-            "recibido_post_corte": (
-                df["recibido_post_corte"].fillna(False).astype(bool)
-                if "recibido_post_corte" in df
-                else False
-            ),
+            **{m: (df[m].fillna(False).astype(bool) if m in df else False) for m in marcas},
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
     p = p.loc[p["sku"].isin(skus) & p["tienda_id"].ne("") & ~p["tienda_id"].isin(excluidas)]
-    llave = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte"]
+    llave = ["tienda_id", "sku", "estado", "clasificacion", *marcas]
     return p.groupby(llave, as_index=False, dropna=False)["unidades"].sum()[cols]
 
 
@@ -607,6 +610,27 @@ def transito_de_pedidos(
     out = out.rename(columns={"unidades": "stock_transito"})
     out["stock_transito"] = out["stock_transito"].clip(lower=0)
     return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
+
+
+def comprometido_cd(pedidos: pd.DataFrame, clasificaciones: list[int]) -> pd.Series:
+    """Unidades por SKU que el CD ya comprometió con tiendas y que el disponible del corte
+    (cierre de ayer) todavía cuenta: la reserva de pedidos es de eCommerce y wholesale, no de
+    los pedidos a tiendas.
+
+    * 1 Aprobado y 2 en Picking: siguen físicamente en el CD.
+    * 3 Documentado, 6 en Transporte, 7 Prerecepcionado y 4 Recepcionado: sólo si se
+      documentaron desde la fecha del corte (antes, el corte ya los descontó).
+    """
+    if pedidos is None or pedidos.empty:
+        return pd.Series(dtype=float, name="comprometido")
+    p = pedidos.loc[pedidos["clasificacion"].isin(clasificaciones)]
+    en_cd = p["estado"].isin([1, 2]).fillna(False)
+    if "documentado_post_corte" in p:
+        en_cd |= p["estado"].isin([3, 4, 6, 7]).fillna(False) & p[
+            "documentado_post_corte"
+        ].astype(bool)
+    out = p.loc[en_cd].groupby("sku")["unidades"].sum().clip(lower=0)
+    return out[out > 0].rename("comprometido")
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:

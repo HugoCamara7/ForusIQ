@@ -123,7 +123,7 @@ def aplicar_pedidos(inputs, params):
     de ``params.recepcion`` (reemplaza el tránsito de stock_bi y el de las aprobaciones)."""
     from dataclasses import replace
 
-    from forusight.data.fuentes import transito_de_pedidos
+    from forusight.data.fuentes import comprometido_cd, transito_de_pedidos
 
     rec = params.recepcion
     tr = transito_de_pedidos(
@@ -137,7 +137,13 @@ def aplicar_pedidos(inputs, params):
     st[["stock_disponible", "stock_transito"]] = st[
         ["stock_disponible", "stock_transito"]
     ].fillna(0.0)
-    return replace(inputs, stock_tienda=st)
+    cd = inputs.stock_cd
+    if rec.descontar_pedidos_del_cd:
+        # Lo comprometido con tiendas que el corte del CD aún cuenta: no se reparte dos veces.
+        comp = comprometido_cd(inputs.pedidos, rec.clasificaciones_desde_cd)
+        cd = cd.copy()
+        cd["comprometido"] = cd["comprometido"] + cd["sku"].map(comp).fillna(0)
+    return replace(inputs, stock_tienda=st, stock_cd=cd)
 
 
 def aplicar_a_entradas(inputs, pend: pd.DataFrame, params=None):
