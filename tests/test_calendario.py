@@ -223,3 +223,15 @@ def test_cd_escaso_primero_repone_lo_vendido_una_unidad_por_tienda():
     cv = control_venta(d.reset_index())
     assert cv["vendido"] == 5 and cv["repuesto"] == 3 and cv["cd_insuficiente"] == 2
     assert cv["otro"] == 0
+
+
+def test_toda_tienda_del_calendario_y_prioridades_esta_en_el_catalogo():
+    """Una tienda fuera del catálogo se descarta como «código sin maestro» y no recibe
+    (pasó con HP Salaverry 2, prioridad A)."""
+    from forusight.data import cadenas as CAD
+
+    catalogo = set(CAD.catalogo_tiendas()["codigo_tienda"])
+    faltan = (set(CAL.calendario()["codigo_tienda"]) | set(CAL.prioridades()["codigo_tienda"])) - (
+        catalogo
+    )
+    assert not faltan, f"Tiendas sin catálogo (config/tiendas_forus.csv): {sorted(faltan)}"
