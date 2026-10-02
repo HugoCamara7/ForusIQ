@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from forusight.data.github_store import GitHubStore, config_github
-from forusight.data.repository import SinAlmacenamiento, guardar_aprobacion_github
 from forusight.data.synthetic import generar
 from forusight.engine.pipeline import ejecutar
 from forusight.export.archivo import a_excel_forusight, construir_tabla, nombre_archivo
@@ -224,8 +223,3 @@ def test_github_store_hace_put_con_sha(monkeypatch):
     assert llamadas[0][0] == "GET" and "ref=rama" in llamadas[0][1]
     body = json.loads(llamadas[1][2])
     assert llamadas[1][0] == "PUT" and body["sha"] == "abc" and body["branch"] == "rama"
-
-
-def test_sin_dataset_ni_github_la_aprobacion_pide_descarga():
-    with pytest.raises(SinAlmacenamiento, match="Descárgala"):
-        guardar_aprobacion_github("R", pd.DataFrame({"a": [1]}), "u", secrets={})

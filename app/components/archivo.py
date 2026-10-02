@@ -63,7 +63,7 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
 
 
 def _aprobar_al_descargar(res) -> None:
-    """Callback del botón: aprueba la propuesta tal cual y la guarda (corre antes del script)."""
+    """Callback del botón: aprueba la propuesta tal cual (corre antes del script)."""
     from app.components.aprobacion import aprobar
 
     nivel, msg = aprobar(res)
@@ -72,7 +72,7 @@ def _aprobar_al_descargar(res) -> None:
 
 
 def boton_archivo(key: str, en_barra: bool = False) -> None:
-    """Un solo botón: aprueba, guarda y descarga el archivo Forusight."""
+    """Un solo botón: aprueba y descarga el archivo Forusight."""
     from app.components.login import puede
 
     ss = st.session_state
@@ -97,12 +97,12 @@ def boton_archivo(key: str, en_barra: bool = False) -> None:
     if aprobada:
         etiqueta, ayuda = (
             "Descargar archivo aprobado",
-            "La distribución ya está aprobada y guardada.",
+            "La distribución ya está aprobada.",
         )
     elif puede_aprobar:
         etiqueta = "Aprobar y descargar"
-        ayuda = "Aprueba la distribución tal cual, la guarda (cuenta como tránsito en la próxima "
-        ayuda += "corrida) y descarga el archivo Forusight."
+        ayuda = "Aprueba la distribución tal cual y descarga el archivo Forusight. Al cargarlo en "
+        ayuda += "el sistema, los pedidos cuentan como tránsito en la próxima corrida."
     else:
         etiqueta, ayuda = "Descargar propuesta", "Tu rol no aprueba: descarga la propuesta."
     extra = (

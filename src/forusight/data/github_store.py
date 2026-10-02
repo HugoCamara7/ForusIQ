@@ -1,4 +1,4 @@
-"""Guardado de aprobaciones en GitHub (sin dataset de BigQuery).
+"""Archivos de Forusight en GitHub: bloqueos manuales y maestro de planificación.
 
 Mismo mecanismo que las solicitudes de Catálogo Control Center: archivos en una rama de
 un repositorio privado vía la API de contenidos. Configuración (primera que exista):

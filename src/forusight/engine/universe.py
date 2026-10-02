@@ -117,7 +117,7 @@ def construir_base(
     v = ventas.loc[ventas["tienda_id"].isin(activas)].copy()
     v["rel"] = semana_relativa(v["semana_inicio"], fecha_corte)
     v = v.loc[(v["rel"] >= 1) & (v["rel"] <= n_sem)]
-    v["unidades"] = v["unidades"].clip(lower=0.0)  # devoluciones netas negativas → 0
+    # venta neta: las notas de crédito (semanas negativas) restan, como en el reporte
     v["bloque"] = bloque_semana(v["rel"], params)
     semanal = v.merge(prod, on="sku", how="inner")[
         [

@@ -88,7 +88,7 @@ if res is not None:
     ctrl = control_cd(res.detalle, cantidad)
     ctrl = ctrl.loc[ctrl["enviado"] > 0]
     exceso = ctrl.loc[ctrl["queda"] < 0]
-    pend = (ss.get("diagnostico") or {}).get("pendientes") or {}
+    tr = (ss.get("diagnostico") or {}).get("transito_pedidos") or {}
     section(
         "Control de stock del CD",
         "Lo enviado nunca supera el stock disponible de cada SKU",
@@ -109,9 +109,9 @@ if res is not None:
                 "package",
             ),
             (
-                "Envíos pendientes descontados",
-                f"{pend.get('unidades', 0):,}",
-                f"{pend.get('skus', 0):,} SKU · {pend.get('tiendas', 0)} tiendas",
+                "Tránsito desde pedidos",
+                f"{tr.get('unidades', 0):,}",
+                f"{tr.get('tiendas', 0)} tiendas" if tr else "sin tablas de pedidos",
                 "clock",
             ),
         ]

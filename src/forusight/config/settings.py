@@ -27,7 +27,7 @@ class AppSettings(BaseSettings):
     #: Región de los jobs. Vacío = BigQuery la infiere de las tablas (igual que Catálogo).
     bq_location: str | None = None
     dataset_mart: str = "forusight_mart"
-    #: Dataset de BigQuery para guardar aprobaciones. Vacío = no se usa BigQuery (GitHub o descarga).
+    #: Dataset de BigQuery donde el modo MART guarda corridas y auditoría (opcional).
     dataset_app: str | None = None
     cd_id: str = "320"
     cache_ttl_seconds: int = 3600
@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     semanas_historia: int = 13
     #: Reemplaza la matriz marca × cadena de config/cadenas.yaml (p. ej. para sumar AZALEIA).
     marcas_por_cadena: dict[str, list[str]] | None = None
-    #: Proyecto/dataset opcional para guardar aprobaciones en GitHub (ver github_store).
+    #: Repositorio GitHub para bloqueos manuales y maestro de planificación (ver github_store).
     github_repository: str | None = None
     github_token: str | None = None
     github_branch: str | None = None
@@ -232,17 +232,18 @@ class StockCdParams(_Section):
 
 
 class RecepcionParams(_Section):
-    """Envíos aprobados que todavía no llegan a la tienda (no están en el corte de stock)."""
+    """Tránsito hacia las tiendas, desde las tablas de pedidos del sistema."""
 
-    dias_pendiente: int = Field(3, ge=0, le=14)
-    #: El corte del CD en BigQuery ya descuenta lo despachado (98 % de los SKU el 28→30/09):
-    #: restar otra vez las aprobaciones lo contaba dos veces.
-    descontar_del_cd: bool = True
-    #: En Lima el despacho llega al día siguiente (0,4 % sigue en tránsito); en provincia no.
-    transito_solo_provincia: bool = False
-    #: stock_bi.transito es la salida de la tienda ORIGEN (traspasos), no lo que viene del CD:
-    #: no se suma a la posición.
-    usar_transito_bigquery: bool = True
+    #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
+    transito_pedidos: bool = True
+    #: 1 Aprobado, 2 en Picking, 3 Documentado, 6 en Transporte, 7 Prerecepcionado
+    #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
+    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3, 6, 7])
+    #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
+    clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
+    #: El stock es el cierre de ayer y los pedidos están al minuto: lo recepcionado desde la
+    #: fecha del corte todavía no está en el stock de la tienda, así que cuenta como tránsito.
+    recepcionados_post_corte: bool = True
 
 
 class ReposicionVentaParams(_Section):

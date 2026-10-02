@@ -1,4 +1,4 @@
-"""Vista única: generar la distribución, aprobarla (queda guardada) y descargar el archivo."""
+"""Vista única: generar la distribución, aprobarla y descargar el archivo."""
 
 import pandas as pd
 import streamlit as st
@@ -82,16 +82,9 @@ if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_
         "Más opciones → «Reportes de distribución (Neogística)» y vuelve a ejecutar la corrida.",
     )
 
-# --- acción única: aprobar, guardar y descargar el archivo Forusight
+# --- acción única: aprobar y descargar el archivo Forusight
 with st.container(key="accion_archivo"):
     boton_archivo("archivo_dashboard")
-info_ap = ss.get("aprobacion_info") or {}
-if aprobada and info_ap.get("nivel") in ("info", "warn"):
-    issue_box(
-        "warn" if info_ap["nivel"] == "warn" else "info",
-        "Aprobada en esta sesión, pero no quedó guardada",
-        info_ap.get("mensaje", ""),
-    )
 
 # --- KPI
 env_mc = env["modelo_color_id"].nunique()

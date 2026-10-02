@@ -31,7 +31,7 @@ Motor Python puro (src/forusight/engine) ── contratos pandera (data/schemas.
 UI Streamlit ── filtros en memoria (st.fragment), edición (st.data_editor)
         │  load jobs al confirmar
         ▼
-Dataset APP  ── corridas, distribucion_propuesta, distribucion_aprobada, auditoria
+Dataset APP  ── corridas, distribucion_propuesta, auditoria
 ```
 
 ## Estructura
@@ -144,10 +144,14 @@ con dato real (no se inventan costos, clases de demanda, backorder…) y filas c
 (stock, venta, envío o pendiente). Incluye una hoja **Resumen** por tienda. Motivos:
 `Sin Reposición Pendiente`, `Stock CD`, `Almacenamiento`.
 
-## Aprobaciones sin dataset
+## Aprobación y tránsito
 
-Si no hay `[forusight] dataset_app`, la aprobación se guarda en **GitHub** con el bloque
-`[ticketing]` del Catálogo (carpeta `forusight/`); si tampoco está, se descarga desde la app.
+«Aprobar y descargar» aprueba la propuesta y descarga el archivo; la aprobación no se guarda.
+Al cargar el archivo en el sistema se crean los pedidos, y la próxima corrida los ve como
+tránsito en las tablas de pedidos (`pedidos_header_table` + `pedidos_detail_table`):
+estados Aprobado, en Picking, Documentado, en Transporte y Prerecepcionado (más lo
+recepcionado desde el corte de stock); clasificaciones Reposición, Llenado de canal y Traspaso
+tiendas. Lo que sale del CD 320 y el disponible del corte aún cuenta se resta del CD.
 
 ## Configuración de secretos
 
@@ -249,10 +253,10 @@ Ejecutar en BigQuery (consola), sobre el proyecto de Forus, y compartir el resul
 | b | grano de ventas y devoluciones | ruta de `ventas_table` y si las devoluciones vienen netas |
 | c | codificación SKU/modelo/color/talla | **resuelto con ARTI** (`CODINT_MA`, `CODMOD_MA`, `CODCOL_MA`, `TALNUM_MA`); validar el valor de `MARCA_MA` para Azaleia |
 | d | físico/reservado/comprometido del CD 320 | foto de `stock_bi` (sin reservas) o archivo STOCK CD; falta tabla en BigQuery |
-| e | tránsitos | `stock_bi` no trae tránsito: se asume 0 |
+| e | tránsitos | de las tablas de pedidos (cabecera + detalle) |
 | f | clusters, formatos e importancia de tiendas | pendiente |
 | g–j | despacho, lead time, parámetros, exclusiones (bodegas eComm) | pendiente |
 | k | formato de exportación WMS/ERP | pendiente |
 | l | volumetría | pendiente (`sql/discovery/02_volumetria.sql`) |
 | m | destino de despliegue | Streamlit Cloud, como los otros Control Center (supuesto) |
-| n | proyecto GCP para el dataset APP | pendiente: hasta entonces las aprobaciones no se persisten |
+| n | proyecto GCP para el dataset APP | sólo modo MART (corridas y auditoría); las aprobaciones no se guardan |

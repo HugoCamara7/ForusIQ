@@ -150,7 +150,6 @@ def _correr_motor(
     cd_bytes: bytes | None,
     cd_nombre: str,
     marcas: tuple[str, ...] | None,
-    pend_csv: str = "",
     dia_reposicion: str = "",
     bloq_clave: str = "",
     niveles_clave: str = "",
@@ -159,12 +158,14 @@ def _correr_motor(
     from dataclasses import replace
 
     from forusight.data import calendario as CAL
-    from forusight.data import pendientes as PEND
+    from forusight.data import transito as TR
 
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
-    pend = _pend_df(pend_csv)
-    inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)
+    # Tránsito: pedidos del sistema hacia la tienda (data.transito).
+    transito_pedidos = TR.usa_pedidos(inputs, params)
+    if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
+        inputs = TR.aplicar_pedidos(inputs, params)
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
@@ -199,7 +200,18 @@ def _correr_motor(
     )
     diag = {
         **diag,
-        "pendientes": _resumen_pend(pend),
+        "transito_pedidos": (
+            {
+                "unidades": int(inputs.stock_tienda["stock_transito"].sum()),
+                "tiendas": int(
+                    inputs.stock_tienda.loc[
+                        inputs.stock_tienda["stock_transito"] > 0, "tienda_id"
+                    ].nunique()
+                ),
+            }
+            if transito_pedidos
+            else None
+        ),
         "dia_reposicion": dia,
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
@@ -217,7 +229,6 @@ def _correr_motor(
                 huella,
                 cd_nombre,
                 ",".join(marcas or ()),
-                pend_csv,
                 dia,
                 bloq_clave,
                 niveles_clave,
@@ -237,7 +248,6 @@ def correr_motor(
     cd_bytes: bytes | None = None,
     cd_nombre: str = "",
     marcas: tuple[str, ...] | None = None,
-    pend_csv: str = "",
     dia_reposicion: str = "",
     bloq_clave: str = "",
     niveles_clave: str = "",
@@ -250,7 +260,6 @@ def correr_motor(
         cd_bytes,
         cd_nombre,
         marcas,
-        pend_csv,
         dia_reposicion,
         bloq_clave,
         niveles_clave,
@@ -457,24 +466,6 @@ def guardar_bloqueos_manuales(nuevos: pd.DataFrame, usuario: str) -> str:
     return f"GitHub ({store.repository}: {ruta})"
 
 
-def _pend_df(pend_csv: str) -> pd.DataFrame:
-    from forusight.data import pendientes as PEND
-
-    if not pend_csv:
-        return PEND.vacio()
-    import io
-
-    return pd.read_csv(io.StringIO(pend_csv), dtype={"tienda_id": str, "sku": str})
-
-
-def _resumen_pend(pend: pd.DataFrame) -> dict:
-    return {
-        "unidades": int(pend["cantidad"].sum()) if len(pend) else 0,
-        "skus": int(pend["sku"].nunique()) if len(pend) else 0,
-        "tiendas": int(pend["tienda_id"].nunique()) if len(pend) else 0,
-    }
-
-
 # ------------------------------------------------------------------ reporte del día como base
 
 
@@ -524,20 +515,17 @@ def _correr_reporte(
     marcas: tuple[str, ...] | None,
     criterio: str,
     params_json: str,
-    pend_csv: str = "",
     bloq_clave: str = "",
 ) -> tuple[EngineResult, dict]:
-    from forusight.data import pendientes as PEND
     from forusight.data import reporte as R
 
     params = EngineParams.model_validate_json(params_json)
     inp, diag = _entradas_reporte(contenido, marcas)
-    pend = _pend_df(pend_csv)
-    base = PEND.aplicar_a_reporte(inp.reporte, pend)
+    # El tránsito es el que trae el reporte (Stock Trán. Int. + Prov.).
     base, n_bloq = R.aplicar_surtido(
-        base, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
+        inp.reporte, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
     )
-    diag = {**diag, "pendientes": _resumen_pend(pend), "bloqueadas": n_bloq}
+    diag = {**diag, "bloqueadas": n_bloq}
     dist = R.distribuir(
         base, params.prioridad_tiendas.patrones, criterio, params.exhibicion.completar_curva
     )
@@ -547,7 +535,6 @@ def _correr_reporte(
         + criterio.encode()
         + ",".join(marcas or ()).encode()
         + params_json.encode()
-        + pend_csv.encode()
         + bloq_clave.encode()
     ).hexdigest()[:8]
     corte = R.corte(inp.reporte)
@@ -589,39 +576,6 @@ def inicializar() -> None:
     app_styles()
 
 
-@st.cache_data(ttl=600, show_spinner="Leyendo envíos aprobados…", max_entries=4)
-def _pend_github(huella: str, dias: int, dia: str) -> tuple[str, list[str]]:
-    from forusight.data import pendientes as PEND
-
-    df, usados = PEND.desde_github(secretos(), dias, pd.Timestamp(dia))
-    return df.to_csv(index=False), usados
-
-
-def pendientes_csv() -> str:
-    """Envíos pendientes de recepción: aprobaciones recientes en GitHub + archivos subidos."""
-    from forusight.data import pendientes as PEND
-    from forusight.data.github_store import config_github
-
-    ss = st.session_state
-    partes, fuentes = [], []
-    for contenido, nombre in ss.get("pend_archivos") or []:
-        partes.append(PEND.leer_archivo(contenido, nombre))
-        fuentes.append(nombre)
-    dias = int(ss.params.recepcion.dias_pendiente)
-    if ss.get("pend_github", True) and config_github(secretos()) is not None and dias > 0:
-        try:
-            texto, usados = _pend_github(
-                huella_config(), dias, pd.Timestamp.today().date().isoformat()
-            )
-            partes.append(_pend_df(texto))
-            fuentes += usados
-        except Exception as exc:  # GitHub caído: se sigue sin descontar, avisando
-            st.warning(f"No se pudieron leer las aprobaciones de GitHub: {exc}")
-    ss.pend_fuentes = fuentes
-    pend = PEND.sumar(partes)
-    return pend.to_csv(index=False) if len(pend) else ""
-
-
 def ejecutar_corrida() -> EngineResult:
     ss = st.session_state
     if ss.get("reporte"):
@@ -631,7 +585,6 @@ def ejecutar_corrida() -> EngineResult:
             marcas,
             ss.criterio,
             ss.params.model_dump_json(),
-            pendientes_csv(),
             clave_bloqueos(),
         )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
@@ -651,7 +604,6 @@ def ejecutar_corrida() -> EngineResult:
         cd[0],
         cd[1],
         marcas,
-        pendientes_csv(),
         pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
         clave_bloqueos(),
         ss.get("niveles_clave", ""),
@@ -838,16 +790,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                     help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
                 ss.dia_reposicion = ss.sb_dia
-            archivos_p = st.file_uploader(
-                "Envíos aún no recibidos (opcional)",
-                type=["csv", "xlsx"],
-                accept_multiple_files=True,
-                key="pend_uploader",
-                help="Aprobación (CSV) o archivo Forusight de corridas anteriores que todavía no "
-                "llegan a la tienda: cuentan como tránsito (en provincia; en Lima llega al día "
-                "siguiente). El CD de BigQuery ya viene sin lo despachado.",
-            )
-            ss.pend_archivos = [(a.getvalue(), a.name) for a in archivos_p or []]
+            st.caption("Tránsito: pedidos del sistema (aprobados hasta prerecepcionados).")
             archivos_b = st.file_uploader(
                 "Reporte de bloqueos",
                 type=["xlsx"],
@@ -894,17 +837,6 @@ def barra_lateral(paginas: list | None = None) -> None:
             except Exception as exc:
                 st.error(f"No se pudo leer el reporte de distribución: {exc}")
                 ss.niveles_clave = ""
-            from forusight.data.github_store import config_github
-
-            if config_github(secretos()) is not None:
-                if "sb_pend_github" not in ss:
-                    ss.sb_pend_github = ss.get("pend_github", True)
-                st.toggle(
-                    f"Aprobaciones de los últimos {ss.params.recepcion.dias_pendiente} días como tránsito",
-                    key="sb_pend_github",
-                    help="Lee las aprobaciones guardadas en GitHub.",
-                )
-                ss.pend_github = ss.sb_pend_github
             if ss.fuente == "bigquery":
                 archivo = st.file_uploader(
                     "Stock CD con reservas (opcional)",

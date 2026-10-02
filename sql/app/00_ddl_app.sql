@@ -35,14 +35,6 @@ CREATE TABLE IF NOT EXISTS `${PROYECTO}.${DATASET_APP}.distribucion_propuesta` (
 PARTITION BY DATE(creado_en)
 CLUSTER BY run_id, tienda_id, sku;
 
-CREATE TABLE IF NOT EXISTS `${PROYECTO}.${DATASET_APP}.distribucion_aprobada` (
-  run_id STRING NOT NULL, tienda_id STRING NOT NULL, sku STRING NOT NULL,
-  cantidad_propuesta INT64, cantidad_aprobada INT64 NOT NULL, comentario STRING,
-  aprobado_por STRING, aprobado_en TIMESTAMP NOT NULL
-)
-PARTITION BY DATE(aprobado_en)
-CLUSTER BY run_id, tienda_id, sku;
-
 CREATE TABLE IF NOT EXISTS `${PROYECTO}.${DATASET_APP}.auditoria` (
   run_id STRING, evento_en TIMESTAMP NOT NULL, usuario STRING, accion STRING NOT NULL,
   detalle_json STRING

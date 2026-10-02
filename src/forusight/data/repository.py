@@ -27,15 +27,6 @@ CONSULTAS = {
     "dim_tienda": "dim_tienda.sql",
 }
 
-COLUMNAS_APROBACION = [
-    "run_id",
-    "tienda_id",
-    "sku",
-    "cantidad_propuesta",
-    "cantidad_aprobada",
-    "comentario",
-]
-
 
 def params_usados(sql: str, params: dict) -> dict:
     """Sólo los parámetros que la consulta referencia (@hasta no confunde a @hasta_foto)."""
@@ -56,8 +47,6 @@ class Repository(Protocol):
     ) -> EngineInputs: ...
 
     def guardar_corrida(self, result: EngineResult, usuario: str) -> None: ...
-
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str: ...
 
 
 def _ahora() -> pd.Timestamp:
@@ -105,7 +94,6 @@ class SyntheticRepository:
         self.seed = seed
         self.corridas: list[pd.DataFrame] = []
         self.propuestas: dict[str, pd.DataFrame] = {}
-        self.aprobaciones: dict[str, pd.DataFrame] = {}
         self.auditoria: list[pd.DataFrame] = []
 
     def cargar_entradas(
@@ -128,47 +116,6 @@ class SyntheticRepository:
         self.propuestas[result.run_id] = result.detalle.copy()
         self.auditoria.append(tabla_auditoria(result.run_id, usuario, "CORRIDA", result.resumen))
 
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str:
-        validar_aprobacion(aprobacion)
-        self.aprobaciones[run_id] = aprobacion.assign(aprobado_por=usuario, aprobado_en=_ahora())
-        self.auditoria.append(
-            tabla_auditoria(run_id, usuario, "APROBACION", {"filas": len(aprobacion)})
-        )
-        return "sesión (demo)"
-
-
-class SinAlmacenamiento(RuntimeError):
-    """No hay dataset ni GitHub configurados: la aprobación sólo puede descargarse."""
-
-
-def guardar_aprobacion_github(run_id: str, df: pd.DataFrame, usuario: str, secrets=None) -> str:
-    from forusight.data.bq_client import leer_st_secrets
-    from forusight.data.github_store import GitHubStore, config_github
-
-    cfg = config_github(leer_st_secrets() if secrets is None else secrets)
-    if cfg is None:
-        raise SinAlmacenamiento(
-            "No hay dónde guardar la aprobación (sin dataset de BigQuery ni GitHub). Descárgala "
-            "con el botón de abajo, o pega en los secrets el bloque [ticketing] de Catálogo "
-            "Control Center para guardarla en GitHub."
-        )
-    store = GitHubStore(cfg["repository"], cfg["token"], cfg["branch"], cfg["prefix"])
-    fecha = _ahora().strftime("%Y%m%d_%H%M%S")
-    ruta = store.guardar(
-        f"aprobaciones/{run_id}_{fecha}.csv",
-        df.to_csv(index=False).encode("utf-8-sig"),
-        f"forusight: aprobación {run_id} por {usuario}",
-    )
-    return f"GitHub ({cfg['repository']}, rama {cfg['branch']}: {ruta})"
-
-
-def validar_aprobacion(df: pd.DataFrame) -> None:
-    faltan = set(COLUMNAS_APROBACION) - set(df.columns)
-    if faltan:
-        raise ValueError(f"Aprobación sin columnas: {sorted(faltan)}")
-    if (df["cantidad_aprobada"] < 0).any():
-        raise ValueError("cantidad_aprobada no puede ser negativa")
-
 
 class BigQueryRepository:
     """Lee el dataset MART propio (una consulta por contrato); escribe APP con load jobs."""
@@ -176,7 +123,6 @@ class BigQueryRepository:
     TABLAS_APP = {
         "corridas": "corridas",
         "propuesta": "distribucion_propuesta",
-        "aprobada": "distribucion_aprobada",
         "auditoria": "auditoria",
     }
 
@@ -228,29 +174,6 @@ class BigQueryRepository:
             tabla_auditoria(result.run_id, usuario, "CORRIDA", result.resumen),
             self._tabla_app("auditoria"),
         )
-
-    def guardar_aprobacion(self, run_id: str, aprobacion: pd.DataFrame, usuario: str) -> str:
-        """Guarda la aprobación y devuelve dónde quedó.
-
-        Destino: dataset de BigQuery si `[forusight] dataset_app` está configurado; si no,
-        GitHub (bloque [ticketing] del Catálogo o [forusight] github_*); si no hay ninguno,
-        lanza SinAlmacenamiento para que la UI ofrezca la descarga.
-        """
-        validar_aprobacion(aprobacion)
-        df = aprobacion[COLUMNAS_APROBACION].assign(aprobado_por=usuario, aprobado_en=_ahora())
-        if self.settings.dataset_app:
-            self.client.load_df(df, self._tabla_app("aprobada"))
-            self.client.load_df(
-                tabla_auditoria(
-                    run_id,
-                    usuario,
-                    "APROBACION",
-                    {"filas": len(df), "unidades": int(df["cantidad_aprobada"].sum())},
-                ),
-                self._tabla_app("auditoria"),
-            )
-            return f"BigQuery ({self.settings.dataset_app})"
-        return guardar_aprobacion_github(run_id, df, usuario, getattr(self, "secrets", None))
 
 
 #: Días máximos entre la última venta y el corte de stock para que el sugerido tenga sentido.
@@ -307,6 +230,8 @@ class FuentesRepository(BigQueryRepository):
             "ventas": tabla_configurada("ventas", self.secrets),
             "tiendas": tabla_configurada("tiendas", self.secrets),
             "cadena": tabla_configurada("cadena", self.secrets),
+            "pedidos": tabla_configurada("pedidos", self.secrets),
+            "pedidos_detalle": tabla_configurada("pedidos_detalle", self.secrets),
         }
 
     def _tabla_arti(self) -> str:
@@ -370,8 +295,8 @@ class FuentesRepository(BigQueryRepository):
             try:
                 cols, _ = self.columnas(tabla)
             except Exception as exc:
-                if fuente in ("tiendas", "cadena"):
-                    continue  # maestros opcionales: se informa en el diagnóstico
+                if fuente in ("tiendas", "cadena", "pedidos", "pedidos_detalle"):
+                    continue  # opcionales: se informa en el diagnóstico
                 if fuente != "ventas":
                     raise
                 # La venta es opcional: nunca bloquea la corrida.
@@ -563,9 +488,70 @@ class FuentesRepository(BigQueryRepository):
                 )
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer la venta diaria: {explicar_error(exc)}")
+        # Pedidos (cabecera + detalle): el tránsito hacia cada tienda sale de aquí.
+        if tablas["pedidos"] or tablas["pedidos_detalle"]:
+            entradas.pedidos = self._leer_pedidos(
+                q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag
+            )
+        else:
+            diag.notas.append(
+                "Tránsito en 0: faltan `pedidos_header_table` y `pedidos_detail_table` en "
+                "[bigquery] (el tránsito sale de los pedidos del sistema)."
+            )
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
         return entradas
+
+    def _leer_pedidos(self, q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag):
+        """Pedidos por tienda destino × SKU × estado × clasificación (None si no se pudo)."""
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+        from forusight.data.bq_client import explicar_error
+
+        faltan = [f for f in ("pedidos", "pedidos_detalle") if f not in mapas]
+        if faltan:
+            diag.notas.append(
+                "Tránsito: no se pudo leer "
+                + " ni ".join(f"`{tablas[f] or f}`" for f in faltan)
+                + " (revisa `pedidos_header_table` y `pedidos_detail_table`)."
+            )
+            return None
+        m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
+        for fuente, mapa in (("pedidos", m_h), ("pedidos_detalle", m_d)):
+            falta = mapeo.faltantes(fuente, mapa)
+            if falta:
+                diag.notas.append(
+                    f"Tránsito: mapeo incompleto de {tablas[fuente]} (falta "
+                    f"{', '.join(falta)}). Corrígelo en la página Conexión."
+                )
+                return None
+        try:
+            crudo = q(
+                "pedidos",
+                F.sql_pedidos(
+                    tablas["pedidos"],
+                    m_h,
+                    tablas["pedidos_detalle"],
+                    m_d,
+                    tablas["arti"],
+                    m_a,
+                    con_marcas,
+                ),
+                {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS), "fecha_foto": foto},
+            )
+        except Exception as exc:
+            diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
+            return None
+        pedidos = F.a_pedidos(
+            crudo, set(entradas.dim_producto["sku"]), excl | {F.codigo_tienda(self.settings.cd_id)}
+        )
+        if "clasificacion" not in m_h:
+            diag.notas.append(
+                "Tránsito: la cabecera de pedidos no tiene clasificación mapeada; se cuentan "
+                "todas las clasificaciones."
+            )
+        diag.filas["pedidos_tienda_sku"] = len(pedidos)
+        return pedidos
 
     def revisar_venta(self, marcas: list[str]) -> tuple[dict, pd.DataFrame]:
         """Última fecha de venta de la tabla y de la marca, y filas posteriores (si hay)."""

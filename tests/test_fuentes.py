@@ -149,6 +149,23 @@ def test_exposicion_inferida_sin_historial_de_stock():
     assert "N" not in e.index.get_level_values(0)  # sin stock ni venta: nunca tuvo
 
 
+def test_nota_de_credito_llega_negativa_al_motor():
+    """La semana con nota de crédito (venta neta negativa) no se descarta ni se pone en 0."""
+    lunes = list(pd.date_range("2026-06-29", periods=12, freq="7D"))
+    ventas = pd.DataFrame(
+        [
+            {"semana_inicio": lunes[2], "tienda_id": "1", "sku": "A", "unidades": 3.0},
+            {"semana_inicio": lunes[5], "tienda_id": "1", "sku": "A", "unidades": -1.0},
+            # sólo nota de crédito y sin stock: igual debe llegar
+            {"semana_inicio": lunes[7], "tienda_id": "1", "sku": "B", "unidades": -2.0},
+        ]
+    )
+    stock = pd.DataFrame({"tienda_id": ["1"], "sku": ["A"], "stock_disponible": [1.0]})
+    e = F.inferir_exposicion(ventas, stock, lunes)
+    assert e.loc[e["sku"].eq("A"), "unidades"].sum() == 2.0  # 3 vendidos − 1 devuelto
+    assert e.loc[e["sku"].eq("B"), "unidades"].sum() == -2.0
+
+
 def test_archivo_stock_cd():
     df = pd.DataFrame(
         {
@@ -493,14 +510,14 @@ def test_stock_bi_con_disponible_y_reservas():
         "reserva_wholesale",
         "reserva_multicanal",
         "disponible",
-        "transito",
+        "transito",  # stock_bi lo trae, pero el tránsito sale de los pedidos
         "talla",
         "fecha_corte",
         "valorizado",
         "reserva_ecommerce",
     ]
     s = M.mapear(cols, M.ALIAS_STOCK)
-    assert s["disponible"] == "disponible" and s["transito"] == "transito"
+    assert s["disponible"] == "disponible" and "transito" not in s
     assert all(s[r] == r for r in M.RESERVAS)
     assert M.faltantes("stock", s) == []
     a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
@@ -525,3 +542,85 @@ def test_nombre_del_modelo_desde_la_venta_si_arti_no_lo_trae():
     mc = dp.loc[sku, "modelo_color_id"]
     assert set(dp.loc[dp["modelo_color_id"] == mc, "descripcion"]) == {"SPACE"}
     assert "nombres_modelo" in [c[0] for c in fake.consultas]
+
+
+def test_mapeo_automatico_de_pedidos_peru_central():
+    from forusight.data import mapeo
+
+    h = mapeo.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_H], mapeo.ALIAS_PEDIDOS)
+    d = mapeo.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D], mapeo.ALIAS_PEDIDOS_DETALLE)
+    assert h["nro_pedido"] == "nroped_ph" and h["tienda_destino"] == "codloc_ph"
+    assert h["estado"] == "estado_ph" and h["clasificacion"] == "clasificacion_ph"
+    assert h["fecha_recepcion"] == "fecrec_ph"
+    assert d == {
+        "nro_pedido": "nroped_pd",
+        "id_producto": "codint_pd",
+        "cantidad_despachada": "candes_pd",
+        "cantidad": "canped_pd",
+    }
+    assert not mapeo.faltantes("pedidos", h) and not mapeo.faltantes("pedidos_detalle", d)
+
+
+def test_sql_pedidos_une_cabecera_y_detalle():
+    m_h = {
+        "nro_pedido": "nroped_ph",
+        "tienda_destino": "codloc_ph",
+        "estado": "estado_ph",
+        "clasificacion": "clasificacion_ph",
+        "fecha": "fecped_ph",
+        "fecha_recepcion": "fecrec_ph",
+    }
+    m_d = {
+        "nro_pedido": "nroped_pd",
+        "id_producto": "codint_pd",
+        "cantidad_despachada": "candes_pd",
+        "cantidad": "canped_pd",
+    }
+    sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, m_h, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
+    assert "JOIN" in sql and "h.`nroped_ph`" in sql and "d.`nroped_pd`" in sql
+    assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
+    assert "@desde_pedidos" in sql
+    assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
+    assert "GROUP BY 1, 2, 3, 4, 5" in sql
+
+
+def test_transito_de_pedidos_por_estado_y_clasificacion():
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["018", "18", "18", "18", "18", "18", "320"],
+            "id_producto": ["0005", "5", "5", "5", "5", "5", "5"],
+            "estado": ["1", "6. en Transporte", "4", "0", "Prerecepcionado", "2", "1"],
+            "clasificacion": ["1", "3.-Traspaso tiendas", "1", "1", "2", "4.-Devolucion CD", "1"],
+            "unidades": [2, 3, 5, 7, 1, 4, 9],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, {"320"})
+    assert set(p["estado"].dropna()) == {0, 1, 2, 4, 6, 7}
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
+    # aprobado 2 + en transporte 3 + prerecepcionado 1; fuera: recepcionado, creado,
+    # devolución al CD y el propio CD
+    assert tr.to_dict("records") == [{"tienda_id": "18", "sku": "5", "stock_transito": 6.0}]
+
+
+def test_recepcionado_despues_del_corte_es_transito():
+    """Stock = cierre de ayer; pedidos al minuto: lo recibido hoy aún no está en el stock."""
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["18", "18", "18"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["4", "4", "6"],
+            "clasificacion": ["1", "1", "1"],
+            "recibido_post_corte": [True, False, False],
+            "unidades": [2, 10, 3],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, set())
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
+    assert tr["stock_transito"].tolist() == [5.0]  # 2 recibidos hoy + 3 en transporte
+    sin = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    assert sin["stock_transito"].tolist() == [3.0]
+
+
+def test_codigo_pedido_por_nombre():
+    s = pd.Series(["Prerecepcionado", "Recepcionado", "en Picking", "7", None])
+    assert F.codigo_pedido(s, F._NOMBRES_ESTADO).tolist() == [7, 4, 2, 7, pd.NA]
