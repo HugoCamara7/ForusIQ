@@ -1,14 +1,14 @@
-"""Aprobación de la corrida: se aprueba la propuesta tal cual (el análisis se hace en el Excel)
-y queda guardada (GitHub / BigQuery según la configuración)."""
+"""Aprobación de la corrida: se aprueba la propuesta tal cual (el análisis se hace en el Excel).
+
+No se guarda: lo aprobado se carga en el sistema con el archivo y la próxima corrida lo ve como
+tránsito en las tablas de pedidos."""
 
 from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
 
-from app.components.estado import repositorio
 from app.components.login import usuario_actual
-from forusight.data.repository import SinAlmacenamiento
 
 
 def base_aprobacion(detalle: pd.DataFrame) -> pd.DataFrame:
@@ -40,18 +40,12 @@ def violaciones_cd(aprob: pd.DataFrame) -> pd.DataFrame:
 
 
 def aprobar(res) -> tuple[str, str]:
-    """Aprueba la propuesta de la corrida y la guarda. Devuelve (nivel, mensaje)."""
+    """Aprueba la propuesta de la corrida (sin guardarla). Devuelve (nivel, mensaje)."""
     ss = st.session_state
     if ss.get("aprobacion") is None or ss.aprobacion["run_id"].iat[0] != res.run_id:
         ss.aprobacion = base_aprobacion(res.detalle)
     usuario = usuario_actual()
-    try:
-        destino = repositorio(ss.fuente).guardar_aprobacion(res.run_id, ss.aprobacion, usuario)
-        nivel, msg = "ok", f"Aprobada y guardada en {destino}."
-    except SinAlmacenamiento as exc:
-        nivel, msg = "info", str(exc)
-    except Exception as exc:  # se aprueba igual para descargar el archivo
-        nivel, msg = "warn", f"Aprobada en esta sesión, pero no se pudo guardar: {exc}"
+    nivel, msg = "ok", "Aprobada. Al cargar el archivo en el sistema, cuenta como tránsito."
     ss.aprobacion_confirmada = res.run_id
     ss.aprobacion_info = {
         "usuario": usuario,

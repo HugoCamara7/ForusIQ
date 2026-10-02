@@ -1,11 +1,10 @@
 import pandas as pd
 import streamlit as st
-from app.components.estado import SETTINGS, repositorio, resultado_o_aviso
+from app.components.estado import SETTINGS, resultado_o_aviso
 from app.components.filtros import filtros_detalle
-from app.components.login import puede, usuario_actual
+from app.components.login import puede
 from app.components.ui import hero
 
-from forusight.data.repository import SinAlmacenamiento
 
 hero(
     "Revisión y aprobación",
@@ -101,18 +100,9 @@ if res is not None:
         type="primary",
         disabled=not malas.empty or not puede("aprobar"),
     ):
-        try:
-            destino = repositorio(ss.fuente).guardar_aprobacion(res.run_id, aprob, usuario_actual())
-            ss.aprobacion_confirmada = res.run_id
-            st.success(f"Aprobación de la corrida {res.run_id} guardada en {destino}.")
-        except SinAlmacenamiento as exc:
-            ss.aprobacion_confirmada = res.run_id  # vale para exportar aunque no se guarde
-            st.info(str(exc))
-        except Exception as exc:
-            ss.aprobacion_confirmada = res.run_id
-            st.warning(
-                f"La aprobación quedó confirmada en esta sesión, pero no se pudo guardar: {exc}"
-            )
+        # No se guarda: al cargar el archivo en el sistema, los pedidos son el tránsito.
+        ss.aprobacion_confirmada = res.run_id
+        st.success(f"Aprobación de la corrida {res.run_id} confirmada.")
 
     if ss.get("aprobacion_confirmada") == res.run_id:
         st.download_button(

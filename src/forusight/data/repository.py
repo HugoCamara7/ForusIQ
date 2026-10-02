@@ -570,6 +570,11 @@ class FuentesRepository(BigQueryRepository):
             entradas.pedidos = self._leer_pedidos(
                 q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag
             )
+        else:
+            diag.notas.append(
+                "Tránsito en 0: faltan `pedidos_header_table` y `pedidos_detail_table` en "
+                "[bigquery] (el tránsito sale de los pedidos del sistema)."
+            )
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
         return entradas
