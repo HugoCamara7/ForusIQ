@@ -189,6 +189,10 @@ def _correr_motor(
 
     plan = maestro_planificacion(niveles_clave)
     plan_vig = PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos)
+    # Tiendas que reponen hoy sin claves de planificación: su nivel sale de otras tiendas.
+    hoy = dt.loc[dt["activa"] & dt["recibe_hoy"]]
+    con_plan = set(plan_vig.claves["tienda_id"].astype(str))
+    sin_plan = hoy.loc[~hoy["tienda_id"].astype(str).isin(con_plan)]
     niveles = None
     inputs = replace(
         inputs,
@@ -220,6 +224,9 @@ def _correr_motor(
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
         "niveles_ref": 0,
         "planificacion": resumen_planificacion(plan, dia),
+        "tiendas_sin_planificacion": [
+            f"{t} {n}" for t, n in zip(sin_plan["tienda_id"], sin_plan["nombre"], strict=True)
+        ],
     }
     firma = hashlib.sha1(
         "|".join(

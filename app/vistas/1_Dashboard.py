@@ -82,6 +82,16 @@ if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_
         "Más opciones → «Reportes de distribución (Neogística)» y vuelve a ejecutar la corrida.",
     )
 
+sin_plan = diag.get("tiendas_sin_planificacion") or []
+if sin_plan:
+    issue_box(
+        "warn",
+        f"{len(sin_plan)} tienda(s) sin datos de planificación: {', '.join(sin_plan)}",
+        "Su stock mínimo, nivel y punto de reorden se estiman con los de otras tiendas y pueden "
+        "salir altos. Sube un reporte de Neogística que incluya esas tiendas en Más opciones → "
+        "«Reportes de distribución (Neogística)».",
+    )
+
 # --- acción única: aprobar y descargar el archivo Forusight
 with st.container(key="accion_archivo"):
     boton_archivo("archivo_dashboard")
