@@ -513,7 +513,9 @@ def sql_pedidos(
     if "cantidad_despachada" in m_d:
         cant = f"COALESCE(NULLIF({num.format(d('cantidad_despachada'))}, 0), {cant})"
     clasif = (
-        f"CAST({h('clasificacion')} AS STRING)" if "clasificacion" in m_h else "CAST(NULL AS STRING)"
+        f"CAST({h('clasificacion')} AS STRING)"
+        if "clasificacion" in m_h
+        else "CAST(NULL AS STRING)"
     )
     sel = [
         f"TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod",
@@ -647,9 +649,9 @@ def comprometido_cd(
         p = pedidos.loc[pedidos["clasificacion"].isin(clasificaciones)]
     en_cd = p["estado"].isin([1, 2]).fillna(False)
     if "documentado_post_corte" in p:
-        en_cd |= p["estado"].isin([3, 4, 6, 7]).fillna(False) & p[
-            "documentado_post_corte"
-        ].astype(bool)
+        en_cd |= p["estado"].isin([3, 4, 6, 7]).fillna(False) & p["documentado_post_corte"].astype(
+            bool
+        )
     out = p.loc[en_cd].groupby("sku")["unidades"].sum().clip(lower=0)
     return out[out > 0].rename("comprometido")
 

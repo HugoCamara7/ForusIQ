@@ -606,8 +606,13 @@ class FuentesRepository(BigQueryRepository):
             crudo = q(
                 "pedidos",
                 F.sql_pedidos(
-                    tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d,
-                    tablas["arti"], m_a, con_marcas,
+                    tablas["pedidos"],
+                    m_h,
+                    tablas["pedidos_detalle"],
+                    m_d,
+                    tablas["arti"],
+                    m_a,
+                    con_marcas,
                 ),
                 {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS), "fecha_foto": foto},
             )

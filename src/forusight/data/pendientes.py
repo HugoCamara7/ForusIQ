@@ -134,9 +134,9 @@ def aplicar_pedidos(inputs, params, cd_id: str | None = None):
     )
     st = inputs.stock_tienda.drop(columns="stock_transito", errors="ignore")
     st = st.merge(tr, on=["tienda_id", "sku"], how="outer")
-    st[["stock_disponible", "stock_transito"]] = st[
-        ["stock_disponible", "stock_transito"]
-    ].fillna(0.0)
+    st[["stock_disponible", "stock_transito"]] = st[["stock_disponible", "stock_transito"]].fillna(
+        0.0
+    )
     cd = inputs.stock_cd
     if rec.descontar_pedidos_del_cd:
         # Lo comprometido con tiendas que el corte del CD aún cuenta: no se reparte dos veces.

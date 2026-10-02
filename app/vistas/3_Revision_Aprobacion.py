@@ -5,7 +5,6 @@ from app.components.filtros import filtros_detalle
 from app.components.login import puede
 from app.components.ui import hero
 
-
 hero(
     "Revisión y aprobación",
     "Ajusta cantidades si hace falta y aprueba la propuesta antes de generar el archivo.",
