@@ -167,7 +167,7 @@ def _correr_motor(
     if transito_pedidos:
         # Tránsito real de los pedidos del sistema: no se usan las aprobaciones anteriores.
         pend = PEND.vacio()
-        inputs = PEND.aplicar_pedidos(inputs, params)
+        inputs = PEND.aplicar_pedidos(inputs, params, ajustes().cd_id)
     else:
         pend = _pend_df(pend_csv)
         inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)

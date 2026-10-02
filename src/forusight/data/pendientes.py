@@ -118,7 +118,7 @@ def usa_pedidos(inputs, params) -> bool:
     return bool(params.recepcion.transito_pedidos) and getattr(inputs, "pedidos", None) is not None
 
 
-def aplicar_pedidos(inputs, params):
+def aplicar_pedidos(inputs, params, cd_id: str | None = None):
     """Tránsito de cada tienda × SKU = pedidos hacia la tienda en los estados y clasificaciones
     de ``params.recepcion`` (reemplaza el tránsito de stock_bi y el de las aprobaciones)."""
     from dataclasses import replace
@@ -140,7 +140,7 @@ def aplicar_pedidos(inputs, params):
     cd = inputs.stock_cd
     if rec.descontar_pedidos_del_cd:
         # Lo comprometido con tiendas que el corte del CD aún cuenta: no se reparte dos veces.
-        comp = comprometido_cd(inputs.pedidos, rec.clasificaciones_desde_cd)
+        comp = comprometido_cd(inputs.pedidos, rec.clasificaciones_desde_cd, cd_id)
         cd = cd.copy()
         cd["comprometido"] = cd["comprometido"] + cd["sku"].map(comp).fillna(0)
     return replace(inputs, stock_tienda=st, stock_cd=cd)

@@ -258,7 +258,8 @@ class RecepcionParams(_Section):
     #: pedidos es de eCommerce y wholesale): se resta lo aprobado / en picking y lo documentado
     #: desde el corte, para no repartir dos veces lo mismo.
     descontar_pedidos_del_cd: bool = True
-    #: Clasificaciones que salen del CD: 1 Reposición, 2 Llenado de canal.
+    #: Sale del CD el pedido con origen = cd_id (320). Si la cabecera no trae el origen, se usan
+    #: estas clasificaciones: 1 Reposición, 2 Llenado de canal.
     clasificaciones_desde_cd: list[int] = Field(default_factory=lambda: [1, 2])
 
 

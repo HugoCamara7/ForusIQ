@@ -584,7 +584,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     m_h["fecha_documento"] = "fecdoc_ph"
     sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, m_h, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
     assert "SAFE_CAST(h.`fecdoc_ph` AS DATE) >= @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5, 6" in sql
+    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7" in sql
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
@@ -639,6 +639,21 @@ def test_comprometido_cd_sin_reserva_de_pedidos_a_tiendas():
     )
     comp = F.comprometido_cd(F.a_pedidos(crudo, {"5"}, set()), [1, 2])
     assert comp.to_dict() == {"5": 7.0}  # 1 aprobado + 2 en picking + 4 documentados hoy
+
+
+def test_comprometido_cd_por_origen_320():
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["18", "18", "18"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["1", "1", "2"],
+            "clasificacion": ["3", "1", "1"],
+            "origen_cod": ["320", "0320", "45"],  # el último sale de la tienda 45
+            "unidades": [1, 2, 4],
+        }
+    )
+    comp = F.comprometido_cd(F.a_pedidos(crudo, {"5"}, set()), [1, 2], "320")
+    assert comp.to_dict() == {"5": 3.0}
 
 
 def test_codigo_pedido_por_nombre():
