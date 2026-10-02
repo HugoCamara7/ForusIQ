@@ -112,6 +112,7 @@ recepcion:                      # envíos aprobados que aún no llegan (no está
   transito_pedidos: true        # tránsito = pedidos hacia la tienda (tablas de pedidos en secrets)
   estados_transito: [1, 2, 3, 6, 7]   # Aprobado, en Picking, Documentado, en Transporte, Prerecepcionado
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
+  recepcionados_post_corte: true # recepcionado desde el corte (stock = cierre de ayer) = tránsito
 
 calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
   aplicar: true                 # en un día sólo reciben las tiendas que reponen ese día

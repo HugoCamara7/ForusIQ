@@ -251,6 +251,9 @@ class RecepcionParams(_Section):
     estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3, 6, 7])
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
+    #: El stock es el cierre de ayer y los pedidos están al minuto: lo recepcionado desde la
+    #: fecha del corte todavía no está en el stock de la tienda, así que cuenta como tránsito.
+    recepcionados_post_corte: bool = True
 
 
 class ReposicionVentaParams(_Section):

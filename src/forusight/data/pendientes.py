@@ -126,7 +126,12 @@ def aplicar_pedidos(inputs, params):
     from forusight.data.fuentes import transito_de_pedidos
 
     rec = params.recepcion
-    tr = transito_de_pedidos(inputs.pedidos, rec.estados_transito, rec.clasificaciones_transito)
+    tr = transito_de_pedidos(
+        inputs.pedidos,
+        rec.estados_transito,
+        rec.clasificaciones_transito,
+        rec.recepcionados_post_corte,
+    )
     st = inputs.stock_tienda.drop(columns="stock_transito", errors="ignore")
     st = st.merge(tr, on=["tienda_id", "sku"], how="outer")
     st[["stock_disponible", "stock_transito"]] = st[

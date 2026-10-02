@@ -194,6 +194,8 @@ ALIAS_PEDIDOS: dict[str, list[str]] = {
         "clase_pedido",
     ],
     "fecha": ["fecha_pedido", "fecped", "fec_pedido", "fecha_creacion", "fecha", "fecmov"],
+    # Recepcionado después del corte de stock (cierre de ayer): todavía no está en el stock.
+    "fecha_recepcion": ["fecrec", "fecha_recepcion", "fec_recepcion", "fecha_recibido"],
 }
 
 #: Detalle de pedidos (`pedidos_detail_table`): pedido × producto × cantidad.

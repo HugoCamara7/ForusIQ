@@ -520,6 +520,13 @@ def sql_pedidos(
         f"{sku_sql(d('id_producto'))} AS id_producto",
         f"CAST({h('estado')} AS STRING) AS estado",
         f"{clasif} AS clasificacion",
+        # Recepcionado el día del corte o después: el stock (cierre del día anterior) no lo tiene.
+        (
+            f"IFNULL(SAFE_CAST({h('fecha_recepcion')} AS DATE) >= @fecha_foto, FALSE)"
+            if "fecha_recepcion" in m_h
+            else "FALSE"
+        )
+        + " AS recibido_post_corte",
         f"SUM({cant}) AS unidades",
     ]
     where = "TRUE"
@@ -531,7 +538,7 @@ def sql_pedidos(
     return (
         f"SELECT {', '.join(sel)}\nFROM {_t(cabecera)} AS h\nJOIN {_t(detalle)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5"
     )
 
 
@@ -550,8 +557,9 @@ def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Seri
 
 
 def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
-    """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos), unidades."""
-    cols = ["tienda_id", "sku", "estado", "clasificacion", "unidades"]
+    """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos),
+    recibido_post_corte, unidades."""
+    cols = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte", "unidades"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     p = pd.DataFrame(
@@ -560,22 +568,39 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
             "sku": sku_canonico(df["id_producto"]),
             "estado": codigo_pedido(df["estado"], _NOMBRES_ESTADO),
             "clasificacion": codigo_pedido(df["clasificacion"], _NOMBRES_CLASIFICACION),
+            "recibido_post_corte": (
+                df["recibido_post_corte"].fillna(False).astype(bool)
+                if "recibido_post_corte" in df
+                else False
+            ),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
     p = p.loc[p["sku"].isin(skus) & p["tienda_id"].ne("") & ~p["tienda_id"].isin(excluidas)]
-    llave = ["tienda_id", "sku", "estado", "clasificacion"]
+    llave = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte"]
     return p.groupby(llave, as_index=False, dropna=False)["unidades"].sum()[cols]
 
 
 def transito_de_pedidos(
-    pedidos: pd.DataFrame, estados: list[int], clasificaciones: list[int]
+    pedidos: pd.DataFrame,
+    estados: list[int],
+    clasificaciones: list[int],
+    recibidos_post_corte: bool = True,
 ) -> pd.DataFrame:
     """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
-    clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella."""
+    clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella.
+
+    El stock es el cierre del día anterior y los pedidos están al minuto: con
+    ``recibidos_post_corte`` lo recepcionado (4) desde la fecha del corte también es
+    tránsito, porque el stock de la tienda todavía no lo trae."""
     if pedidos is None or pedidos.empty:
         return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
-    p = pedidos.loc[pedidos["estado"].isin(estados)]
+    en_estado = pedidos["estado"].isin(estados)
+    if recibidos_post_corte and "recibido_post_corte" in pedidos:
+        en_estado |= pedidos["estado"].eq(4).fillna(False) & pedidos["recibido_post_corte"].astype(
+            bool
+        )
+    p = pedidos.loc[en_estado]
     if p["clasificacion"].notna().any():
         p = p.loc[p["clasificacion"].isin(clasificaciones)]
     out = p.groupby(["tienda_id", "sku"], as_index=False)["unidades"].sum()

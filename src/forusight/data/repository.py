@@ -604,7 +604,7 @@ class FuentesRepository(BigQueryRepository):
                     tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d,
                     tablas["arti"], m_a, con_marcas,
                 ),
-                {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS)},
+                {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS), "fecha_foto": foto},
             )
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")

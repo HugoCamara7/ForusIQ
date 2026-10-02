@@ -551,6 +551,7 @@ def test_mapeo_automatico_de_pedidos_peru_central():
     d = mapeo.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D], mapeo.ALIAS_PEDIDOS_DETALLE)
     assert h["nro_pedido"] == "nroped_ph" and h["tienda_destino"] == "codloc_ph"
     assert h["estado"] == "estado_ph" and h["clasificacion"] == "clasificacion_ph"
+    assert h["fecha_recepcion"] == "fecrec_ph"
     assert d == {
         "nro_pedido": "nroped_pd",
         "id_producto": "codint_pd",
@@ -567,6 +568,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
         "estado": "estado_ph",
         "clasificacion": "clasificacion_ph",
         "fecha": "fecped_ph",
+        "fecha_recepcion": "fecrec_ph",
     }
     m_d = {
         "nro_pedido": "nroped_pd",
@@ -578,6 +580,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "JOIN" in sql and "h.`nroped_ph`" in sql and "d.`nroped_pd`" in sql
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" in sql
+    assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
@@ -596,6 +599,25 @@ def test_transito_de_pedidos_por_estado_y_clasificacion():
     # aprobado 2 + en transporte 3 + prerecepcionado 1; fuera: recepcionado, creado,
     # devolución al CD y el propio CD
     assert tr.to_dict("records") == [{"tienda_id": "18", "sku": "5", "stock_transito": 6.0}]
+
+
+def test_recepcionado_despues_del_corte_es_transito():
+    """Stock = cierre de ayer; pedidos al minuto: lo recibido hoy aún no está en el stock."""
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["18", "18", "18"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["4", "4", "6"],
+            "clasificacion": ["1", "1", "1"],
+            "recibido_post_corte": [True, False, False],
+            "unidades": [2, 10, 3],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, set())
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
+    assert tr["stock_transito"].tolist() == [5.0]  # 2 recibidos hoy + 3 en transporte
+    sin = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    assert sin["stock_transito"].tolist() == [3.0]
 
 
 def test_codigo_pedido_por_nombre():
