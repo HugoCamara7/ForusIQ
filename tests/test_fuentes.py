@@ -510,14 +510,14 @@ def test_stock_bi_con_disponible_y_reservas():
         "reserva_wholesale",
         "reserva_multicanal",
         "disponible",
-        "transito",
+        "transito",  # stock_bi lo trae, pero el tránsito sale de los pedidos
         "talla",
         "fecha_corte",
         "valorizado",
         "reserva_ecommerce",
     ]
     s = M.mapear(cols, M.ALIAS_STOCK)
-    assert s["disponible"] == "disponible" and s["transito"] == "transito"
+    assert s["disponible"] == "disponible" and "transito" not in s
     assert all(s[r] == r for r in M.RESERVAS)
     assert M.faltantes("stock", s) == []
     a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
@@ -551,7 +551,7 @@ def test_mapeo_automatico_de_pedidos_peru_central():
     d = mapeo.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D], mapeo.ALIAS_PEDIDOS_DETALLE)
     assert h["nro_pedido"] == "nroped_ph" and h["tienda_destino"] == "codloc_ph"
     assert h["estado"] == "estado_ph" and h["clasificacion"] == "clasificacion_ph"
-    assert h["fecha_recepcion"] == "fecrec_ph" and h["fecha_documento"] == "fecdoc_ph"
+    assert h["fecha_recepcion"] == "fecrec_ph"
     assert d == {
         "nro_pedido": "nroped_pd",
         "id_producto": "codint_pd",
@@ -581,10 +581,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" in sql
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
-    m_h["fecha_documento"] = "fecdoc_ph"
-    sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, m_h, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
-    assert "SAFE_CAST(h.`fecdoc_ph` AS DATE) >= @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7" in sql
+    assert "GROUP BY 1, 2, 3, 4, 5" in sql
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
@@ -622,38 +619,6 @@ def test_recepcionado_despues_del_corte_es_transito():
     assert tr["stock_transito"].tolist() == [5.0]  # 2 recibidos hoy + 3 en transporte
     sin = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
     assert sin["stock_transito"].tolist() == [3.0]
-
-
-def test_comprometido_cd_sin_reserva_de_pedidos_a_tiendas():
-    """Aprobado y en picking siguen en el CD; documentado sólo cuenta si fue desde el corte;
-    los traspasos entre tiendas no salen del CD."""
-    crudo = pd.DataFrame(
-        {
-            "tienda_cod": ["18"] * 6,
-            "id_producto": ["5"] * 6,
-            "estado": ["1", "2", "6", "6", "3", "1"],
-            "clasificacion": ["1", "2", "1", "1", "1", "3"],
-            "documentado_post_corte": [False, False, True, False, False, False],
-            "unidades": [1, 2, 4, 8, 16, 32],
-        }
-    )
-    comp = F.comprometido_cd(F.a_pedidos(crudo, {"5"}, set()), [1, 2])
-    assert comp.to_dict() == {"5": 7.0}  # 1 aprobado + 2 en picking + 4 documentados hoy
-
-
-def test_comprometido_cd_por_origen_320():
-    crudo = pd.DataFrame(
-        {
-            "tienda_cod": ["18", "18", "18"],
-            "id_producto": ["5", "5", "5"],
-            "estado": ["1", "1", "2"],
-            "clasificacion": ["3", "1", "1"],
-            "origen_cod": ["320", "0320", "45"],  # el último sale de la tienda 45
-            "unidades": [1, 2, 4],
-        }
-    )
-    comp = F.comprometido_cd(F.a_pedidos(crudo, {"5"}, set()), [1, 2], "320")
-    assert comp.to_dict() == {"5": 3.0}
 
 
 def test_codigo_pedido_por_nombre():

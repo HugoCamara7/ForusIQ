@@ -110,18 +110,6 @@ def test_repositorio_sintetico_y_export(resultado_sintetico):
     repo = SyntheticRepository()
     repo.guardar_corrida(resultado_sintetico, "u")
     d = resultado_sintetico.propuesta
-    aprob = pd.DataFrame(
-        {
-            "run_id": d["run_id"],
-            "tienda_id": d["tienda_id"],
-            "sku": d["sku"],
-            "cantidad_propuesta": d["cantidad"],
-            "cantidad_aprobada": d["cantidad"],
-            "comentario": "",
-        }
-    )
-    repo.guardar_aprobacion("RUN-TEST", aprob, "u")
-    assert "RUN-TEST" in repo.aprobaciones
 
     xls = a_excel(resultado_sintetico.detalle, resumen=resultado_sintetico.resumen)
     hojas = pd.read_excel(io.BytesIO(xls), sheet_name=None)

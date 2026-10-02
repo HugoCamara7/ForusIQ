@@ -449,7 +449,7 @@ def sql_stock_foto(
     ]
     if "tienda_nombre" in mapa:
         sel.append(f"ANY_VALUE(CAST({_c(mapa, 'tienda_nombre')} AS STRING)) AS tienda_nombre")
-    for campo in ("stock_tienda", "stock_bodega", "transito", "disponible", *RESERVAS):
+    for campo in ("stock_tienda", "stock_bodega", "disponible", *RESERVAS):
         if campo in mapa:
             sel.append(f"SUM(COALESCE(SAFE_CAST({_c(mapa, campo)} AS FLOAT64), 0)) AS {campo}")
     where = f"DATE({f}) = @fecha_foto"
@@ -529,18 +529,6 @@ def sql_pedidos(
             else "FALSE"
         )
         + " AS recibido_post_corte",
-        (
-            f"IFNULL(SAFE_CAST({h('fecha_documento')} AS DATE) >= @fecha_foto, FALSE)"
-            if "fecha_documento" in m_h
-            else "FALSE"
-        )
-        + " AS documentado_post_corte",
-        (
-            f"TRIM(CAST({h('tienda_origen')} AS STRING))"
-            if "tienda_origen" in m_h
-            else "CAST(NULL AS STRING)"
-        )
-        + " AS origen_cod",
         f"SUM({cant}) AS unidades",
     ]
     where = "TRUE"
@@ -552,7 +540,7 @@ def sql_pedidos(
     return (
         f"SELECT {', '.join(sel)}\nFROM {_t(cabecera)} AS h\nJOIN {_t(detalle)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5"
     )
 
 
@@ -572,9 +560,8 @@ def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Seri
 
 def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
     """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos),
-    recibido_post_corte, documentado_post_corte, unidades."""
-    marcas = ["recibido_post_corte", "documentado_post_corte"]
-    cols = ["tienda_id", "sku", "estado", "clasificacion", *marcas, "origen", "unidades"]
+    recibido_post_corte, unidades."""
+    cols = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte", "unidades"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     p = pd.DataFrame(
@@ -583,17 +570,16 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
             "sku": sku_canonico(df["id_producto"]),
             "estado": codigo_pedido(df["estado"], _NOMBRES_ESTADO),
             "clasificacion": codigo_pedido(df["clasificacion"], _NOMBRES_CLASIFICACION),
-            **{m: (df[m].fillna(False).astype(bool) if m in df else False) for m in marcas},
-            "origen": (
-                df["origen_cod"].map(codigo_tienda).replace("", pd.NA)
-                if "origen_cod" in df
-                else pd.NA
+            "recibido_post_corte": (
+                df["recibido_post_corte"].fillna(False).astype(bool)
+                if "recibido_post_corte" in df
+                else False
             ),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
     p = p.loc[p["sku"].isin(skus) & p["tienda_id"].ne("") & ~p["tienda_id"].isin(excluidas)]
-    llave = ["tienda_id", "sku", "estado", "clasificacion", *marcas, "origen"]
+    llave = cols[:-1]
     return p.groupby(llave, as_index=False, dropna=False)["unidades"].sum()[cols]
 
 
@@ -623,37 +609,6 @@ def transito_de_pedidos(
     out = out.rename(columns={"unidades": "stock_transito"})
     out["stock_transito"] = out["stock_transito"].clip(lower=0)
     return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
-
-
-def comprometido_cd(
-    pedidos: pd.DataFrame, clasificaciones: list[int], cd_id: str | None = None
-) -> pd.Series:
-    """Unidades por SKU que el CD ya comprometió con tiendas y que el disponible del corte
-    (cierre de ayer) todavía cuenta: la reserva de pedidos es de eCommerce y wholesale, no de
-    los pedidos a tiendas.
-
-    * 1 Aprobado y 2 en Picking: siguen físicamente en el CD.
-    * 3 Documentado, 6 en Transporte, 7 Prerecepcionado y 4 Recepcionado: sólo si se
-      documentaron desde la fecha del corte (antes, el corte ya los descontó).
-
-    Salen del CD los pedidos con origen ``cd_id`` (320); si la cabecera no trae el origen, los
-    de las ``clasificaciones`` que salen del CD (Reposición, Llenado de canal).
-    """
-    if pedidos is None or pedidos.empty:
-        return pd.Series(dtype=float, name="comprometido")
-    con_origen = "origen" in pedidos and pedidos["origen"].notna().any()
-    if cd_id and con_origen:
-        p = pedidos.loc[pedidos["origen"].astype("string").eq(codigo_tienda(cd_id)).fillna(False)]
-        p = p.loc[~p["clasificacion"].eq(4).fillna(False)]  # devolución: no sale del CD
-    else:
-        p = pedidos.loc[pedidos["clasificacion"].isin(clasificaciones)]
-    en_cd = p["estado"].isin([1, 2]).fillna(False)
-    if "documentado_post_corte" in p:
-        en_cd |= p["estado"].isin([3, 4, 6, 7]).fillna(False) & p["documentado_post_corte"].astype(
-            bool
-        )
-    out = p.loc[en_cd].groupby("sku")["unidades"].sum().clip(lower=0)
-    return out[out > 0].rename("comprometido")
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:
@@ -845,7 +800,7 @@ def construir_entradas(
 
     # --- última foto: tiendas (sólo stock en sala) y CD (sala + bodega)
     f = foto.copy()
-    for c in ("stock_tienda", "stock_bodega", "transito"):
+    for c in ("stock_tienda", "stock_bodega"):
         if c not in f:
             f[c] = 0.0
     f["sku"] = sku_canonico(f["id_producto"])
@@ -854,11 +809,12 @@ def construir_entradas(
     en_cd = f["tienda_id"].eq(cd)
     tiendas_f = f.loc[~en_cd & ~f["tienda_id"].isin(excluidas)]
     st = tiendas_f.groupby(["tienda_id", "sku"], as_index=False).agg(
-        stock_disponible=("stock_tienda", "sum"), stock_transito=("transito", "sum")
+        stock_disponible=("stock_tienda", "sum")
     )
-    st[["stock_disponible", "stock_transito"]] = st[["stock_disponible", "stock_transito"]].clip(
-        lower=0
-    )
+    st["stock_disponible"] = st["stock_disponible"].clip(lower=0)
+    # stock_bi.transito es la salida de la tienda ORIGEN, no lo que llega: el tránsito sale de
+    # las tablas de pedidos (data.transito.aplicar_pedidos).
+    st["stock_transito"] = 0.0
 
     # --- venta real semanal (cerradas + semana en curso)
     v = ventas.copy()

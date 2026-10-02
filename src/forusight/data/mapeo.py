@@ -170,19 +170,6 @@ ALIAS_PEDIDOS: dict[str, list[str]] = {
         "coddes",
         "destino",
     ],
-    "tienda_origen": [
-        "bodega_origen",  # pedidos_header: bodega_origen_ph / bodega_ph
-        "bodega",
-        "locori",
-        "local_origen",
-        "tienda_origen",
-        "cod_tienda_origen",
-        "codigo_tienda_origen",
-        "centro_origen",
-        "cod_origen",
-        "codori",
-        "origen",
-    ],
     "estado": ["estado_pedido", "estped", "estado", "id_estado", "cod_estado", "status"],
     "clasificacion": [
         "clasificacion",
@@ -196,8 +183,6 @@ ALIAS_PEDIDOS: dict[str, list[str]] = {
     "fecha": ["fecha_pedido", "fecped", "fec_pedido", "fecha_creacion", "fecha", "fecmov"],
     # Recepcionado después del corte de stock (cierre de ayer): todavía no está en el stock.
     "fecha_recepcion": ["fecrec", "fecha_recepcion", "fec_recepcion", "fecha_recibido"],
-    # Documentado (guía) después del corte: al cierre de ayer la mercadería seguía en el CD.
-    "fecha_documento": ["fecdoc", "fecha_documento", "fec_documento", "fecha_guia"],
 }
 
 #: Detalle de pedidos (`pedidos_detail_table`): pedido × producto × cantidad.
@@ -234,7 +219,6 @@ ALIAS_STOCK: dict[str, list[str]] = {
     # En tienda cuenta sólo stock_tiendas; stock_bodega suma únicamente en el CD 320.
     "stock_tienda": ["stock_tiendas", "stock_tienda", "stock", "unidades_stock"],
     "stock_bodega": ["stock_bodega"],
-    "transito": ["stock_transito", "transito", "en_transito", "cant_transito"],
     # CD 320: disponible (ya sin reservas) y cada reserva por separado.
     "disponible": ["disponible", "stock_disponible"],
     "reserva_pedidos": ["reserva_pedidos"],

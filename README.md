@@ -31,7 +31,7 @@ Motor Python puro (src/forusight/engine) ── contratos pandera (data/schemas.
 UI Streamlit ── filtros en memoria (st.fragment), edición (st.data_editor)
         │  load jobs al confirmar
         ▼
-Dataset APP  ── corridas, distribucion_propuesta, distribucion_aprobada, auditoria
+Dataset APP  ── corridas, distribucion_propuesta, auditoria
 ```
 
 ## Estructura
@@ -259,4 +259,4 @@ Ejecutar en BigQuery (consola), sobre el proyecto de Forus, y compartir el resul
 | k | formato de exportación WMS/ERP | pendiente |
 | l | volumetría | pendiente (`sql/discovery/02_volumetria.sql`) |
 | m | destino de despliegue | Streamlit Cloud, como los otros Control Center (supuesto) |
-| n | proyecto GCP para el dataset APP | pendiente: hasta entonces las aprobaciones no se persisten |
+| n | proyecto GCP para el dataset APP | sólo modo MART (corridas y auditoría); las aprobaciones no se guardan |

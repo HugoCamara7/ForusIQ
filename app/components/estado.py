@@ -158,16 +158,14 @@ def _correr_motor(
     from dataclasses import replace
 
     from forusight.data import calendario as CAL
-    from forusight.data import pendientes as PEND
+    from forusight.data import transito as TR
 
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
-    # Tránsito: siempre de los pedidos del sistema (ya no se guardan las aprobaciones).
-    transito_pedidos = PEND.usa_pedidos(inputs, params)
-    if transito_pedidos:
-        inputs = PEND.aplicar_pedidos(inputs, params, ajustes().cd_id)
-    else:  # sin tablas de pedidos legibles: sin tránsito (se avisa en el diagnóstico)
-        inputs = PEND.preparar_transito(inputs, params)
+    # Tránsito: pedidos del sistema hacia la tienda (data.transito).
+    transito_pedidos = TR.usa_pedidos(inputs, params)
+    if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
+        inputs = TR.aplicar_pedidos(inputs, params)
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
@@ -523,7 +521,7 @@ def _correr_reporte(
 
     params = EngineParams.model_validate_json(params_json)
     inp, diag = _entradas_reporte(contenido, marcas)
-    # El tránsito es el del reporte (pedidos del sistema): ya no se suman aprobaciones guardadas.
+    # El tránsito es el que trae el reporte (Stock Trán. Int. + Prov.).
     base, n_bloq = R.aplicar_surtido(
         inp.reporte, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
     )

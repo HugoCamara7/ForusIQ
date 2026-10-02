@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 
-from forusight.data import pendientes as PEND
 from forusight.data import planificacion as PLAN
 from forusight.engine.pipeline import ejecutar
 from tests.builders import CORTE, Escenario, params
@@ -127,20 +126,3 @@ def test_maestro_desde_reporte_y_guardado():
     r = PLAN.desde_bytes(PLAN.a_bytes(u))
     assert len(r.claves) == 2 and r.claves["sku"].tolist() == u.claves["sku"].tolist()
     assert len(PLAN.vigente(u, "2026-12-31", 30).claves) == 0
-
-
-def test_transito_y_cd_de_aprobaciones():
-    inp, (s38, _, _) = _escenario()
-    inp.dim_tienda["zona"] = "LIMA"
-    pend = pd.DataFrame({"tienda_id": ["T1"], "sku": [s38], "cantidad": [5]})
-    p = params(recepcion={"descontar_del_cd": False, "transito_solo_provincia": True})
-    out = PEND.aplicar_a_entradas(inp, pend, p)
-    assert out.stock_cd.set_index("sku").loc[s38, "comprometido"] == 0  # no se resta dos veces
-    st = out.stock_tienda.set_index("sku")
-    assert st.loc[s38, "stock_transito"] == 0  # Lima: ya llegó
-    inp.dim_tienda["zona"] = "PROVINCIA"
-    st = PEND.aplicar_a_entradas(inp, pend, p).stock_tienda.set_index("sku")
-    assert st.loc[s38, "stock_transito"] == 5
-    inp.stock_tienda["stock_transito"] = 9.0
-    sin = PEND.preparar_transito(inp, params(recepcion={"usar_transito_bigquery": False}))
-    assert (sin.stock_tienda["stock_transito"] == 0).all()

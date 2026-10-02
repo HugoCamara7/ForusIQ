@@ -104,17 +104,11 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
     B: {factor_cobertura: 1.0}
     C: {factor_cobertura: 0.9, importancia: 0.25}
 
-recepcion:                      # envíos aprobados que aún no llegan (no están en el corte de stock)
-  dias_pendiente: 3             # aprobaciones de los últimos 3 días cuentan como tránsito (L-M-V)
-  descontar_del_cd: false       # el corte del CD ya descuenta lo despachado: no restarlo dos veces
-  transito_solo_provincia: true # en Lima el envío llega al día siguiente
-  usar_transito_bigquery: false # stock_bi.transito es salida de la tienda origen, no llegada del CD
-  transito_pedidos: true        # tránsito = pedidos hacia la tienda (tablas de pedidos en secrets)
+recepcion:                      # tránsito = pedidos del sistema hacia la tienda (tablas de pedidos)
+  transito_pedidos: true
   estados_transito: [1, 2, 3, 6, 7]   # Aprobado, en Picking, Documentado, en Transporte, Prerecepcionado
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
-  recepcionados_post_corte: true # recepcionado desde el corte (stock = cierre de ayer) = tránsito
-  descontar_pedidos_del_cd: false # una corrida por la mañana: el CD es el disponible del stock
-  clasificaciones_desde_cd: [1, 2] # Reposición y Llenado de canal salen del CD
+  recepcionados_post_corte: true      # recepcionado desde el corte (stock = cierre de ayer) = tránsito
 
 calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
   aplicar: true                 # en un día sólo reciben las tiendas que reponen ese día
