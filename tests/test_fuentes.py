@@ -375,7 +375,7 @@ def test_matriz_marca_cadena_de_neogistica():
     assert "HUSH PUPPIES" in m["HP"] and "HUSH PUPPIES" in m["FB"]
     assert "HUSH PUPPIES" not in m["RKF"] and m["CLB"] == {"COLUMBIA"} and m["VANS"] == {"VANS"}
     cat = CAD.catalogo_tiendas()
-    assert len(cat) == 56 and set(cat["cadena"]) == set(m)
+    assert len(cat) == 62 and cat["codigo_tienda"].is_unique and set(cat["cadena"]) == set(m)
     assert CAD.marcas_por_cadena({"AZ": ["azaleia"]}) == {"AZ": {"AZALEIA"}}
 
 
@@ -581,7 +581,8 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" in sql
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5" in sql
+    assert "SAFE_CAST(h.`fecped_ph` AS DATE) AS fecha_pedido" in sql
+    assert "GROUP BY 1, 2, 3, 4, 5, 6" in sql
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
@@ -619,6 +620,26 @@ def test_recepcionado_despues_del_corte_es_transito():
     assert tr["stock_transito"].tolist() == [5.0]  # 2 recibidos hoy + 3 en transporte
     sin = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
     assert sin["stock_transito"].tolist() == [3.0]
+
+
+def test_transito_solo_pedidos_recientes():
+    """Un pedido abierto de hace más de 15 días es un pedido sin cerrar, no tránsito."""
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["18", "18", "18"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["1", "6", "3"],
+            "clasificacion": ["1", "1", "1"],
+            "fecha_pedido": ["2026-09-25", "2026-08-01", None],
+            "unidades": [2, 40, 1],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, set())
+    corte = pd.Timestamp("2026-10-02")
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], desde=corte - pd.Timedelta(days=15))
+    assert tr["stock_transito"].tolist() == [3.0]  # 2 recientes + 1 sin fecha; fuera los 40
+    sin_ventana = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
+    assert sin_ventana["stock_transito"].tolist() == [43.0]
 
 
 def test_codigo_pedido_por_nombre():
