@@ -113,6 +113,28 @@ def preparar_transito(inputs, params):
     return replace(inputs, stock_tienda=st)
 
 
+def usa_pedidos(inputs, params) -> bool:
+    """El tránsito sale de las tablas de pedidos (si se leyeron y está activado)."""
+    return bool(params.recepcion.transito_pedidos) and getattr(inputs, "pedidos", None) is not None
+
+
+def aplicar_pedidos(inputs, params):
+    """Tránsito de cada tienda × SKU = pedidos hacia la tienda en los estados y clasificaciones
+    de ``params.recepcion`` (reemplaza el tránsito de stock_bi y el de las aprobaciones)."""
+    from dataclasses import replace
+
+    from forusight.data.fuentes import transito_de_pedidos
+
+    rec = params.recepcion
+    tr = transito_de_pedidos(inputs.pedidos, rec.estados_transito, rec.clasificaciones_transito)
+    st = inputs.stock_tienda.drop(columns="stock_transito", errors="ignore")
+    st = st.merge(tr, on=["tienda_id", "sku"], how="outer")
+    st[["stock_disponible", "stock_transito"]] = st[
+        ["stock_disponible", "stock_transito"]
+    ].fillna(0.0)
+    return replace(inputs, stock_tienda=st)
+
+
 def aplicar_a_entradas(inputs, pend: pd.DataFrame, params=None):
     """Suma como tránsito en la tienda destino (y, si se pide, descuenta del CD).
 

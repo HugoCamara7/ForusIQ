@@ -307,6 +307,8 @@ class FuentesRepository(BigQueryRepository):
             "ventas": tabla_configurada("ventas", self.secrets),
             "tiendas": tabla_configurada("tiendas", self.secrets),
             "cadena": tabla_configurada("cadena", self.secrets),
+            "pedidos": tabla_configurada("pedidos", self.secrets),
+            "pedidos_detalle": tabla_configurada("pedidos_detalle", self.secrets),
         }
 
     def _tabla_arti(self) -> str:
@@ -370,8 +372,8 @@ class FuentesRepository(BigQueryRepository):
             try:
                 cols, _ = self.columnas(tabla)
             except Exception as exc:
-                if fuente in ("tiendas", "cadena"):
-                    continue  # maestros opcionales: se informa en el diagnóstico
+                if fuente in ("tiendas", "cadena", "pedidos", "pedidos_detalle"):
+                    continue  # opcionales: se informa en el diagnóstico
                 if fuente != "ventas":
                     raise
                 # La venta es opcional: nunca bloquea la corrida.
@@ -563,9 +565,60 @@ class FuentesRepository(BigQueryRepository):
                 )
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer la venta diaria: {explicar_error(exc)}")
+        # Pedidos (cabecera + detalle): el tránsito hacia cada tienda sale de aquí.
+        if tablas["pedidos"] or tablas["pedidos_detalle"]:
+            entradas.pedidos = self._leer_pedidos(
+                q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag
+            )
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
         return entradas
+
+    def _leer_pedidos(self, q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag):
+        """Pedidos por tienda destino × SKU × estado × clasificación (None si no se pudo)."""
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+        from forusight.data.bq_client import explicar_error
+
+        faltan = [f for f in ("pedidos", "pedidos_detalle") if f not in mapas]
+        if faltan:
+            diag.notas.append(
+                "Tránsito: no se pudo leer "
+                + " ni ".join(f"`{tablas[f] or f}`" for f in faltan)
+                + " (revisa `pedidos_header_table` y `pedidos_detail_table`)."
+            )
+            return None
+        m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
+        for fuente, mapa in (("pedidos", m_h), ("pedidos_detalle", m_d)):
+            falta = mapeo.faltantes(fuente, mapa)
+            if falta:
+                diag.notas.append(
+                    f"Tránsito: mapeo incompleto de {tablas[fuente]} (falta "
+                    f"{', '.join(falta)}). Corrígelo en la página Conexión."
+                )
+                return None
+        try:
+            crudo = q(
+                "pedidos",
+                F.sql_pedidos(
+                    tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d,
+                    tablas["arti"], m_a, con_marcas,
+                ),
+                {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS)},
+            )
+        except Exception as exc:
+            diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
+            return None
+        pedidos = F.a_pedidos(
+            crudo, set(entradas.dim_producto["sku"]), excl | {F.codigo_tienda(self.settings.cd_id)}
+        )
+        if "clasificacion" not in m_h:
+            diag.notas.append(
+                "Tránsito: la cabecera de pedidos no tiene clasificación mapeada; se cuentan "
+                "todas las clasificaciones."
+            )
+        diag.filas["pedidos_tienda_sku"] = len(pedidos)
+        return pedidos
 
     def revisar_venta(self, marcas: list[str]) -> tuple[dict, pd.DataFrame]:
         """Última fecha de venta de la tabla y de la marca, y filas posteriores (si hay)."""

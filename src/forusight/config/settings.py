@@ -243,6 +243,14 @@ class RecepcionParams(_Section):
     #: stock_bi.transito es la salida de la tienda ORIGEN (traspasos), no lo que viene del CD:
     #: no se suma a la posición.
     usar_transito_bigquery: bool = True
+    #: Tránsito desde las tablas de pedidos (pedidos_header_table + pedidos_detail_table):
+    #: reemplaza al de stock_bi y al de las aprobaciones anteriores de Forusight.
+    transito_pedidos: bool = True
+    #: 1 Aprobado, 2 en Picking, 3 Documentado, 6 en Transporte, 7 Prerecepcionado
+    #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
+    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3, 6, 7])
+    #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
+    clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
 
 
 class ReposicionVentaParams(_Section):

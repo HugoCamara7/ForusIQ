@@ -64,6 +64,18 @@ st.dataframe(
                 "tabla": tablas["cadena"] or "—",
                 "estado": "secrets" if tablas["cadena"] else "opcional: `maestro_cadena_table`",
             },
+            {
+                "dato": "Pedidos · cabecera (tránsito)",
+                "tabla": tablas["pedidos"] or "—",
+                "estado": "secrets" if tablas["pedidos"] else "opcional: `pedidos_header_table`",
+            },
+            {
+                "dato": "Pedidos · detalle (tránsito)",
+                "tabla": tablas["pedidos_detalle"] or "—",
+                "estado": (
+                    "secrets" if tablas["pedidos_detalle"] else "opcional: `pedidos_detail_table`"
+                ),
+            },
         ]
     ),
     hide_index=True,
@@ -101,6 +113,8 @@ if mapas:
         "stock": "Stock",
         "tiendas": "Maestro tiendas",
         "cadena": "Maestro modelo→cadena",
+        "pedidos": "Pedidos · cabecera",
+        "pedidos_detalle": "Pedidos · detalle",
     }
     snippet = {}
     for fuente, tab in zip(mapas, st.tabs([etiquetas[f] for f in mapas]), strict=True):

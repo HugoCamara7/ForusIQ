@@ -65,6 +65,9 @@ CLAVES_TABLA = {
     "stock": ("stock_table", "tabla_stock"),
     "cadena": ("maestro_cadena_table", "cadena_table"),
     "tiendas": ("maestro_tiendas_table", "tiendas_table"),
+    # Pedidos (cabecera y detalle): el tránsito hacia cada tienda.
+    "pedidos": ("pedidos_header_table", "pedidos_table"),
+    "pedidos_detalle": ("pedidos_detail_table", "pedidos_detalle_table"),
 }
 
 

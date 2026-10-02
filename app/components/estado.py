@@ -163,8 +163,14 @@ def _correr_motor(
 
     params = EngineParams.model_validate_json(params_json)
     inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
-    pend = _pend_df(pend_csv)
-    inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)
+    transito_pedidos = PEND.usa_pedidos(inputs, params)
+    if transito_pedidos:
+        # Tránsito real de los pedidos del sistema: no se usan las aprobaciones anteriores.
+        pend = PEND.vacio()
+        inputs = PEND.aplicar_pedidos(inputs, params)
+    else:
+        pend = _pend_df(pend_csv)
+        inputs = PEND.aplicar_a_entradas(PEND.preparar_transito(inputs, params), pend, params)
     dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
@@ -200,6 +206,18 @@ def _correr_motor(
     diag = {
         **diag,
         "pendientes": _resumen_pend(pend),
+        "transito_pedidos": (
+            {
+                "unidades": int(inputs.stock_tienda["stock_transito"].sum()),
+                "tiendas": int(
+                    inputs.stock_tienda.loc[
+                        inputs.stock_tienda["stock_transito"] > 0, "tienda_id"
+                    ].nunique()
+                ),
+            }
+            if transito_pedidos
+            else None
+        ),
         "dia_reposicion": dia,
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
@@ -597,12 +615,29 @@ def _pend_github(huella: str, dias: int, dia: str) -> tuple[str, list[str]]:
     return df.to_csv(index=False), usados
 
 
+def transito_por_pedidos() -> bool:
+    """Corrida de BigQuery con las tablas de pedidos en los secrets: el tránsito sale de los
+    pedidos y no se usan las aprobaciones anteriores ni los archivos de envíos."""
+    from forusight.data.bq_client import tabla_configurada
+
+    ss = st.session_state
+    if ss.get("fuente") != "bigquery" or ss.get("reporte"):
+        return False
+    if not ss.params.recepcion.transito_pedidos:
+        return False
+    s = secretos()
+    return bool(tabla_configurada("pedidos", s) and tabla_configurada("pedidos_detalle", s))
+
+
 def pendientes_csv() -> str:
     """Envíos pendientes de recepción: aprobaciones recientes en GitHub + archivos subidos."""
     from forusight.data import pendientes as PEND
     from forusight.data.github_store import config_github
 
     ss = st.session_state
+    if transito_por_pedidos():
+        ss.pend_fuentes = []
+        return ""
     partes, fuentes = [], []
     for contenido, nombre in ss.get("pend_archivos") or []:
         partes.append(PEND.leer_archivo(contenido, nombre))
@@ -838,7 +873,10 @@ def barra_lateral(paginas: list | None = None) -> None:
                     help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
                 ss.dia_reposicion = ss.sb_dia
-            archivos_p = st.file_uploader(
+            pedidos = transito_por_pedidos()
+            if pedidos:
+                st.caption("Tránsito: pedidos del sistema (aprobados hasta prerecepcionados).")
+            archivos_p = [] if pedidos else st.file_uploader(
                 "Envíos aún no recibidos (opcional)",
                 type=["csv", "xlsx"],
                 accept_multiple_files=True,
@@ -896,7 +934,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                 ss.niveles_clave = ""
             from forusight.data.github_store import config_github
 
-            if config_github(secretos()) is not None:
+            if config_github(secretos()) is not None and not transito_por_pedidos():
                 if "sb_pend_github" not in ss:
                     ss.sb_pend_github = ss.get("pend_github", True)
                 st.toggle(

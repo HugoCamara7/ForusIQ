@@ -144,6 +144,83 @@ ALIAS_CADENA: dict[str, list[str]] = {
     "cadena": ["cadena", "cod_cadena", "tipo_cadena", "desc_cadena", "nombre_cadena"],
 }
 
+#: Cabecera de pedidos (`pedidos_header_table`): un pedido por fila, con su estado y
+#: clasificación (1. Reposición, 2. Llenado de canal, 3. Traspaso tiendas, 4. Devolución CD).
+ALIAS_PEDIDOS: dict[str, list[str]] = {
+    "nro_pedido": [
+        "nroped",
+        "nro_pedido",
+        "numero_pedido",
+        "num_pedido",
+        "id_pedido",
+        "cod_pedido",
+        "pedido",
+        "folio",
+    ],
+    "tienda_destino": [
+        "codloc",  # stg_pe_perucentral_pedidos_header: local que recibe (codloc_ph)
+        "locdes",
+        "local_destino",
+        "tienda_destino",
+        "cod_tienda_destino",
+        "codigo_tienda_destino",
+        "centro_destino",
+        "bodega_destino",
+        "cod_destino",
+        "coddes",
+        "destino",
+    ],
+    "tienda_origen": [
+        "bodega_origen",  # pedidos_header: bodega_origen_ph / bodega_ph
+        "bodega",
+        "locori",
+        "local_origen",
+        "tienda_origen",
+        "cod_tienda_origen",
+        "codigo_tienda_origen",
+        "centro_origen",
+        "cod_origen",
+        "codori",
+        "origen",
+    ],
+    "estado": ["estado_pedido", "estped", "estado", "id_estado", "cod_estado", "status"],
+    "clasificacion": [
+        "clasificacion",
+        "clasif",
+        "id_clasificacion",
+        "cod_clasificacion",
+        "tipo_pedido",
+        "tipped",
+        "clase_pedido",
+    ],
+    "fecha": ["fecha_pedido", "fecped", "fec_pedido", "fecha_creacion", "fecha", "fecmov"],
+}
+
+#: Detalle de pedidos (`pedidos_detail_table`): pedido × producto × cantidad.
+ALIAS_PEDIDOS_DETALLE: dict[str, list[str]] = {
+    "nro_pedido": ALIAS_PEDIDOS["nro_pedido"],
+    "id_producto": ["codint", "codpro", "id_producto", "cod_producto", "codint_ma", "sku"],
+    # Despachada si ya salió del origen; si viene en 0 (aprobado, picking), la pedida.
+    "cantidad_despachada": [
+        "cantidad_despachada",
+        "candes",
+        "cant_despachada",
+        "cantidad_enviada",
+        "cantidad_documentada",
+    ],
+    "cantidad": [
+        "cantidad_aprobada",
+        "cantid",
+        "cansol",
+        "canapr",
+        "cantidad_pedida",
+        "canped",
+        "cantidad",
+        "cant",
+        "unidades",
+    ],
+}
+
 #: Stock por fecha de corte (`stock_table`), p. ej. stg_pe_central_stock_bi.
 ALIAS_STOCK: dict[str, list[str]] = {
     "fecha": ["fecha_corte", "fec_corte", "fecha", "fecha_stock"],
@@ -178,6 +255,8 @@ FUENTES = {
     "stock": ALIAS_STOCK,
     "tiendas": ALIAS_TIENDAS,
     "cadena": ALIAS_CADENA,
+    "pedidos": ALIAS_PEDIDOS,
+    "pedidos_detalle": ALIAS_PEDIDOS_DETALLE,
 }
 
 
@@ -201,6 +280,10 @@ def faltantes(fuente: str, mapa: Mapping[str, str]) -> list[str]:
         return [c for c in ("tienda_cod", "tienda_nombre") if c not in mapa]
     if fuente == "cadena":
         return [c for c in ("cod_modelo", "cadena") if c not in mapa]
+    if fuente == "pedidos":
+        return [c for c in ("nro_pedido", "tienda_destino", "estado") if c not in mapa]
+    if fuente == "pedidos_detalle":
+        return [c for c in ("nro_pedido", "id_producto", "cantidad") if c not in mapa]
     raise KeyError(fuente)
 
 

@@ -43,6 +43,9 @@ TABLAS_POR_DEFECTO = {"arti": TABLA_ARTI, "stock": TABLA_STOCK}
 #: INFORMATION_SCHEMA no responde (p. ej. la cuenta no tiene permiso de metadatos).
 #: Venta retail (tabla de hechos). Columnas informadas por Forus.
 TABLA_VENTA_RETAIL = "forus-analitica-prod-datalake.silver.ft_pe_venta_retail"
+#: Pedidos de Perú central (cabecera _ph y detalle _pd): de aquí sale el tránsito.
+TABLA_PEDIDOS_H = "forus-analitica-prod-datalake.pe_bronze.stg_pe_perucentral_pedidos_header"
+TABLA_PEDIDOS_D = "forus-analitica-prod-datalake.pe_bronze.stg_pe_perucentral_pedidos_detail"
 
 COLUMNAS_CONOCIDAS = {
     TABLA_VENTA_RETAIL: [
@@ -100,6 +103,82 @@ COLUMNAS_CONOCIDAS = {
         "disponible",
         "transito",
         "valorizado",
+    ],
+    TABLA_PEDIDOS_H: [
+        "nroped_ph",
+        "idclie_ph",
+        "fecped_ph",
+        "fecent_ph",
+        "codpag_ph",
+        "apro01_ph",
+        "fecap1_ph",
+        "apro02_ph",
+        "fecap2_ph",
+        "estado_ph",
+        "codloc_ph",
+        "codven_ph",
+        "nroorc_ph",
+        "dirdes_ph",
+        "comdes_ph",
+        "ciudes_ph",
+        "fecexp_ph",
+        "priori_ph",
+        "fecreg_ph",
+        "fecmls_ph",
+        "fecdoc_ph",
+        "fecrec_ph",
+        "tipubi_ph",
+        "origen_ph",
+        "condicion_ph",
+        "bodega_ph",
+        "empresa_ph",
+        "succli_ph",
+        "canal_ph",
+        "ordcli_ph",
+        "clasificacion_ph",
+        "vendedor_ph",
+        "motivo_ph",
+        "bodegadespacho_ph",
+        "urletiqueta_ph",
+        "sitioid_ph",
+        "idecommerce_ph",
+        "codigosdireccion_ph",
+        "osoperador_ph",
+        "operador_ph",
+        "tipodespacho_ph",
+        "localoperador_ph",
+        "direccion2_ph",
+        "autorizacionpago_ph",
+        "destinatario_ph",
+        "documentocomprador_ph",
+        "nombrecomprador_ph",
+        "tipopago_ph",
+        "fechapago_ph",
+        "proveedor_ph",
+        "fincheckout_ph",
+        "iniciocheckout_ph",
+        "shgroup_ph",
+        "ecommerceorigen_ph",
+        "tipoorden_ph",
+        "bodega_origen_ph",
+        "docventa_ph",
+        "complemento_ph",
+        "reenvio_ph",
+        "usuarioorigen_ph",
+        "sitiomkp_ph",
+    ],
+    TABLA_PEDIDOS_D: [
+        "nroped_pd",
+        "iddeta_pd",
+        "codint_pd",
+        "precio_pd",
+        "canped_pd",
+        "candes_pd",
+        "estado_pd",
+        "dsctoit_pd",
+        "dsctoto_pd",
+        "preori_pd",
+        "codloc_pd",
     ],
     TABLA_ARTI: [
         "CODINT_MA",
@@ -377,6 +456,132 @@ def sql_stock_foto(
     if con_marcas:
         where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2"
+
+
+#: Pedidos más antiguos que esto no se leen (un pedido olvidado en «Aprobado» no es tránsito).
+DIAS_PEDIDOS = 90
+
+#: Estados y clasificaciones de pedidos del sistema (código → nombre).
+ESTADOS_PEDIDO = {
+    0: "Creado",
+    1: "Aprobado",
+    2: "en Picking",
+    3: "Documentado",
+    4: "Recepcionado",
+    6: "en Transporte",
+    7: "Prerecepcionado",
+}
+CLASIFICACIONES_PEDIDO = {
+    1: "Reposición",
+    2: "Llenado de canal",
+    3: "Traspaso tiendas",
+    4: "Devolución CD",
+}
+# Si el estado o la clasificación vienen como texto sin número (el orden importa:
+# «PRERECEPCIONADO» contiene «RECEPCIONADO»).
+_NOMBRES_ESTADO = [
+    ("PRERECEP", 7),
+    ("RECEPCION", 4),
+    ("TRANSPORTE", 6),
+    ("DOCUMENT", 3),
+    ("PICKING", 2),
+    ("APROBAD", 1),
+    ("CREAD", 0),
+]
+_NOMBRES_CLASIFICACION = [("REPOSIC", 1), ("LLENADO", 2), ("TRASPASO", 3), ("DEVOLUC", 4)]
+
+
+def sql_pedidos(
+    cabecera: str,
+    m_h: Mapping[str, str],
+    detalle: str,
+    m_d: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    con_marcas: bool,
+) -> str:
+    """Unidades de pedidos por tienda destino × SKU × estado × clasificación."""
+
+    def h(campo: str) -> str:
+        return f"h.{_c(m_h, campo)}"
+
+    def d(campo: str) -> str:
+        return f"d.{_c(m_d, campo)}"
+
+    num = "SAFE_CAST({} AS FLOAT64)"
+    cant = num.format(d("cantidad"))
+    if "cantidad_despachada" in m_d:
+        cant = f"COALESCE(NULLIF({num.format(d('cantidad_despachada'))}, 0), {cant})"
+    clasif = (
+        f"CAST({h('clasificacion')} AS STRING)" if "clasificacion" in m_h else "CAST(NULL AS STRING)"
+    )
+    sel = [
+        f"TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod",
+        f"{sku_sql(d('id_producto'))} AS id_producto",
+        f"CAST({h('estado')} AS STRING) AS estado",
+        f"{clasif} AS clasificacion",
+        f"SUM({cant}) AS unidades",
+    ]
+    where = "TRUE"
+    if "fecha" in m_h:
+        fecha = f"SAFE_CAST({h('fecha')} AS DATE)"
+        where = f"({fecha} IS NULL OR {fecha} >= @desde_pedidos)"
+    if con_marcas:
+        where += " " + filtro_marca_arti(d("id_producto"), arti, mapa_arti)
+    return (
+        f"SELECT {', '.join(sel)}\nFROM {_t(cabecera)} AS h\nJOIN {_t(detalle)} AS d\n"
+        f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4"
+    )
+
+
+def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Series:
+    """«1», «1.-Reposicion», «6. en Transporte» o «Aprobado» → código (NA si no se reconoce)."""
+    t = valores.astype("string").str.strip()
+    cod = pd.to_numeric(t.str.extract(r"^(\d+)")[0], errors="coerce")
+    sin_num = cod.isna() & t.notna()
+    if sin_num.any():
+        plano = t[sin_num].str.upper()
+        por_nombre = pd.Series(np.nan, index=plano.index)
+        for patron, c in reversed(nombres):  # el primero de la lista gana
+            por_nombre = por_nombre.mask(plano.str.contains(patron, regex=False).fillna(False), c)
+        cod = cod.mask(sin_num, por_nombre)
+    return cod.astype("Int64")
+
+
+def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
+    """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos), unidades."""
+    cols = ["tienda_id", "sku", "estado", "clasificacion", "unidades"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    p = pd.DataFrame(
+        {
+            "tienda_id": df["tienda_cod"].map(codigo_tienda),
+            "sku": sku_canonico(df["id_producto"]),
+            "estado": codigo_pedido(df["estado"], _NOMBRES_ESTADO),
+            "clasificacion": codigo_pedido(df["clasificacion"], _NOMBRES_CLASIFICACION),
+            "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
+        }
+    )
+    p = p.loc[p["sku"].isin(skus) & p["tienda_id"].ne("") & ~p["tienda_id"].isin(excluidas)]
+    llave = ["tienda_id", "sku", "estado", "clasificacion"]
+    return p.groupby(llave, as_index=False, dropna=False)["unidades"].sum()[cols]
+
+
+def transito_de_pedidos(
+    pedidos: pd.DataFrame, estados: list[int], clasificaciones: list[int]
+) -> pd.DataFrame:
+    """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
+    clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella."""
+    if pedidos is None or pedidos.empty:
+        return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
+    p = pedidos.loc[pedidos["estado"].isin(estados)]
+    if p["clasificacion"].notna().any():
+        p = p.loc[p["clasificacion"].isin(clasificaciones)]
+    out = p.groupby(["tienda_id", "sku"], as_index=False)["unidades"].sum()
+    out = out.rename(columns={"unidades": "stock_transito"})
+    out["stock_transito"] = out["stock_transito"].clip(lower=0)
+    return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:
