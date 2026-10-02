@@ -279,7 +279,9 @@ class SurtidoParams(_Section):
 
     #: Sólo se reponen estas temporadas comerciales (vacío = todas). La temporada sale del
     #: maestro de temporadas (reportes de Neogística y de bloqueos), no de ARTI.
-    temporadas_reponer: list[str] = Field(default_factory=lambda: ["INVIERNO 2026", "VERANO 2026"])
+    temporadas_reponer: list[str] = Field(
+        default_factory=lambda: ["INVIERNO 2026", "VERANO 2026", "ESCOLAR 2026", "INVIERNO 2027"]
+    )
     #: Usar la temporada de ARTI cuando el modelo-color no está en el maestro de temporadas
     #: (ARTI no trae la temporada comercial: apagado).
     temporadas_en_bigquery: bool = False
