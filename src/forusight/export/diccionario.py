@@ -244,8 +244,10 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Stock Trán. Int. [un]": (
         STOCK,
         "Unidades en camino a la tienda.",
-        "stock_bi · transito + envíos aprobados en los últimos 3 días aún no recibidos.",
-        "stock_bi · transito + aprobaciones guardadas",
+        "Pedidos del sistema hacia la tienda: aprobados, en picking, documentados, en "
+        "transporte y prerecepcionados (reposición, llenado de canal y traspasos), más lo "
+        "recepcionado desde el corte de stock (el stock es el cierre del día anterior).",
+        "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),
     "Posición Stock [un]": (
