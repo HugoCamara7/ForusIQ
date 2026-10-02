@@ -149,6 +149,23 @@ def test_exposicion_inferida_sin_historial_de_stock():
     assert "N" not in e.index.get_level_values(0)  # sin stock ni venta: nunca tuvo
 
 
+def test_nota_de_credito_llega_negativa_al_motor():
+    """La semana con nota de crédito (venta neta negativa) no se descarta ni se pone en 0."""
+    lunes = list(pd.date_range("2026-06-29", periods=12, freq="7D"))
+    ventas = pd.DataFrame(
+        [
+            {"semana_inicio": lunes[2], "tienda_id": "1", "sku": "A", "unidades": 3.0},
+            {"semana_inicio": lunes[5], "tienda_id": "1", "sku": "A", "unidades": -1.0},
+            # sólo nota de crédito y sin stock: igual debe llegar
+            {"semana_inicio": lunes[7], "tienda_id": "1", "sku": "B", "unidades": -2.0},
+        ]
+    )
+    stock = pd.DataFrame({"tienda_id": ["1"], "sku": ["A"], "stock_disponible": [1.0]})
+    e = F.inferir_exposicion(ventas, stock, lunes)
+    assert e.loc[e["sku"].eq("A"), "unidades"].sum() == 2.0  # 3 vendidos − 1 devuelto
+    assert e.loc[e["sku"].eq("B"), "unidades"].sum() == -2.0
+
+
 def test_archivo_stock_cd():
     df = pd.DataFrame(
         {

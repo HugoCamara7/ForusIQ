@@ -148,6 +148,7 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
         out["demanda_sku"] = np.where(
             usa, (1 - w) * out["demanda_sku"] + w * propia, out["demanda_sku"]
         )
+    out["demanda_sku"] = out["demanda_sku"].clip(lower=0)  # venta neta: pronóstico >= 0
     # Nivel máximo por talla (como el reporte de distribución de Forus): demanda de la talla
     # en la cobertura + stock de seguridad z·√(demanda·cobertura), redondeado hacia arriba.
     cob = params.cobertura

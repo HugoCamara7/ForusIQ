@@ -42,7 +42,7 @@ class VentaSemanalSchema(_Base):
     semana_inicio: Series[pd.Timestamp] = pa.Field(nullable=False)
     tienda_id: Series[str] = pa.Field(nullable=False)
     sku: Series[str] = pa.Field(nullable=False)
-    unidades: Series[float] = pa.Field(nullable=False)  # venta neta (PENDIENTE (b))
+    unidades: Series[float] = pa.Field(nullable=False)  # venta neta: notas de crédito en negativo
     dias_con_stock: Series[int] = pa.Field(ge=0, le=7, nullable=False)
 
     class Config:
@@ -119,8 +119,8 @@ class DistribucionSchema(_Base):
     estado_sku: Series[str] = pa.Field(isin=ESTADOS)
     stock_tienda: Series[float] = pa.Field(ge=0)
     stock_transito: Series[float] = pa.Field(ge=0)
-    venta_4s: Series[float] = pa.Field(ge=0)
-    venta_12s: Series[float] = pa.Field(ge=0)
+    venta_4s: Series[float] = pa.Field()  # neta: las notas de crédito restan
+    venta_12s: Series[float] = pa.Field()
     demanda_semanal: Series[float] = pa.Field(ge=0)
     stock_objetivo: Series[int] = pa.Field(ge=0)
     necesidad: Series[int] = pa.Field(ge=0)

@@ -290,7 +290,7 @@ def entradas_desde_reporte(df: pd.DataFrame):
     )
     v["semana_inicio"] = pd.to_datetime(v["semana_inicio"])
     v["unidades"] = _num(v["unidades"])
-    v = v.loc[v["unidades"] > 0]
+    v = v.loc[v["unidades"].ne(0)]  # neta: las notas de crédito restan
     pos = posicion(t)
     stock = pd.DataFrame(
         {

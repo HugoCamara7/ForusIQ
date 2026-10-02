@@ -490,7 +490,7 @@ def inferir_exposicion(
     out["unidades"] = out["unidades"].fillna(0.0)
     out["dias_con_stock"] = out["dias_con_stock"].fillna(7).astype(int)  # vendió → expuesta
     out.loc[out["unidades"] > 0, "dias_con_stock"] = 7
-    return out.loc[(out["unidades"] > 0) | (out["dias_con_stock"] > 0)]
+    return out.loc[out["unidades"].ne(0) | (out["dias_con_stock"] > 0)]
 
 
 def leer_stock_cd_archivo(contenido: bytes, nombre: str = "stock_cd.xlsx") -> pd.DataFrame:
@@ -590,7 +590,7 @@ def construir_entradas(
     v = v.loc[v["sku"].isin(skus) & ~v["tienda_id"].isin(no_reciben)]
     v["semana_inicio"] = pd.to_datetime(v["semana_inicio"])
     v = v.groupby(["semana_inicio", "tienda_id", "sku"], as_index=False)["unidades"].sum()
-    v["unidades"] = v["unidades"].clip(lower=0)
+    # Venta neta: las notas de crédito (unidades negativas) restan, como en el reporte.
     en_curso = v.loc[v["semana_inicio"] >= corte]
     cerradas = v.loc[v["semana_inicio"] < corte]
     sem = inferir_exposicion(cerradas, st, lunes, dim.set_index("sku")["modelo_color_id"])

@@ -45,7 +45,7 @@ def demanda_historica(semanal: pd.DataFrame, params: EngineParams) -> pd.DataFra
     """Tasa semanal corregida por exposición, con pesos y tendencia. Índice = KEY_MC."""
     d = params.demanda
     w = semanal_mc(semanal)
-    w = w.loc[(w["dias_con_stock"] > 0) | (w["unidades"] > 0)].copy()
+    w = w.loc[(w["dias_con_stock"] > 0) | w["unidades"].ne(0)].copy()
     w["corr"] = w["unidades"] * factor_exposicion(w["dias_con_stock"], params)
 
     blk = w.groupby(KEY_MC + ["bloque"], sort=False).agg(corr=("corr", "sum"), n=("corr", "size"))
@@ -156,6 +156,8 @@ def estimar_demanda(
         ],
         0.0,
     )
+    # La venta entra neta (notas de crédito en negativo); el pronóstico no baja de 0.
+    mc["demanda_semanal"] = mc["demanda_semanal"].clip(lower=0)
     mc["fuente_demanda"] = np.select(
         [con_hist, mc["estado_mc"].eq(TUVO_SIN_VENTA), usa_sim, usa_nac],
         [FUENTE_HISTORIA, FUENTE_SIN_DEMANDA, FUENTE_SIMILARES, FUENTE_NACIONAL],
