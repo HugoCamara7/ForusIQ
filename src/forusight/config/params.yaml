@@ -113,7 +113,7 @@ recepcion:                      # envíos aprobados que aún no llegan (no está
   estados_transito: [1, 2, 3, 6, 7]   # Aprobado, en Picking, Documentado, en Transporte, Prerecepcionado
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
   recepcionados_post_corte: true # recepcionado desde el corte (stock = cierre de ayer) = tránsito
-  descontar_pedidos_del_cd: true # el disponible del CD no descuenta pedidos a tiendas aprobados
+  descontar_pedidos_del_cd: false # una corrida por la mañana: el CD es el disponible del stock
   clasificaciones_desde_cd: [1, 2] # Reposición y Llenado de canal salen del CD
 
 calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
