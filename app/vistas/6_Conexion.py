@@ -259,6 +259,42 @@ if rev:
         st.markdown("**Locales destino de los últimos 3 días**")
         st.dataframe(locales, hide_index=True, width="stretch")
 
+st.markdown("**Comparar el tránsito con el reporte de Neogística**")
+st.caption(
+    "Sube el reporte de distribución del día: se leen los pedidos de todas sus tiendas y se "
+    "compara, tienda × SKU, con su Stock Trán. Int. + Prov. La tabla dice, por estado y "
+    "clasificación, cuántas unidades caen donde Neogística tiene tránsito. Úsalo el mismo día "
+    "del reporte: los pedidos creados después del reporte no pueden estar en él."
+)
+rep_tr = st.file_uploader("Reporte de Neogística", type=["xlsx"], key="rep_transito")
+if rep_tr is not None and st.button("Comparar tránsito", key="comparar_transito"):
+    from forusight.data import fuentes as F
+    from forusight.data import reporte as R
+
+    try:
+        rep_df, fecha_rep = R.leer_reporte(rep_tr.getvalue())
+        tiendas_rep = sorted(set(rep_df[R.CENTRO].map(F.codigo_tienda)) - {""})
+        lineas_rep, _ = repo.revisar_transito(
+            tiendas_rep,
+            st.session_state.params.recepcion,
+            fecha_rep.date() if fecha_rep is not None else None,
+        )
+        st.session_state.comparacion_transito = F.comparar_transito(lineas_rep, rep_df)
+    except Exception as exc:
+        st.error(explicar_error(exc))
+comp = st.session_state.get("comparacion_transito")
+if comp:
+    resumen_c, tabla_c = comp
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Tránsito Neogística", f"{resumen_c['transito_neogistica']:,.0f} u")
+    k2.metric("Tránsito Forusight", f"{resumen_c['transito_forusight']:,.0f} u")
+    k3.metric("Tienda × SKU iguales", f"{resumen_c['filas_iguales']:.1%}")
+    st.caption(
+        f"Forusight tiene más en {resumen_c['filas_forusight_mas']:,} filas y menos en "
+        f"{resumen_c['filas_forusight_menos']:,}."
+    )
+    st.dataframe(tabla_c, hide_index=True, width="stretch")
+
 st.divider()
 st.subheader("Explorar tablas: pedidos, despachos, ingresos y ARTI")
 st.caption(

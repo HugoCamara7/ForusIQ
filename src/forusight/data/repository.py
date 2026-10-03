@@ -577,9 +577,9 @@ class FuentesRepository(BigQueryRepository):
         return info, filas
 
     def revisar_transito(
-        self, tienda: str, recepcion, fecha_foto: dt.date | None = None
+        self, tiendas, recepcion, fecha_foto: dt.date | None = None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """(líneas de pedido hacia ``tienda`` con su regla, pedidos por local destino).
+        """(líneas de pedido hacia ``tiendas`` con su regla, pedidos por local destino).
 
         Cada línea dice si cuenta como tránsito con las reglas de ``recepcion`` (estados,
         clasificaciones, días) y cuántas veces aparece en las tablas (``filas`` > 1: repetida).
@@ -600,7 +600,13 @@ class FuentesRepository(BigQueryRepository):
         desde = hoy - dt.timedelta(days=int(recepcion.dias_pedidos))
         lineas = self.client.query_df(
             F.sql_revisar_transito(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
-            {"tienda": str(tienda).strip(), "desde_pedidos": desde},
+            {
+                "tiendas": [
+                    F.codigo_tienda(t)
+                    for t in ([tiendas] if isinstance(tiendas, str) else list(tiendas))
+                ],
+                "desde_pedidos": desde,
+            },
             labels={"consulta": "revisar_transito"},
         )
         locales = self.client.query_df(

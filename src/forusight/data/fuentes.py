@@ -571,8 +571,9 @@ def sql_pedidos(
 def sql_revisar_transito(
     cabecera: str, m_h: Mapping[str, str], detalle: str, m_d: Mapping[str, str]
 ) -> str:
-    """Líneas de pedido hacia una tienda (@tienda) desde @desde_pedidos, una por línea, con
-    ``filas`` = veces que aparece en las tablas (> 1: repetida en staging)."""
+    """Líneas de pedido hacia las tiendas @tiendas (códigos sin ceros a la izquierda) desde
+    @desde_pedidos, una por línea, con ``filas`` = veces que aparece en las tablas (> 1:
+    repetida en staging)."""
 
     def h(campo: str) -> str:
         return f"h.{_c(m_h, campo)}" if campo in m_h else "NULL"
@@ -593,7 +594,7 @@ def sql_revisar_transito(
         f"SAFE_CAST({d('cantidad_despachada')} AS FLOAT64) AS cantidad_despachada",
     ]
     grupos = ", ".join(str(i + 1) for i in range(len(sel)))
-    where = f"TRIM(CAST({h('tienda_destino')} AS STRING)) = @tienda"
+    where = f"LTRIM(TRIM(CAST({h('tienda_destino')} AS STRING)), '0') IN UNNEST(@tiendas)"
     if "fecha" in m_h:
         fecha = f"SAFE_CAST({h('fecha')} AS DATE)"
         where += f" AND ({fecha} IS NULL OR {fecha} >= @desde_pedidos)"
@@ -716,6 +717,71 @@ def transito_de_pedidos(
     out = out.rename(columns={"unidades": "stock_transito"})
     out["stock_transito"] = out["stock_transito"].clip(lower=0)
     return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
+
+
+def comparar_transito(lineas: pd.DataFrame, reporte: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
+    """Compara las líneas de pedido (``revisar_transito``) con el tránsito del reporte de
+    Neogística, tienda × SKU, para saber qué estados cuenta Neogística como tránsito.
+
+    Devuelve (resumen, tabla por estado y clasificación): unidades de cada estado en
+    tienda × SKU donde el reporte tiene tránsito y donde no."""
+    from forusight.data import reporte as R
+
+    rep = pd.DataFrame(
+        {
+            "tienda_id": reporte[R.CENTRO].map(codigo_tienda),
+            "sku": sku_canonico(reporte[R.SKU].astype("string")),
+            "transito_neo": R._num(reporte.get(R.TR_INT, 0)) + R._num(reporte.get(R.TR_PROV, 0)),
+        }
+    )
+    rep = rep.groupby(["tienda_id", "sku"], as_index=False)["transito_neo"].sum()
+    li = lineas.assign(
+        tienda_id=lineas["tienda_cod"].map(codigo_tienda),
+        sku=sku_canonico(lineas["id_producto"].astype("string")),
+        estado_cod=codigo_pedido(lineas["estado"], _NOMBRES_ESTADO),
+        clasif_cod=codigo_pedido(lineas["clasificacion"], _NOMBRES_CLASIFICACION),
+    )
+    li = li.merge(rep, on=["tienda_id", "sku"], how="left")
+    li["transito_neo"] = li["transito_neo"].fillna(0)
+    li["con_transito_neo"] = li["transito_neo"] > 0
+    tabla = (
+        li.groupby(["estado_cod", "clasif_cod"], dropna=False)
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "lineas": len(g),
+                    "unidades": g["unidades"].sum(),
+                    "unid_con_transito_neo": g.loc[g["con_transito_neo"], "unidades"].sum(),
+                    "unid_sin_transito_neo": g.loc[~g["con_transito_neo"], "unidades"].sum(),
+                }
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+    )
+    tabla["% con tránsito Neo"] = (
+        tabla["unid_con_transito_neo"] / tabla["unidades"].where(tabla["unidades"] > 0)
+    ).round(3)
+    tabla["estado"] = tabla["estado_cod"].map(ESTADOS_PEDIDO)
+    tabla["clasificacion"] = tabla["clasif_cod"].map(CLASIFICACIONES_PEDIDO)
+    nuestro = (
+        li.loc[li["cuenta_transito"]].groupby(["tienda_id", "sku"])["unidades"].sum()
+        if "cuenta_transito" in li
+        else pd.Series(dtype=float)
+    )
+    cmp = rep.set_index(["tienda_id", "sku"])["transito_neo"]
+    idx = cmp.index.union(nuestro.index)
+    a, b = cmp.reindex(idx, fill_value=0), nuestro.reindex(idx, fill_value=0)
+    resumen = {
+        "transito_neogistica": float(a.sum()),
+        "transito_forusight": float(b.sum()),
+        "filas_iguales": float((np.isclose(a, b)).mean()) if len(idx) else 1.0,
+        "filas_forusight_mas": int((b > a + 0.01).sum()),
+        "filas_forusight_menos": int((b < a - 0.01).sum()),
+    }
+    cols = ["estado_cod", "estado", "clasif_cod", "clasificacion", "lineas", "unidades"]
+    cols += ["unid_con_transito_neo", "unid_sin_transito_neo", "% con tránsito Neo"]
+    return resumen, tabla[cols].sort_values(["estado_cod", "clasif_cod"]).reset_index(drop=True)
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:
