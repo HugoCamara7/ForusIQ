@@ -223,6 +223,43 @@ if st.session_state.get("comparacion_cd"):
         st.dataframe(detalle, hide_index=True, width="stretch")
 
 st.divider()
+st.subheader("Revisar tránsito")
+st.caption(
+    "Muestra cada línea de pedido hacia la tienda (últimos días según «dias_pedidos»), si "
+    "cuenta como tránsito con las reglas de Parámetros → recepcion, y cuántas veces aparece "
+    "en las tablas (repetida = copia de staging, cuenta una sola vez). Abajo, los locales "
+    "destino de los últimos 3 días: así se ve si una tienda llega con otro código."
+)
+t1, t2 = st.columns([3, 1])
+tienda_tr = t1.text_input("Código de tienda", value="97", key="tienda_transito")
+if t2.button("Revisar", width="stretch", key="revisar_transito"):
+    try:
+        st.session_state.revision_transito = (
+            tienda_tr,
+            *repo.revisar_transito(tienda_tr, st.session_state.params.recepcion),
+        )
+    except Exception as exc:
+        st.error(explicar_error(exc))
+rev = st.session_state.get("revision_transito")
+if rev:
+    tienda_r, lineas, locales = rev
+    if lineas.empty:
+        st.warning(
+            f"No hay pedidos hacia el local «{tienda_r}» en la ventana. Revisa abajo si la "
+            "tienda aparece con otro código."
+        )
+    else:
+        cuenta = lineas.loc[lineas["cuenta_transito"]]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Tránsito que cuenta", f"{int(cuenta['unidades'].sum()):,} u")
+        c2.metric("Pedidos que cuentan", f"{cuenta['nro_pedido'].nunique():,}")
+        c3.metric("Líneas repetidas", f"{int(lineas['repetida'].sum()):,}")
+        st.dataframe(lineas, hide_index=True, width="stretch")
+    if len(locales):
+        st.markdown("**Locales destino de los últimos 3 días**")
+        st.dataframe(locales, hide_index=True, width="stretch")
+
+st.divider()
 st.subheader("Explorar tablas: pedidos, despachos, ingresos y ARTI")
 st.caption(
     "Busca tablas por nombre y muestra sus columnas y 20 filas de ejemplo (lectura directa, "

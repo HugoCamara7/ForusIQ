@@ -188,6 +188,8 @@ ALIAS_PEDIDOS: dict[str, list[str]] = {
 #: Detalle de pedidos (`pedidos_detail_table`): pedido × producto × cantidad.
 ALIAS_PEDIDOS_DETALLE: dict[str, list[str]] = {
     "nro_pedido": ALIAS_PEDIDOS["nro_pedido"],
+    # Identificador de la línea del pedido: separa líneas legítimas de copias repetidas.
+    "id_linea": ["iddeta", "id_detalle", "id_linea", "linea", "item"],
     "id_producto": ["codint", "codpro", "id_producto", "cod_producto", "codint_ma", "sku"],
     # Despachada si ya salió del origen; si viene en 0 (aprobado, picking), la pedida.
     "cantidad_despachada": [

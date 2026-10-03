@@ -576,6 +576,66 @@ class FuentesRepository(BigQueryRepository):
             )
         return info, filas
 
+    def revisar_transito(
+        self, tienda: str, recepcion, fecha_foto: dt.date | None = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """(líneas de pedido hacia ``tienda`` con su regla, pedidos por local destino).
+
+        Cada línea dice si cuenta como tránsito con las reglas de ``recepcion`` (estados,
+        clasificaciones, días) y cuántas veces aparece en las tablas (``filas`` > 1: repetida).
+        """
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+
+        tablas = self.tablas()
+        mapas = self.mapeos({k: tablas[k] for k in ("pedidos", "pedidos_detalle")})
+        for fuente in ("pedidos", "pedidos_detalle"):
+            if fuente not in mapas:
+                raise ValueError(f"No se pudo leer la tabla de {fuente} ({tablas[fuente]}).")
+            falta = mapeo.faltantes(fuente, mapas[fuente][0])
+            if falta:
+                raise ValueError(f"Mapeo de {fuente} incompleto: falta {', '.join(falta)}.")
+        m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
+        hoy = fecha_foto or dt.date.today()
+        desde = hoy - dt.timedelta(days=int(recepcion.dias_pedidos))
+        lineas = self.client.query_df(
+            F.sql_revisar_transito(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
+            {"tienda": str(tienda).strip(), "desde_pedidos": desde},
+            labels={"consulta": "revisar_transito"},
+        )
+        locales = self.client.query_df(
+            F.sql_locales_pedidos(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
+            {"desde_pedidos": hoy - dt.timedelta(days=3)},
+            labels={"consulta": "locales_pedidos"},
+        )
+        if len(lineas):
+            est = F.codigo_pedido(lineas["estado"], F._NOMBRES_ESTADO)
+            cla = F.codigo_pedido(lineas["clasificacion"], F._NOMBRES_CLASIFICACION)
+            rec = pd.to_datetime(lineas["fecha_recepcion"], errors="coerce")
+            ped = pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
+            abierto = est.isin(recepcion.estados_transito).fillna(False)
+            hoy_rec = (
+                est.eq(4).fillna(False) & (rec >= pd.Timestamp(hoy)).fillna(False)
+                if recepcion.recepcionados_post_corte
+                else False
+            )
+            clase_ok = cla.isin(recepcion.clasificaciones_transito).fillna(False) | cla.isna()
+            reciente = ped.isna() | (ped >= pd.Timestamp(desde))
+            desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
+            lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
+            lineas["cuenta_transito"] = (abierto | hoy_rec) & clase_ok & reciente
+            lineas["repetida"] = lineas["filas"] > 1
+        cat = set(self._codigos_catalogo())
+        if len(locales):
+            locales["tienda_id"] = locales["tienda_cod"].map(F.codigo_tienda)
+            locales["en_catalogo"] = locales["tienda_id"].isin(cat)
+        return lineas, locales
+
+    def _codigos_catalogo(self) -> list[str]:
+        from forusight.data import cadenas as CAD
+
+        return list(CAD.catalogo_tiendas()["codigo_tienda"].astype(str))
+
     def explorar_tabla(self, tabla: str, n: int = 20) -> tuple[pd.DataFrame, pd.DataFrame]:
         """(columnas con tipo, muestra de filas) de cualquier tabla, sin costo de consulta."""
         cols = self.client.columnas(tabla)

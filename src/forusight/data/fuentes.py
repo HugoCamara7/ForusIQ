@@ -492,6 +492,25 @@ _NOMBRES_ESTADO = [
 _NOMBRES_CLASIFICACION = [("REPOSIC", 1), ("LLENADO", 2), ("TRASPASO", 3), ("DEVOLUC", 4)]
 
 
+#: Columnas de cabecera y detalle que usa el tránsito (las que estén mapeadas).
+CAMPOS_CABECERA = (
+    "nro_pedido",
+    "tienda_destino",
+    "estado",
+    "clasificacion",
+    "fecha",
+    "fecha_recepcion",
+)
+CAMPOS_DETALLE = ("nro_pedido", "id_linea", "id_producto", "cantidad", "cantidad_despachada")
+
+
+def _sin_repetidas(tabla: str, mapa: Mapping[str, str], campos) -> str:
+    """Subconsulta con las columnas usadas y sin filas repetidas exactas: si la tabla de
+    staging guarda la misma línea varias veces, cuenta una sola."""
+    cols = ", ".join(_c(mapa, c) for c in campos if c in mapa)
+    return f"(SELECT DISTINCT {cols} FROM {_t(tabla)})"
+
+
 def sql_pedidos(
     cabecera: str,
     m_h: Mapping[str, str],
@@ -541,9 +560,78 @@ def sql_pedidos(
     if con_marcas:
         where += " " + filtro_marca_arti(d("id_producto"), arti, mapa_arti)
     return (
-        f"SELECT {', '.join(sel)}\nFROM {_t(cabecera)} AS h\nJOIN {_t(detalle)} AS d\n"
+        f"SELECT {', '.join(sel)}\n"
+        f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
+        f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
         f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6"
+    )
+
+
+def sql_revisar_transito(
+    cabecera: str, m_h: Mapping[str, str], detalle: str, m_d: Mapping[str, str]
+) -> str:
+    """Líneas de pedido hacia una tienda (@tienda) desde @desde_pedidos, una por línea, con
+    ``filas`` = veces que aparece en las tablas (> 1: repetida en staging)."""
+
+    def h(campo: str) -> str:
+        return f"h.{_c(m_h, campo)}" if campo in m_h else "NULL"
+
+    def d(campo: str) -> str:
+        return f"d.{_c(m_d, campo)}" if campo in m_d else "NULL"
+
+    sel = [
+        f"TRIM(CAST({h('nro_pedido')} AS STRING)) AS nro_pedido",
+        f"TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod",
+        f"CAST({h('estado')} AS STRING) AS estado",
+        f"CAST({h('clasificacion')} AS STRING) AS clasificacion",
+        f"SAFE_CAST({h('fecha')} AS DATE) AS fecha_pedido",
+        f"SAFE_CAST({h('fecha_recepcion')} AS DATE) AS fecha_recepcion",
+        f"CAST({d('id_linea')} AS STRING) AS id_linea",
+        f"{sku_sql(d('id_producto'))} AS id_producto",
+        f"SAFE_CAST({d('cantidad')} AS FLOAT64) AS cantidad_pedida",
+        f"SAFE_CAST({d('cantidad_despachada')} AS FLOAT64) AS cantidad_despachada",
+    ]
+    grupos = ", ".join(str(i + 1) for i in range(len(sel)))
+    where = f"TRIM(CAST({h('tienda_destino')} AS STRING)) = @tienda"
+    if "fecha" in m_h:
+        fecha = f"SAFE_CAST({h('fecha')} AS DATE)"
+        where += f" AND ({fecha} IS NULL OR {fecha} >= @desde_pedidos)"
+    return (
+        f"SELECT {', '.join(sel)}, COUNT(*) AS filas\nFROM {_t(cabecera)} AS h\n"
+        f"JOIN {_t(detalle)} AS d\n"
+        f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
+        f"\nWHERE {where}\nGROUP BY {grupos}\nORDER BY fecha_pedido DESC, nro_pedido"
+    )
+
+
+def sql_locales_pedidos(
+    cabecera: str, m_h: Mapping[str, str], detalle: str, m_d: Mapping[str, str]
+) -> str:
+    """Pedidos y unidades por local destino, estado y clasificación desde @desde_pedidos
+    (para ver con qué código llega cada tienda)."""
+
+    def h(campo: str) -> str:
+        return f"h.{_c(m_h, campo)}" if campo in m_h else "NULL"
+
+    num = "SAFE_CAST({} AS FLOAT64)"
+    cant = num.format(f"d.{_c(m_d, 'cantidad')}")
+    if "cantidad_despachada" in m_d:
+        desp = num.format(f"d.{_c(m_d, 'cantidad_despachada')}")
+        cant = f"COALESCE(NULLIF({desp}, 0), {cant})"
+    where = "TRUE"
+    if "fecha" in m_h:
+        where = f"SAFE_CAST({h('fecha')} AS DATE) >= @desde_pedidos"
+    return (
+        f"SELECT TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod, "
+        f"CAST({h('estado')} AS STRING) AS estado, "
+        f"CAST({h('clasificacion')} AS STRING) AS clasificacion, "
+        f"COUNT(DISTINCT {h('nro_pedido')}) AS pedidos, SUM({cant}) AS unidades\n"
+        f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
+        f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
+        f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = "
+        f"TRIM(CAST(d.{_c(m_d, 'nro_pedido')} AS STRING))"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3\nORDER BY 1, 2, 3"
     )
 
 
