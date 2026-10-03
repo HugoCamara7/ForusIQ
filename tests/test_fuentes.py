@@ -660,7 +660,20 @@ def test_revisar_transito_de_una_tienda():
     assert lineas["repetida"].tolist() == [False, True, False, False]
     assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
     _, sql, p = fake.consultas[0]
-    assert "@tienda" in sql and p["tienda"] == "97"
+    assert "IN UNNEST(@tiendas)" in sql and p["tiendas"] == ["97"]
+    # comparación con el reporte: la 97 tiene tránsito 2 en el SKU 5 según Neogística
+    rep = pd.DataFrame(
+        {
+            "Código SKU": ["5", "6"],
+            "Código Centro": ["097", "97"],
+            "Stock Trán. Int. [un]": [2, 1],
+            "Stock Trán. Prov. [un]": [0, 0],
+        }
+    )
+    res, tabla = F.comparar_transito(lineas, rep)
+    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 5
+    fila = tabla.set_index(["estado_cod", "clasif_cod"]).loc[(1, 1)]
+    assert fila["unid_con_transito_neo"] == 2 and fila["estado"] == "Aprobado"
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
