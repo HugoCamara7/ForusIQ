@@ -149,9 +149,9 @@ con dato real (no se inventan costos, clases de demanda, backorder…) y filas c
 «Aprobar y descargar» aprueba la propuesta y descarga el archivo; la aprobación no se guarda.
 Al cargar el archivo en el sistema se crean los pedidos, y la próxima corrida los ve como
 tránsito en las tablas de pedidos (`pedidos_header_table` + `pedidos_detail_table`):
-estados Aprobado, en Picking, Documentado, en Transporte y Prerecepcionado (más lo
-recepcionado desde el corte de stock); clasificaciones Reposición, Llenado de canal y Traspaso
-tiendas. Lo que sale del CD 320 y el disponible del corte aún cuenta se resta del CD.
+estados Aprobado, en Picking, Documentado, en Transporte y Prerecepcionado, de los últimos
+15 días; clasificaciones Reposición, Llenado de canal y Traspaso tiendas. Lo recepcionado ya
+está en el stock de la tienda y no cuenta. El CD se reparte con el disponible del stock.
 
 ## Configuración de secretos
 
