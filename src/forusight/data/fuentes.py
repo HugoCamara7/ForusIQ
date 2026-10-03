@@ -458,10 +458,6 @@ def sql_stock_foto(
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2"
 
 
-#: Días de pedidos que lee la consulta: el máximo que admite ``recepcion.dias_pedidos``
-#: (el parámetro decide cuántos cuentan como tránsito).
-DIAS_PEDIDOS = 60
-
 #: Estados y clasificaciones de pedidos del sistema (código → nombre).
 ESTADOS_PEDIDO = {
     0: "Creado",
@@ -549,14 +545,10 @@ def sql_pedidos(
             else "FALSE"
         )
         + " AS recibido_post_corte",
-        (f"SAFE_CAST({h('fecha')} AS DATE)" if "fecha" in m_h else "CAST(NULL AS DATE)")
-        + " AS fecha_pedido",
         f"SUM({cant}) AS unidades",
     ]
+    # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
     where = "TRUE"
-    if "fecha" in m_h:
-        fecha = f"SAFE_CAST({h('fecha')} AS DATE)"
-        where = f"({fecha} IS NULL OR {fecha} >= @desde_pedidos)"
     if con_marcas:
         where += " " + filtro_marca_arti(d("id_producto"), arti, mapa_arti)
     return (
@@ -564,16 +556,16 @@ def sql_pedidos(
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
         f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5"
     )
 
 
 def sql_revisar_transito(
     cabecera: str, m_h: Mapping[str, str], detalle: str, m_d: Mapping[str, str]
 ) -> str:
-    """Líneas de pedido hacia las tiendas @tiendas (códigos sin ceros a la izquierda) desde
-    @desde_pedidos, una por línea, con ``filas`` = veces que aparece en las tablas (> 1:
-    repetida en staging)."""
+    """Líneas de pedido hacia las tiendas @tiendas (códigos sin ceros a la izquierda), todo el
+    historial, una por línea, con ``filas`` = veces que aparece en las tablas (> 1: repetida
+    en staging)."""
 
     def h(campo: str) -> str:
         return f"h.{_c(m_h, campo)}" if campo in m_h else "NULL"
@@ -595,9 +587,6 @@ def sql_revisar_transito(
     ]
     grupos = ", ".join(str(i + 1) for i in range(len(sel)))
     where = f"LTRIM(TRIM(CAST({h('tienda_destino')} AS STRING)), '0') IN UNNEST(@tiendas)"
-    if "fecha" in m_h:
-        fecha = f"SAFE_CAST({h('fecha')} AS DATE)"
-        where += f" AND ({fecha} IS NULL OR {fecha} >= @desde_pedidos)"
     return (
         f"SELECT {', '.join(sel)}, COUNT(*) AS filas\nFROM {_t(cabecera)} AS h\n"
         f"JOIN {_t(detalle)} AS d\n"
@@ -652,16 +641,8 @@ def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Seri
 
 def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
     """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos),
-    recibido_post_corte, fecha_pedido, unidades."""
-    cols = [
-        "tienda_id",
-        "sku",
-        "estado",
-        "clasificacion",
-        "recibido_post_corte",
-        "fecha_pedido",
-        "unidades",
-    ]
+    recibido_post_corte, unidades."""
+    cols = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte", "unidades"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     p = pd.DataFrame(
@@ -675,7 +656,6 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
                 if "recibido_post_corte" in df
                 else False
             ),
-            "fecha_pedido": pd.to_datetime(df.get("fecha_pedido", pd.NaT), errors="coerce"),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
@@ -689,7 +669,6 @@ def transito_de_pedidos(
     estados: list[int],
     clasificaciones: list[int],
     recibidos_post_corte: bool = True,
-    desde=None,
 ) -> pd.DataFrame:
     """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
     clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella.
@@ -698,13 +677,10 @@ def transito_de_pedidos(
     ``recibidos_post_corte`` lo recepcionado (4) desde la fecha del corte también es
     tránsito, porque el stock de la tienda todavía no lo trae.
 
-    ``desde``: sólo cuentan los pedidos creados desde esa fecha; uno más antiguo que sigue
-    abierto no es tránsito real (pedido sin cerrar). Sin fecha de pedido no se filtra."""
+    Se considera todo el historial: un pedido que sigue abierto, aunque sea antiguo, es
+    mercadería reservada para la tienda."""
     if pedidos is None or pedidos.empty:
         return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
-    if desde is not None and "fecha_pedido" in pedidos:
-        fecha = pd.to_datetime(pedidos["fecha_pedido"], errors="coerce")
-        pedidos = pedidos.loc[fecha.isna() | (fecha >= pd.Timestamp(desde))]
     en_estado = pedidos["estado"].isin(estados)
     if recibidos_post_corte and "recibido_post_corte" in pedidos:
         en_estado |= pedidos["estado"].eq(4).fillna(False) & pedidos["recibido_post_corte"].astype(

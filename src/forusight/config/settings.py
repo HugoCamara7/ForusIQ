@@ -236,9 +236,6 @@ class RecepcionParams(_Section):
 
     #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
     transito_pedidos: bool = True
-    #: Sólo pedidos creados (fecped) en los últimos N días antes del corte de stock: uno más
-    #: antiguo que sigue abierto es un pedido sin cerrar, no tránsito real.
-    dias_pedidos: int = Field(15, ge=1, le=60)
     #: 1 Aprobado, 2 en Picking, 3 Documentado, 6 en Transporte, 7 Prerecepcionado
     #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
     estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3, 6, 7])
