@@ -554,6 +554,7 @@ def test_mapeo_automatico_de_pedidos_peru_central():
     assert h["fecha_recepcion"] == "fecrec_ph"
     assert d == {
         "nro_pedido": "nroped_pd",
+        "id_linea": "iddeta_pd",
         "id_producto": "codint_pd",
         "cantidad_despachada": "candes_pd",
         "cantidad": "canped_pd",
@@ -583,6 +584,83 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
     assert "SAFE_CAST(h.`fecped_ph` AS DATE) AS fecha_pedido" in sql
     assert "GROUP BY 1, 2, 3, 4, 5, 6" in sql
+
+
+M_H = {
+    "nro_pedido": "nroped_ph",
+    "tienda_destino": "codloc_ph",
+    "estado": "estado_ph",
+    "clasificacion": "clasificacion_ph",
+    "fecha": "fecped_ph",
+    "fecha_recepcion": "fecrec_ph",
+}
+M_D = {
+    "nro_pedido": "nroped_pd",
+    "id_linea": "iddeta_pd",
+    "id_producto": "codint_pd",
+    "cantidad_despachada": "candes_pd",
+    "cantidad": "canped_pd",
+}
+
+
+def test_tablas_de_pedidos_sin_filas_repetidas():
+    """Una línea copiada varias veces en staging cuenta una sola vez (SELECT DISTINCT)."""
+    sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, M_H, F.TABLA_PEDIDOS_D, M_D, F.TABLA_ARTI, {}, False)
+    assert "(SELECT DISTINCT `nroped_pd`, `iddeta_pd`, `codint_pd`, `canped_pd`" in sql
+    assert "(SELECT DISTINCT `nroped_ph`, `codloc_ph`, `estado_ph`" in sql
+
+
+def test_revisar_transito_de_una_tienda():
+    class Fake(_FakeBQ):
+        def columnas(self, tabla):
+            cols = {F.TABLA_PEDIDOS_H: F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_H]}
+            cols[F.TABLA_PEDIDOS_D] = F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D]
+            return pd.DataFrame({"column_name": cols[tabla]})
+
+    fake = Fake()
+    fake.datos = {
+        "revisar_transito": pd.DataFrame(
+            {
+                "nro_pedido": ["P1", "P2", "P3", "P4"],
+                "tienda_cod": ["97"] * 4,
+                "estado": ["1", "6. en Transporte", "4", "1"],
+                "clasificacion": ["1", "1", "1", "4.-Devolucion CD"],
+                "fecha_pedido": pd.to_datetime(["2026-10-01"] * 4),
+                "fecha_recepcion": pd.to_datetime([None, None, "2026-09-20", None]),
+                "id_linea": ["1", "1", "1", "1"],
+                "id_producto": ["5"] * 4,
+                "cantidad_pedida": [2.0, 3.0, 4.0, 5.0],
+                "cantidad_despachada": [0.0, 3.0, 4.0, 0.0],
+                "filas": [1, 2, 1, 1],
+            }
+        ),
+        "locales_pedidos": pd.DataFrame(
+            {
+                "tienda_cod": ["097", "999"],
+                "estado": ["1", "1"],
+                "clasificacion": ["1", "1"],
+                "pedidos": [2, 1],
+                "unidades": [5.0, 1.0],
+            }
+        ),
+    }
+    sec = {
+        "bigquery": {
+            "project_id": "p",
+            "pedidos_header_table": F.TABLA_PEDIDOS_H,
+            "pedidos_detail_table": F.TABLA_PEDIDOS_D,
+        }
+    }
+    repo = FuentesRepository(client=fake, secrets=sec)
+    lineas, locales = repo.revisar_transito(
+        "97", params().recepcion, pd.Timestamp("2026-10-02").date()
+    )
+    assert lineas["cuenta_transito"].tolist() == [True, True, False, False]
+    assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 5  # 2 pedidas + 3 desp.
+    assert lineas["repetida"].tolist() == [False, True, False, False]
+    assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
+    _, sql, p = fake.consultas[0]
+    assert "@tienda" in sql and p["tienda"] == "97"
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
