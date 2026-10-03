@@ -580,10 +580,9 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, m_h, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
     assert "JOIN" in sql and "h.`nroped_ph`" in sql and "d.`nroped_pd`" in sql
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
-    assert "@desde_pedidos" in sql
+    assert "@desde_pedidos" not in sql  # todo el historial de pedidos
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
-    assert "SAFE_CAST(h.`fecped_ph` AS DATE) AS fecha_pedido" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5, 6" in sql
+    assert "GROUP BY 1, 2, 3, 4, 5\n" in sql + "\n"
 
 
 M_H = {
@@ -713,24 +712,21 @@ def test_recepcionado_despues_del_corte_es_transito():
     assert sin["stock_transito"].tolist() == [3.0]
 
 
-def test_transito_solo_pedidos_recientes():
-    """Un pedido abierto de hace más de 15 días es un pedido sin cerrar, no tránsito."""
+def test_pedido_abierto_antiguo_sigue_en_transito():
+    """Todo el historial: un pedido que sigue aprobado, aunque sea antiguo, es mercadería
+    reservada para la tienda; lo recepcionado ya está en el stock."""
     crudo = pd.DataFrame(
         {
             "tienda_cod": ["18", "18", "18"],
             "id_producto": ["5", "5", "5"],
-            "estado": ["1", "6", "3"],
+            "estado": ["1", "6", "4"],
             "clasificacion": ["1", "1", "1"],
-            "fecha_pedido": ["2026-09-25", "2026-08-01", None],
-            "unidades": [2, 40, 1],
+            "unidades": [2, 40, 7],
         }
     )
     p = F.a_pedidos(crudo, {"5"}, set())
-    corte = pd.Timestamp("2026-10-02")
-    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], desde=corte - pd.Timedelta(days=15))
-    assert tr["stock_transito"].tolist() == [3.0]  # 2 recientes + 1 sin fecha; fuera los 40
-    sin_ventana = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
-    assert sin_ventana["stock_transito"].tolist() == [43.0]
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    assert tr["stock_transito"].tolist() == [42.0]
 
 
 def test_codigo_pedido_por_nombre():

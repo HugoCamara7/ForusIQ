@@ -225,7 +225,7 @@ if st.session_state.get("comparacion_cd"):
 st.divider()
 st.subheader("Revisar tránsito")
 st.caption(
-    "Muestra cada línea de pedido hacia la tienda (últimos días según «dias_pedidos»), si "
+    "Muestra cada línea de pedido hacia la tienda (todo el historial), si "
     "cuenta como tránsito con las reglas de Parámetros → recepcion, y cuántas veces aparece "
     "en las tablas (repetida = copia de staging, cuenta una sola vez). Abajo, los locales "
     "destino de los últimos 3 días: así se ve si una tienda llega con otro código."

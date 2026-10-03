@@ -537,7 +537,7 @@ class FuentesRepository(BigQueryRepository):
                     m_a,
                     con_marcas,
                 ),
-                {"desde_pedidos": foto - dt.timedelta(days=F.DIAS_PEDIDOS), "fecha_foto": foto},
+                {"fecha_foto": foto},
             )
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
@@ -581,8 +581,8 @@ class FuentesRepository(BigQueryRepository):
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """(líneas de pedido hacia ``tiendas`` con su regla, pedidos por local destino).
 
-        Cada línea dice si cuenta como tránsito con las reglas de ``recepcion`` (estados,
-        clasificaciones, días) y cuántas veces aparece en las tablas (``filas`` > 1: repetida).
+        Cada línea dice si cuenta como tránsito con las reglas de ``recepcion`` (estados y
+        clasificaciones; todo el historial) y cuántas veces aparece en las tablas (``filas`` > 1: repetida).
         """
         from forusight.data import fuentes as F
         from forusight.data import mapeo
@@ -597,7 +597,6 @@ class FuentesRepository(BigQueryRepository):
                 raise ValueError(f"Mapeo de {fuente} incompleto: falta {', '.join(falta)}.")
         m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
         hoy = fecha_foto or dt.date.today()
-        desde = hoy - dt.timedelta(days=int(recepcion.dias_pedidos))
         lineas = self.client.query_df(
             F.sql_revisar_transito(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
             {
@@ -605,7 +604,6 @@ class FuentesRepository(BigQueryRepository):
                     F.codigo_tienda(t)
                     for t in ([tiendas] if isinstance(tiendas, str) else list(tiendas))
                 ],
-                "desde_pedidos": desde,
             },
             labels={"consulta": "revisar_transito"},
         )
@@ -618,7 +616,6 @@ class FuentesRepository(BigQueryRepository):
             est = F.codigo_pedido(lineas["estado"], F._NOMBRES_ESTADO)
             cla = F.codigo_pedido(lineas["clasificacion"], F._NOMBRES_CLASIFICACION)
             rec = pd.to_datetime(lineas["fecha_recepcion"], errors="coerce")
-            ped = pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
             abierto = est.isin(recepcion.estados_transito).fillna(False)
             hoy_rec = (
                 est.eq(4).fillna(False) & (rec >= pd.Timestamp(hoy)).fillna(False)
@@ -626,10 +623,9 @@ class FuentesRepository(BigQueryRepository):
                 else False
             )
             clase_ok = cla.isin(recepcion.clasificaciones_transito).fillna(False) | cla.isna()
-            reciente = ped.isna() | (ped >= pd.Timestamp(desde))
             desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
             lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
-            lineas["cuenta_transito"] = (abierto | hoy_rec) & clase_ok & reciente
+            lineas["cuenta_transito"] = (abierto | hoy_rec) & clase_ok
             lineas["repetida"] = lineas["filas"] > 1
         cat = set(self._codigos_catalogo())
         if len(locales):
