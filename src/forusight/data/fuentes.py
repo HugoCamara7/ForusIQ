@@ -439,6 +439,15 @@ def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
     )
 
 
+def sql_ultima_fecha(tabla: str, mapa: Mapping[str, str]) -> str:
+    """Última fecha cargada en la tabla (sólo lee la columna de fecha de los últimos días)."""
+    f = _c(mapa, "fecha")
+    return (
+        f"SELECT MAX(DATE({f})) AS ultima\nFROM {_t(tabla)}\n"
+        f"WHERE DATE({f}) >= @desde_carga AND DATE({f}) <= @hasta_carga"
+    )
+
+
 def sql_stock_foto(
     tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
 ) -> str:

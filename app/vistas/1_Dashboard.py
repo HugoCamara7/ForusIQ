@@ -39,6 +39,9 @@ if "nombre" not in det:
 det["tienda"] = det["nombre"].astype("string").fillna(det["tienda_id"].astype("string"))
 env = det[det["cantidad"] > 0]
 
+if diag.get("aviso_carga"):  # corrida antes de la carga diaria de stock / venta
+    st.error(diag["aviso_carga"])
+
 meta = [f"Semana {_fecha(r['fecha_corte'])}"]
 if diag.get("fecha_foto"):  # el corte de fecha F es el cierre del día F
     meta.append(f"Stock al cierre del {_fecha(pd.Timestamp(diag['fecha_foto']))}")

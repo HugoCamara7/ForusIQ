@@ -777,3 +777,9 @@ def test_lo_recibido_no_es_transito_aunque_la_cabecera_siga_abierta():
     assert m_d["estado_linea"] == "estado_pd"
     sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, M_H, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
     assert "h.`fecrec_ph` IS NOT NULL AS con_recepcion" in sql and "AS estado_linea" in sql
+
+
+def test_sql_ultima_fecha_solo_lee_la_fecha():
+    sql = F.sql_ultima_fecha("p.d.stock", {"fecha": "fecha_corte"})
+    assert "MAX(DATE(`fecha_corte`)) AS ultima" in sql
+    assert "@desde_carga" in sql and "@hasta_carga" in sql

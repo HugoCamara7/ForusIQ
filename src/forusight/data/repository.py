@@ -576,6 +576,27 @@ class FuentesRepository(BigQueryRepository):
             )
         return info, filas
 
+    def ultimas_cargas(self, hoy: dt.date | None = None) -> dict[str, str | None]:
+        """Última fecha cargada del stock (fecha_corte) y de la venta: la carga diaria terminó
+        cuando las dos llegan a ayer. Lectura barata (sólo la columna de fecha, 10 días)."""
+        from forusight.data import fuentes as F
+
+        hoy = hoy or dt.date.today()
+        tablas = self.tablas()
+        mapas = self.mapeos({k: tablas[k] for k in ("stock", "ventas") if tablas[k]})
+        out: dict[str, str | None] = {"stock": None, "ventas": None}
+        for k in out:
+            if k not in mapas or "fecha" not in mapas[k][0]:
+                continue
+            df = self.client.query_df(
+                F.sql_ultima_fecha(tablas[k], mapas[k][0]),
+                {"desde_carga": hoy - dt.timedelta(days=10), "hasta_carga": hoy},
+                labels={"consulta": f"ultima_carga_{k}"},
+            )
+            if len(df) and pd.notna(df["ultima"].iloc[0]):
+                out[k] = pd.Timestamp(df["ultima"].iloc[0]).date().isoformat()
+        return out
+
     def revisar_transito(
         self, tiendas, recepcion, fecha_foto: dt.date | None = None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:

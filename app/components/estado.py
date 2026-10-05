@@ -111,6 +111,38 @@ def marcas_arti(fuente: str) -> pd.DataFrame:
 
 # cache_resource: los DataFrames se comparten sin copiarse (mucho más rápido que
 # cache_data, que los serializa en cada lectura). Las páginas nunca los modifican en sitio.
+@st.cache_data(ttl=300, show_spinner=False, max_entries=4)
+def _ultimas_cargas(fuente: str, huella: str, hoy: str) -> dict:
+    """Última fecha cargada de stock y venta (se consulta cada 5 minutos como máximo)."""
+    repo = _repositorio(fuente, huella)
+    if not hasattr(repo, "ultimas_cargas"):
+        return {}
+    try:
+        return repo.ultimas_cargas(pd.Timestamp(hoy).date())
+    except Exception:  # sin la consulta se sigue con la caché normal
+        return {}
+
+
+def aviso_carga(diag: dict, dia: str | None = None) -> str | None:
+    """Texto de alerta si la corrida se hizo antes de la carga diaria (stock o venta sin el
+    cierre de ayer)."""
+    hoy = pd.Timestamp.today().normalize()
+    ref = min(pd.Timestamp(dia).normalize(), hoy) if dia else hoy  # reposición de otro día
+    ayer = (ref - pd.Timedelta(days=1)).date()
+    faltan = []
+    for nombre, clave in (("stock", "fecha_foto"), ("venta", "venta_hasta")):
+        f = diag.get(clave)
+        if f and pd.Timestamp(f).date() < ayer:
+            faltan.append(f"{nombre} al {pd.Timestamp(f):%d/%m}")
+    if not faltan:
+        return None
+    return (
+        f"La carga diaria aún no trae el cierre del {ayer:%d/%m} ({', '.join(faltan)}). "
+        "Esta corrida se hizo antes de la carga: espera a que termine y vuelve a correr "
+        "(la app detecta la carga nueva sola)."
+    )
+
+
 @st.cache_resource(ttl=_TTL, show_spinner="Leyendo datos…", max_entries=4)
 def _cargar_entradas(
     fuente: str,
@@ -119,6 +151,7 @@ def _cargar_entradas(
     cd_bytes: bytes | None,
     cd_nombre: str,
     marcas: tuple[str, ...] | None,
+    cargas: str = "",  # última carga de stock y venta: si llega una nueva, se vuelve a leer
 ) -> tuple[EngineInputs, dict]:
     cd = leer_stock_cd_archivo(cd_bytes, cd_nombre) if cd_bytes else None
     repo = _repositorio(fuente, huella)
@@ -138,7 +171,16 @@ def cargar_entradas(
     cd_nombre: str = "",
     marcas: tuple[str, ...] | None = None,
 ):
-    return _cargar_entradas(fuente, huella_config(), fecha_corte, cd_bytes, cd_nombre, marcas)
+    huella = huella_config()
+    return _cargar_entradas(
+        fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas, clave_cargas(fuente, huella)
+    )
+
+
+def clave_cargas(fuente: str, huella: str) -> str:
+    """Última carga de stock y venta: cambia cuando termina la carga diaria."""
+    cargas = _ultimas_cargas(fuente, huella, pd.Timestamp.today().date().isoformat())
+    return "|".join(f"{k}={v}" for k, v in sorted(cargas.items()))
 
 
 @st.cache_resource(ttl=_TTL, show_spinner="Calculando distribución…", max_entries=8)
@@ -154,6 +196,7 @@ def _correr_motor(
     bloq_clave: str = "",
     niveles_clave: str = "",
     plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
+    cargas: str = "",  # última carga de stock y venta (clave_cargas)
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -161,7 +204,9 @@ def _correr_motor(
     from forusight.data import transito as TR
 
     params = EngineParams.model_validate_json(params_json)
-    inputs, diag = _cargar_entradas(fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas)
+    inputs, diag = _cargar_entradas(
+        fuente, huella, fecha_corte, cd_bytes, cd_nombre, marcas, cargas
+    )
     # Tránsito: pedidos del sistema hacia la tienda (data.transito).
     transito_pedidos = TR.usa_pedidos(inputs, params)
     if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
@@ -224,6 +269,7 @@ def _correr_motor(
             else None
         ),
         "dia_reposicion": dia,
+        "aviso_carga": aviso_carga(diag, dia),
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
@@ -282,6 +328,7 @@ def correr_motor(
         bloq_clave,
         niveles_clave,
         huella_planificacion(niveles_clave),
+        clave_cargas(fuente, huella_config()),
     )
 
 
@@ -564,6 +611,7 @@ def limpiar_cache() -> None:
     """Botón «Actualizar datos»: vuelve a leer BigQuery en la próxima corrida."""
     for f in (
         _cargar_entradas,
+        _ultimas_cargas,
         _correr_motor,
         _marcas_arti,
         _repositorio,
@@ -779,6 +827,8 @@ def barra_lateral(paginas: list | None = None) -> None:
                 + "</div>",
                 sidebar=True,
             )
+            if diag.get("aviso_carga"):
+                st.sidebar.error(diag["aviso_carga"])
             from app.components.archivo import boton_archivo
 
             boton_archivo("archivo_barra", en_barra=True)
