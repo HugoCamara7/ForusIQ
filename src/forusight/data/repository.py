@@ -623,6 +623,11 @@ class FuentesRepository(BigQueryRepository):
                 else False
             )
             clase_ok = cla.isin(recepcion.clasificaciones_transito).fillna(False) | cla.isna()
+            # Ya recibido: con fecha de recepción o línea en estado 4 (está en el stock).
+            lineas["recepcionado"] = F.recepcionado(
+                lineas.assign(con_recepcion=rec.notna())
+            ).to_numpy()
+            abierto = abierto & ~lineas["recepcionado"]
             desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
             lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
             lineas["cuenta_transito"] = (abierto | hoy_rec) & clase_ok

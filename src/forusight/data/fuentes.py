@@ -497,7 +497,14 @@ CAMPOS_CABECERA = (
     "fecha",
     "fecha_recepcion",
 )
-CAMPOS_DETALLE = ("nro_pedido", "id_linea", "id_producto", "cantidad", "cantidad_despachada")
+CAMPOS_DETALLE = (
+    "nro_pedido",
+    "id_linea",
+    "id_producto",
+    "estado_linea",
+    "cantidad",
+    "cantidad_despachada",
+)
 
 
 def _sin_repetidas(tabla: str, mapa: Mapping[str, str], campos) -> str:
@@ -545,6 +552,15 @@ def sql_pedidos(
             else "FALSE"
         )
         + " AS recibido_post_corte",
+        # Con fecha de recepción: la tienda ya lo recibió (está en su stock).
+        (f"{h('fecha_recepcion')} IS NOT NULL" if "fecha_recepcion" in m_h else "FALSE")
+        + " AS con_recepcion",
+        (
+            f"CAST({d('estado_linea')} AS STRING)"
+            if "estado_linea" in m_d
+            else "CAST(NULL AS STRING)"
+        )
+        + " AS estado_linea",
         f"SUM({cant}) AS unidades",
     ]
     # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
@@ -556,7 +572,7 @@ def sql_pedidos(
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
         f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7"
     )
 
 
@@ -578,6 +594,7 @@ def sql_revisar_transito(
         f"TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod",
         f"CAST({h('estado')} AS STRING) AS estado",
         f"CAST({h('clasificacion')} AS STRING) AS clasificacion",
+        f"CAST({d('estado_linea')} AS STRING) AS estado_linea",
         f"SAFE_CAST({h('fecha')} AS DATE) AS fecha_pedido",
         f"SAFE_CAST({h('fecha_recepcion')} AS DATE) AS fecha_recepcion",
         f"CAST({d('id_linea')} AS STRING) AS id_linea",
@@ -639,10 +656,34 @@ def codigo_pedido(valores: pd.Series, nombres: list[tuple[str, int]]) -> pd.Seri
     return cod.astype("Int64")
 
 
+def recepcionado(df: pd.DataFrame) -> pd.Series:
+    """La tienda ya recibió la línea: el pedido tiene fecha de recepción, o el estado de la
+    línea es 4 (Recepcionado). Ya está en su stock, aunque la cabecera diga otro estado."""
+    con_fecha = (
+        df["con_recepcion"].fillna(False).astype(bool)
+        if "con_recepcion" in df
+        else pd.Series(False, index=df.index)
+    )
+    linea = (
+        codigo_pedido(df["estado_linea"], _NOMBRES_ESTADO).eq(4).fillna(False)
+        if "estado_linea" in df
+        else pd.Series(False, index=df.index)
+    )
+    return (con_fecha | linea).astype(bool)
+
+
 def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
     """Resultado de sql_pedidos → tienda_id, sku, estado, clasificacion (códigos),
-    recibido_post_corte, unidades."""
-    cols = ["tienda_id", "sku", "estado", "clasificacion", "recibido_post_corte", "unidades"]
+    recibido_post_corte, recepcionado (fecha de recepción o línea en estado 4), unidades."""
+    cols = [
+        "tienda_id",
+        "sku",
+        "estado",
+        "clasificacion",
+        "recibido_post_corte",
+        "recepcionado",
+        "unidades",
+    ]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
     p = pd.DataFrame(
@@ -656,6 +697,7 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
                 if "recibido_post_corte" in df
                 else False
             ),
+            "recepcionado": recepcionado(df),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
@@ -678,10 +720,16 @@ def transito_de_pedidos(
     tránsito, porque el stock de la tienda todavía no lo trae.
 
     Se considera todo el historial: un pedido que sigue abierto, aunque sea antiguo, es
-    mercadería reservada para la tienda."""
+    mercadería reservada para la tienda. Lo ya recepcionado (con fecha de recepción o línea
+    en estado 4) no es tránsito aunque la cabecera siga en otro estado."""
     if pedidos is None or pedidos.empty:
         return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
-    en_estado = pedidos["estado"].isin(estados)
+    recibido = (
+        pedidos["recepcionado"].astype(bool)
+        if "recepcionado" in pedidos
+        else pd.Series(False, index=pedidos.index)
+    )
+    en_estado = pedidos["estado"].isin(estados).fillna(False) & ~recibido
     if recibidos_post_corte and "recibido_post_corte" in pedidos:
         en_estado |= pedidos["estado"].eq(4).fillna(False) & pedidos["recibido_post_corte"].astype(
             bool

@@ -191,6 +191,8 @@ ALIAS_PEDIDOS_DETALLE: dict[str, list[str]] = {
     # Identificador de la línea del pedido: separa líneas legítimas de copias repetidas.
     "id_linea": ["iddeta", "id_detalle", "id_linea", "linea", "item"],
     "id_producto": ["codint", "codpro", "id_producto", "cod_producto", "codint_ma", "sku"],
+    # Estado de la línea (estado_pd): una línea recepcionada ya está en el stock de la tienda.
+    "estado_linea": ["estado_linea", "estado_detalle", "estado"],
     # Despachada si ya salió del origen; si viene en 0 (aprobado, picking), la pedida.
     "cantidad_despachada": [
         "cantidad_despachada",

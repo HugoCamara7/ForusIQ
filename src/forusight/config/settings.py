@@ -199,10 +199,13 @@ class PrioridadTiendasParams(_Section):
     niveles: dict[str, NivelPrioridad] = Field(
         default_factory=lambda: {
             "A": NivelPrioridad(factor_cobertura=1.25, importancia=1.0),
-            "B": NivelPrioridad(factor_cobertura=1.0),
+            "B": NivelPrioridad(factor_cobertura=1.0, importancia=0.6),
             "C": NivelPrioridad(factor_cobertura=0.9, importancia=0.25),
         }
     )
+    #: Dentro de una letra, cada puesto del «orden» (prioridad_tiendas.csv) resta esto a la
+    #: importancia: HP Jockey (A, 1) 1.0, Larcomar (A, 2) 0.97, San Miguel (A, 3) 0.94…
+    paso_orden: float = Field(0.03, ge=0, le=0.2)
 
 
 class CalendarioParams(_Section):
