@@ -270,3 +270,24 @@ def test_venta_post_corte_solo_despues_del_corte_y_neta():
     vr = VR.resumir(diaria, dt, "2026-10-05", "2026-10-03").set_index("tienda_id")
     assert vr.loc["8", "venta_post_corte"] == 1  # la del 03/10 ya está en el stock
     assert vr.loc["9", "venta_post_corte"] == -1
+
+
+def test_hpk_jockey_es_B_y_no_prioritaria_por_el_nombre():
+    """HPK JOCKEY lleva "JOCKEY" en el nombre, pero es una tienda B: el maestro manda sobre el
+    patrón. Sin su fila caía en el patrón y repartía como la insignia (importancia 1.0, x1.25)."""
+    from forusight.engine.universe import marcar_prioridad
+
+    t = pd.DataFrame(
+        {
+            "tienda_id": ["8", "18", "46"],
+            "nombre": ["HP JOCKEY", "HPK JOCKEY", "HPK PLAZA NORTE"],
+            "importancia_comercial": [0.5, 0.5, 0.5],
+        }
+    )
+    for marca in ("HUSH PUPPIES", "HUSH PUPPIES KIDS"):
+        m = marcar_prioridad(CAL.aplicar(t, "2026-10-05", params(), [marca]), params())
+        m = m.set_index("tienda_id")
+        assert not m.loc["18", "tienda_prioritaria"], marca
+        assert m.loc["18", "factor_cobertura_tienda"] == 1.0, marca
+        assert m.loc["18", "importancia_comercial"] < 0.6, marca
+        assert m.loc["46", "importancia_comercial"] < m.loc["18", "importancia_comercial"], marca
