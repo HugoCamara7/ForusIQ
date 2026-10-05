@@ -68,15 +68,18 @@ def marcar_prioridad(tiendas: pd.DataFrame, params: EngineParams) -> pd.DataFram
         else pd.Series(pd.NA, index=tiendas.index, dtype="string")
     )
     cadena = cadena.fillna(nombre.str.split().str[0])
-    # Prioridad por venta (A, B, C) del maestro de la marca; manda sobre el patrón de nombre.
+    # Prioridad (A, B, C) del maestro de la marca o del de centros; manda sobre el patrón.
     nivel = (
         tiendas["prioridad"].astype("string").str.strip().str.upper()
         if "prioridad" in tiendas
         else pd.Series(pd.NA, index=tiendas.index, dtype="string")
     )
-    con_nivel = nivel.notna() & nivel.isin(list(p.niveles))
+    liquidadoras = [str(c).strip().upper() for c in p.cadenas_liquidadoras]
+    # Una liquidadora sigue siendo outlet aunque el maestro de centros le ponga letra: la
+    # letra la ordenaría por delante de tiendas de línea (un DH «A» como una insignia).
+    con_nivel = nivel.notna() & nivel.isin(list(p.niveles)) & ~cadena.isin(liquidadoras)
     prio = np.where(con_nivel, nivel.eq("A").fillna(False), prio)
-    liq = cadena.isin([str(c).strip().upper() for c in p.cadenas_liquidadoras]) & ~prio
+    liq = cadena.isin(liquidadoras) & ~prio
     tiendas["tienda_prioritaria"] = np.asarray(prio, dtype=bool)
     tiendas["tienda_liquidadora"] = liq.to_numpy(dtype=bool)
     imp = pd.to_numeric(tiendas["importancia_comercial"], errors="coerce").fillna(0.5)

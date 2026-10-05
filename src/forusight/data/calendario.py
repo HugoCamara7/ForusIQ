@@ -9,6 +9,9 @@
   de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
 * ``config/prioridad_tiendas.csv`` — prioridad por venta (A, B, C) por marca y su orden
   dentro de la letra (1 = la primera: HP Jockey dentro de las A).
+* ``config/prioridad_centros.csv`` — prioridad (A, B, C) de TODAS las tiendas, de cualquier
+  cadena (maestro «Atributos centros Forus Perú»). Cubre a las que no tienen fila en el
+  maestro de la marca; si la tienda está en los dos, manda el de la marca (trae el orden).
 
 En un día dado sólo reciben las tiendas cuyo mall tiene ruta ese día; la cobertura de cada
 tienda es su lead time + su período de revisión (como el reporte), no un valor fijo.
@@ -35,6 +38,11 @@ def calendario() -> pd.DataFrame:
 @lru_cache(maxsize=1)
 def prioridades() -> pd.DataFrame:
     return pd.read_csv(CONFIG / "prioridad_tiendas.csv", dtype={"codigo_tienda": str})
+
+
+@lru_cache(maxsize=1)
+def prioridad_centros() -> pd.DataFrame:
+    return pd.read_csv(CONFIG / "prioridad_centros.csv", dtype={"codigo_tienda": str})
 
 
 @lru_cache(maxsize=1)
@@ -101,7 +109,10 @@ def aplicar(
     if pedidas:
         pr = pr[pr["marca"].str.upper().isin(pedidas)]
     pr = pr.drop_duplicates("codigo_tienda").set_index("codigo_tienda")
-    out["prioridad"] = ids.map(pr["prioridad"])
+    # Sin fila en el maestro de la marca: la prioridad de la tienda en el maestro de centros
+    # (sin orden). Sin ninguna de las dos, el patrón de nombre de params (universe).
+    cen = prioridad_centros().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    out["prioridad"] = ids.map(pr["prioridad"]).fillna(ids.map(cen["prioridad"]))
     out["orden_prioridad"] = (
         pd.to_numeric(ids.map(pr["orden"]), errors="coerce") if "orden" in pr else np.nan
     )

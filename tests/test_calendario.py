@@ -291,3 +291,59 @@ def test_hpk_jockey_es_B_y_no_prioritaria_por_el_nombre():
         assert m.loc["18", "factor_cobertura_tienda"] == 1.0, marca
         assert m.loc["18", "importancia_comercial"] < 0.6, marca
         assert m.loc["46", "importancia_comercial"] < m.loc["18", "importancia_comercial"], marca
+
+
+def test_las_otras_tiendas_toman_su_letra_del_maestro_de_centros():
+    """CLB, BSOUL, VANS y RKF del Jockey no están en el maestro de HUSH PUPPIES: su letra sale
+    del maestro de centros (A), ya no del patrón "JOCKEY". Una tienda B o C de otra cadena deja
+    de repartir con su peso de venta y toma el de su letra."""
+    from forusight.engine.universe import marcar_prioridad
+
+    t = pd.DataFrame(
+        {
+            "tienda_id": ["137", "59", "150", "2", "84", "96"],
+            "nombre": [
+                "BSOUL JOCKEY PLAZA",
+                "CLB JOCKEY PLAZA",
+                "VANS JOCKEY PLAZA",
+                "RKF JOCKEY",
+                "CLB SALAVERRY",
+                "FB CAMACHO",
+            ],
+            "importancia_comercial": [0.5] * 6,
+        }
+    )
+    a = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"]).set_index("tienda_id")
+    assert a.loc[["137", "59", "150", "2", "84"], "prioridad"].eq("A").all()
+    assert a.loc["96", "prioridad"] == "C"
+    assert a.loc[["137", "59"], "orden_prioridad"].isna().all()  # el de centros no trae orden
+    m = marcar_prioridad(a.reset_index(), params()).set_index("tienda_id")
+    assert m.loc["84", "tienda_prioritaria"] and m.loc["84", "factor_cobertura_tienda"] == 1.25
+
+
+def test_el_maestro_de_la_marca_manda_sobre_el_de_centros():
+    """HPK JOCKEY es A en centros y B en el de HUSH PUPPIES: en esa marca manda el de la marca."""
+    t = pd.DataFrame({"tienda_id": ["18", "44"], "nombre": ["HPK JOCKEY", "HP PLAZA NORTE"]})
+    hp = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"]).set_index("tienda_id")
+    assert hp.loc["18", "prioridad"] == "B" and hp.loc["44", "prioridad"] == "A"
+    otra = CAL.aplicar(t, "2026-10-05", params(), ["COLUMBIA"]).set_index("tienda_id")
+    assert otra.loc["18", "prioridad"] == "A" and otra.loc["44", "prioridad"] == "B"
+
+
+def test_una_liquidadora_sigue_siendo_outlet_aunque_tenga_letra():
+    """El maestro de centros pone letra también a DH, SE y FB; siguen siendo outlets: últimas
+    en el reparto y con menos cobertura, aunque sean A."""
+    from forusight.engine.universe import marcar_prioridad
+
+    cen = CAL.prioridad_centros()
+    dh_a = cen.loc[cen["cadena"].eq("DH") & cen["prioridad"].eq("A")].iloc[0]
+    t = pd.DataFrame(
+        {
+            "tienda_id": [dh_a["codigo_tienda"]],
+            "nombre": [dh_a["nombre_tienda"]],
+            "importancia_comercial": [0.5],
+        }
+    )
+    m = marcar_prioridad(CAL.aplicar(t, "2026-10-05", params(), ["COLUMBIA"]), params()).iloc[0]
+    assert m["tienda_liquidadora"] and not m["tienda_prioritaria"]
+    assert m["importancia_comercial"] == 0.0 and m["factor_cobertura_tienda"] == 0.75
