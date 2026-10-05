@@ -238,7 +238,8 @@ def test_toda_tienda_del_calendario_y_prioridades_esta_en_el_catalogo():
 
 
 def test_orden_de_prioridad_dentro_de_la_letra():
-    """HP Jockey (A, 1º) va antes que HP San Miguel 2 (A, 3º); toda A va antes que una B."""
+    """HP Jockey (A, Jockey) va antes que HP San Miguel 2 (A, resto de Lima); toda A va antes
+    que una B (HP Chiclayo, B de provincia)."""
     from forusight.engine.universe import marcar_prioridad
 
     t = pd.DataFrame(
@@ -250,7 +251,7 @@ def test_orden_de_prioridad_dentro_de_la_letra():
     )
     t = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"])
     imp = marcar_prioridad(t, params()).set_index("tienda_id")["importancia_comercial"]
-    assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.94 and imp["12"] == 0.57
+    assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.97 and round(imp["12"], 2) == 0.54
 
 
 def test_venta_post_corte_solo_despues_del_corte_y_neta():
@@ -272,30 +273,44 @@ def test_venta_post_corte_solo_despues_del_corte_y_neta():
     assert vr.loc["9", "venta_post_corte"] == -1
 
 
-def test_hpk_jockey_es_B_y_no_prioritaria_por_el_nombre():
-    """HPK JOCKEY lleva "JOCKEY" en el nombre, pero es una tienda B: el maestro manda sobre el
-    patrón. Sin su fila caía en el patrón y repartía como la insignia (importancia 1.0, x1.25)."""
+def test_hpk_jockey_es_A_como_dice_el_maestro_de_centros():
+    """El maestro de centros manda sobre el de la marca: HPK JOCKEY es A (antes B en el de
+    HUSH PUPPIES) y reparte igual que HP JOCKEY; HP PLAZA NORTE baja a B."""
     from forusight.engine.universe import marcar_prioridad
 
     t = pd.DataFrame(
         {
-            "tienda_id": ["8", "18", "46"],
-            "nombre": ["HP JOCKEY", "HPK JOCKEY", "HPK PLAZA NORTE"],
-            "importancia_comercial": [0.5, 0.5, 0.5],
+            "tienda_id": ["8", "18", "44", "22"],
+            "nombre": ["HP JOCKEY", "HPK JOCKEY", "HP PLAZA NORTE", "HP TRUJILLO"],
+            "importancia_comercial": [0.5] * 4,
         }
     )
-    for marca in ("HUSH PUPPIES", "HUSH PUPPIES KIDS"):
-        m = marcar_prioridad(CAL.aplicar(t, "2026-10-05", params(), [marca]), params())
-        m = m.set_index("tienda_id")
-        assert not m.loc["18", "tienda_prioritaria"], marca
-        assert m.loc["18", "factor_cobertura_tienda"] == 1.0, marca
-        assert m.loc["18", "importancia_comercial"] < 0.6, marca
-        assert m.loc["46", "importancia_comercial"] < m.loc["18", "importancia_comercial"], marca
+    for marca in ("HUSH PUPPIES", "HUSH PUPPIES KIDS", "COLUMBIA"):
+        a = CAL.aplicar(t, "2026-10-05", params(), [marca]).set_index("tienda_id")
+        assert a["prioridad"].to_dict() == {"8": "A", "18": "A", "44": "B", "22": "A"}, marca
+        m = marcar_prioridad(a.reset_index(), params()).set_index("tienda_id")
+        imp = m["importancia_comercial"]
+        assert imp["18"] == imp["8"] == 1.0, marca
+        assert imp["8"] > imp["22"] > imp["44"], marca  # Jockey > provincia A > Lima B
+
+
+def test_jockey_siempre_primero_luego_lima_luego_provincia():
+    """Dentro de cada letra: Jockey Plaza 1, el resto de Lima 2, provincia 3. Todas las tiendas
+    del Jockey son A y la primera de las A."""
+    cen = CAL.prioridad_centros()
+    jockey = cen["centro_comercial"].str.upper().eq("JOCKEY")
+    lima = cen["zona_cc"].str.upper().eq("LIMA")
+    assert jockey.sum() == 7
+    assert cen.loc[jockey, "prioridad"].eq("A").all() and cen.loc[jockey, "orden"].eq(1).all()
+    assert cen.loc[~jockey & lima, "orden"].eq(2).all()
+    assert cen.loc[~lima, "orden"].eq(3).all()
+    assert not cen["codigo_tienda"].duplicated().any()
+    assert set(cen["prioridad"]) == {"A", "B", "C"}
 
 
 def test_las_otras_tiendas_toman_su_letra_del_maestro_de_centros():
-    """CLB, BSOUL, VANS y RKF del Jockey no están en el maestro de HUSH PUPPIES: su letra sale
-    del maestro de centros (A), ya no del patrón "JOCKEY". Una tienda B o C de otra cadena deja
+    """CLB, BSOUL, VANS y RKF del Jockey: su letra (A) y su orden (1) salen del maestro de
+    centros, ya no del patrón "JOCKEY". Una tienda B o C de otra cadena deja
     de repartir con su peso de venta y toma el de su letra."""
     from forusight.engine.universe import marcar_prioridad
 
@@ -316,18 +331,10 @@ def test_las_otras_tiendas_toman_su_letra_del_maestro_de_centros():
     a = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"]).set_index("tienda_id")
     assert a.loc[["137", "59", "150", "2", "84"], "prioridad"].eq("A").all()
     assert a.loc["96", "prioridad"] == "C"
-    assert a.loc[["137", "59"], "orden_prioridad"].isna().all()  # el de centros no trae orden
+    assert a.loc[["137", "59", "150", "2"], "orden_prioridad"].eq(1).all()  # Jockey
+    assert a.loc["84", "orden_prioridad"] == 2  # Salaverry: resto de Lima
     m = marcar_prioridad(a.reset_index(), params()).set_index("tienda_id")
     assert m.loc["84", "tienda_prioritaria"] and m.loc["84", "factor_cobertura_tienda"] == 1.25
-
-
-def test_el_maestro_de_la_marca_manda_sobre_el_de_centros():
-    """HPK JOCKEY es A en centros y B en el de HUSH PUPPIES: en esa marca manda el de la marca."""
-    t = pd.DataFrame({"tienda_id": ["18", "44"], "nombre": ["HPK JOCKEY", "HP PLAZA NORTE"]})
-    hp = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"]).set_index("tienda_id")
-    assert hp.loc["18", "prioridad"] == "B" and hp.loc["44", "prioridad"] == "A"
-    otra = CAL.aplicar(t, "2026-10-05", params(), ["COLUMBIA"]).set_index("tienda_id")
-    assert otra.loc["18", "prioridad"] == "A" and otra.loc["44", "prioridad"] == "B"
 
 
 def test_una_liquidadora_sigue_siendo_outlet_aunque_tenga_letra():
