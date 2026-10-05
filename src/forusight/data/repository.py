@@ -617,6 +617,12 @@ class FuentesRepository(BigQueryRepository):
             cla = F.codigo_pedido(lineas["clasificacion"], F._NOMBRES_CLASIFICACION)
             rec = pd.to_datetime(lineas["fecha_recepcion"], errors="coerce")
             abierto = est.isin(recepcion.estados_transito).fillna(False)
+            # 6/7 (en transporte, prerecepcionado): sólo si el pedido es reciente.
+            ped = pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
+            dias = (pd.Timestamp(hoy) - ped).dt.days.fillna(0)
+            abierto |= est.isin(recepcion.estados_transito_recientes).fillna(False) & (
+                dias <= recepcion.dias_transito_recientes
+            )
             hoy_rec = (
                 est.eq(4).fillna(False) & (rec >= pd.Timestamp(hoy)).fillna(False)
                 if recepcion.recepcionados_post_corte
