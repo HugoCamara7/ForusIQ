@@ -655,8 +655,9 @@ def test_revisar_transito_de_una_tienda():
     lineas, locales = repo.revisar_transito(
         "97", params().recepcion, pd.Timestamp("2026-10-02").date()
     )
-    assert lineas["cuenta_transito"].tolist() == [True, True, False, False]
-    assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 5  # 2 pedidas + 3 desp.
+    # en transporte (6) se toma como ya recibido: sólo cuenta el aprobado
+    assert lineas["cuenta_transito"].tolist() == [True, False, False, False]
+    assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 2
     assert lineas["repetida"].tolist() == [False, True, False, False]
     assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
     _, sql, p = fake.consultas[0]
@@ -671,7 +672,7 @@ def test_revisar_transito_de_una_tienda():
         }
     )
     res, tabla = F.comparar_transito(lineas, rep)
-    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 5
+    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 2
     fila = tabla.set_index(["estado_cod", "clasif_cod"]).loc[(1, 1)]
     assert fila["unid_con_transito_neo"] == 2 and fila["estado"] == "Aprobado"
 

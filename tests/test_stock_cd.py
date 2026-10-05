@@ -35,7 +35,7 @@ def test_transito_de_pedidos_reduce_la_necesidad_de_la_tienda():
         {
             "tienda_id": ["T0", "T0"],
             "sku": [sku, sku],
-            "estado": pd.array([6, 4], dtype="Int64"),  # en transporte; recepcionado antes
+            "estado": pd.array([2, 6], dtype="Int64"),  # en picking; en transporte = recibido
             "clasificacion": pd.array([1, 1], dtype="Int64"),
             "recibido_post_corte": [False, False],
             "unidades": [6.0, 9.0],

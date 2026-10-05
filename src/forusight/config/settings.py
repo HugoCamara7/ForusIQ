@@ -239,9 +239,10 @@ class RecepcionParams(_Section):
 
     #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
     transito_pedidos: bool = True
-    #: 1 Aprobado, 2 en Picking, 3 Documentado, 6 en Transporte, 7 Prerecepcionado
+    #: 1 Aprobado, 2 en Picking, 3 Documentado. 6 en Transporte y 7 Prerecepcionado se tratan
+    #: como recibidos (hay pedidos antiguos que se quedan en esos estados), igual que 4.
     #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
-    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3, 6, 7])
+    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: Recepcionado (4) ya está en el stock de la tienda: no es tránsito (como Neogística).

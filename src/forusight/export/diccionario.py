@@ -244,10 +244,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Stock Trán. Int. [un]": (
         STOCK,
         "Unidades en camino a la tienda.",
-        "Pedidos del sistema hacia la tienda: aprobados, en picking, documentados, en "
-        "transporte y prerecepcionados (reposición, llenado de canal y traspasos), de todo el "
-        "historial. Lo recepcionado (con fecha de recepción o línea recepcionada) ya está en el "
-        "stock de la tienda y no se cuenta.",
+        "Pedidos del sistema hacia la tienda aprobados, en picking o documentados "
+        "(reposición, llenado de canal y traspasos), de todo el historial. En transporte, "
+        "prerecepcionado o recepcionado (o con fecha de recepción) se toma como ya recibido.",
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),
