@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from forusight.data.fuentes import transito_de_pedidos
+from forusight.data.fuentes import recepcion_de_pedidos, transito_de_pedidos
 
 
 def usa_pedidos(inputs, params) -> bool:
@@ -27,7 +27,6 @@ def aplicar_pedidos(inputs, params):
         inputs.pedidos,
         rec.estados_transito,
         rec.clasificaciones_transito,
-        rec.recepcionados_post_corte,
         rec.estados_transito_recientes,
         rec.dias_transito_recientes,
     )
@@ -37,3 +36,11 @@ def aplicar_pedidos(inputs, params):
         0.0
     )
     return replace(inputs, stock_tienda=st)
+
+
+def recepcion_post_corte(inputs, params):
+    """tienda_id, sku, recepcion_post_corte: lo recepcionado después del corte de stock_bi, que
+    se suma al stock físico (None si está apagado o no hay pedidos)."""
+    if not params.recepcion.sumar_recepcion_post_corte or not usa_pedidos(inputs, params):
+        return None
+    return recepcion_de_pedidos(inputs.pedidos, params.recepcion.clasificaciones_transito)

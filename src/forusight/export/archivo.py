@@ -172,9 +172,14 @@ def construir_tabla(
         if "venta_post_corte" in d and params.reposicion_venta.descontar_venta_post_corte
         else pd.Series(0.0, index=d.index)
     )
-    # stock físico neto de la venta posterior al corte (como el reporte cuando stock_bi llega
-    # atrasado)
-    fisico = (d["stock_tienda"] - post.fillna(0)).clip(lower=0)
+    recep = (
+        d["recepcion_post_corte"].fillna(0)
+        if "recepcion_post_corte" in d
+        else pd.Series(0.0, index=d.index)
+    )
+    # stock físico de hoy: stock_bi (cierre del día del corte) − venta neta posterior al corte
+    # + lo recepcionado después del corte
+    fisico = (d["stock_tienda"] - post.fillna(0) + recep).clip(lower=0)
     posicion = (fisico + d["stock_transito"]).clip(lower=0)
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
 
@@ -221,8 +226,9 @@ def construir_tabla(
     for col, c in (
         ("Venta desde ruta anterior [un]", "venta_desde_ruta"),
         ("Venta después del corte [un]", "venta_post_corte"),
+        ("Recepción después del corte [un]", "recepcion_post_corte"),
     ):
-        if c in d and d[c].fillna(0).gt(0).any():
+        if c in d and d[c].fillna(0).ne(0).any():
             out[col] = d[c].fillna(0)
 
     out["Pronóstico Demanda [un/semana]"] = d["demanda_semanal"].round(6)

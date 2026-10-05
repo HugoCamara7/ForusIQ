@@ -40,10 +40,8 @@ det["tienda"] = det["nombre"].astype("string").fillna(det["tienda_id"].astype("s
 env = det[det["cantidad"] > 0]
 
 meta = [f"Semana {_fecha(r['fecha_corte'])}"]
-if diag.get("fecha_foto"):  # el corte de fecha F es el cierre del día anterior
-    meta.append(
-        f"Stock al cierre del {_fecha(pd.Timestamp(diag['fecha_foto']) - pd.Timedelta(days=1))}"
-    )
+if diag.get("fecha_foto"):  # el corte de fecha F es el cierre del día F
+    meta.append(f"Stock al cierre del {_fecha(pd.Timestamp(diag['fecha_foto']))}")
 meta += list(diag.get("marcas") or [])
 if diag.get("dia_reposicion"):
     from forusight.data.calendario import dia_semana

@@ -75,7 +75,13 @@ def niveles(
     p = params.nivel_neo
     m = maestro if maestro is not None else PLAN.vacio()
     s = sku[KEY + ["modelo_color_id", "talla", "venta_4s", "venta_12s"]].copy()
-    for c in ("stock_disponible", "stock_transito", "venta_desde_ruta", "venta_post_corte"):
+    for c in (
+        "stock_disponible",
+        "stock_transito",
+        "venta_desde_ruta",
+        "venta_post_corte",
+        "recepcion_post_corte",
+    ):
         s[c] = sku[c].fillna(0).to_numpy() if c in sku else 0.0
     prod = pd.DataFrame({"sku": dim_producto["sku"]})
     for c in ("marca", "prenda", "categoria", "genero", "talla"):
@@ -139,11 +145,12 @@ def niveles(
     talla_viva = (
         (s["stock_disponible"] > 0)
         | (s["stock_transito"] > 0)
+        | (s["recepcion_post_corte"] > 0)
         | activa
         | (s["venta_desde_ruta"] > 0)
     )
     reciente = (
-        s["venta_4s"].clip(lower=0) + s["venta_desde_ruta"] + s["venta_post_corte"]
+        s["venta_4s"].clip(lower=0) + s["venta_desde_ruta"] + s["venta_post_corte"].clip(lower=0)
     ).groupby(mc).transform("sum") > 0
     listada = ref["nivel"].fillna(0).to_numpy() > 0
     evalua = (talla_viva & reciente).to_numpy()

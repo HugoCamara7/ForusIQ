@@ -152,9 +152,17 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Venta después del corte [un]": (
         VENTA,
         "Venta posterior al cierre del stock: todavía no está descontada del Stock Físico.",
-        "SUMA(venta diaria) con fecha ≥ fecha_corte del stock (el corte de fecha F es el cierre "
-        "del día F − 1).",
+        "SUMA(venta diaria neta, notas de crédito en negativo) con fecha > fecha_corte del stock "
+        "y antes de hoy (el corte de fecha F es el cierre del día F).",
         "ft_pe_venta_retail + stock_bi · fecha_corte",
+        "No aplica",
+    ),
+    "Recepción después del corte [un]": (
+        STOCK,
+        "Lo que la tienda recepcionó después del cierre del stock: se suma al Stock Físico.",
+        "SUMA(unidades de pedidos recepcionados con fecha de recepción > fecha_corte del "
+        "stock), reposición, llenado de canal y traspasos.",
+        "pedidos_header_table + pedidos_detail_table · fecrec",
         "No aplica",
     ),
     "VTA 2 SEM": (
@@ -235,10 +243,11 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     ),
     "Stock Físico [un]": (
         STOCK,
-        "Stock de la tienda, neto de la venta hecha después del corte de stock y antes de hoy.",
+        "Stock de la tienda hoy: el del corte de stock, menos lo vendido y más lo recepcionado "
+        "después del corte.",
         "stock_tiendas del último fecha_corte de este año (el corte de fecha F es el cierre del "
-        "día F − 1) menos la venta de los días entre el corte y hoy (si stock_bi llega atrasado, "
-        "p. ej. un lunes, como el reporte).",
+        "día F) − venta neta con fecha > F + recepcionado con fecha de recepción > F (con el "
+        "corte de ayer no cambia; un lunes, con el corte del sábado, ajusta el domingo).",
         "stock_bi · stock_tiendas",
         REP,
     ),

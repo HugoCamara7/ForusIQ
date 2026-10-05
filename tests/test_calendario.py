@@ -136,7 +136,7 @@ def test_reponer_la_venta_desde_la_ultima_ruta():
         }
     )
     dt = CAL.aplicar(inp.dim_tienda, "2026-09-25", p, ["HUSH PUPPIES"])  # viernes
-    vr = VR.resumir(diaria, dt, "2026-09-25", "2026-09-24")  # corte del 24 = cierre del 23
+    vr = VR.resumir(diaria, dt, "2026-09-25", "2026-09-23")  # corte del 23 = cierre del 23
     fila = vr.set_index(["tienda_id", "sku"]).loc[("8", sku)]
     assert fila["venta_desde_ruta"] == 25 and fila["venta_post_corte"] == 15
     inp.dim_tienda = dt
@@ -251,3 +251,22 @@ def test_orden_de_prioridad_dentro_de_la_letra():
     t = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"])
     imp = marcar_prioridad(t, params()).set_index("tienda_id")["importancia_comercial"]
     assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.94 and imp["12"] == 0.57
+
+
+def test_venta_post_corte_solo_despues_del_corte_y_neta():
+    """Stock de fecha F = cierre de F: sólo resta la venta posterior a F; una nota de crédito
+    devuelve la prenda (venta neta negativa)."""
+    from forusight.engine import venta_reciente as VR
+
+    dt = pd.DataFrame({"tienda_id": ["8", "9"], "dias_reposicion": ["", ""]})
+    diaria = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(["2026-10-03", "2026-10-04", "2026-10-04"]),
+            "tienda_id": ["8", "8", "9"],
+            "sku": ["1", "1", "2"],
+            "unidades": [3.0, 1.0, -1.0],
+        }
+    )
+    vr = VR.resumir(diaria, dt, "2026-10-05", "2026-10-03").set_index("tienda_id")
+    assert vr.loc["8", "venta_post_corte"] == 1  # la del 03/10 ya está en el stock
+    assert vr.loc["9", "venta_post_corte"] == -1
