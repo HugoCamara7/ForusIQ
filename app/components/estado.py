@@ -797,7 +797,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                     help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
                 )
                 ss.dia_reposicion = ss.sb_dia
-            st.caption("Tránsito: pedidos del sistema (aprobados hasta prerecepcionados).")
+            st.caption("Tránsito: pedidos del sistema aprobados, en picking o documentados.")
             archivos_b = st.file_uploader(
                 "Reporte de bloqueos",
                 type=["xlsx"],
