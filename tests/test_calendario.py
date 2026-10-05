@@ -235,3 +235,19 @@ def test_toda_tienda_del_calendario_y_prioridades_esta_en_el_catalogo():
         catalogo
     )
     assert not faltan, f"Tiendas sin catálogo (config/tiendas_forus.csv): {sorted(faltan)}"
+
+
+def test_orden_de_prioridad_dentro_de_la_letra():
+    """HP Jockey (A, 1º) va antes que HP San Miguel 2 (A, 3º); toda A va antes que una B."""
+    from forusight.engine.universe import marcar_prioridad
+
+    t = pd.DataFrame(
+        {
+            "tienda_id": ["8", "43", "12"],
+            "nombre": ["HP JOCKEY", "HP SAN MIGUEL 2", "HP CHICLAYO"],
+            "importancia_comercial": [0.5, 0.9, 1.0],
+        }
+    )
+    t = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"])
+    imp = marcar_prioridad(t, params()).set_index("tienda_id")["importancia_comercial"]
+    assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.94 and imp["12"] == 0.57

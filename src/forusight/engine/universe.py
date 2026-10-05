@@ -87,6 +87,11 @@ def marcar_prioridad(tiendas: pd.DataFrame, params: EngineParams) -> pd.DataFram
         factor = np.where(es, cfg.factor_cobertura, factor)
         if cfg.importancia is not None:
             imp = np.where(es, cfg.importancia, imp)
+    # Orden dentro de la letra (1 = primera): cada puesto resta paso_orden.
+    if "orden_prioridad" in tiendas:
+        orden = pd.to_numeric(tiendas["orden_prioridad"], errors="coerce").to_numpy(dtype=float)
+        ajuste = np.where(con_nivel.to_numpy() & ~np.isnan(orden), (orden - 1) * p.paso_orden, 0)
+        imp = np.clip(np.asarray(imp, dtype=float) - np.nan_to_num(ajuste), 0, 1)
     tiendas["importancia_comercial"] = np.where(liq, p.importancia_liquidadora, imp)
     tiendas["factor_cobertura_tienda"] = factor
     return tiendas

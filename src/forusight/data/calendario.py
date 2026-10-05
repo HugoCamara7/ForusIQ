@@ -7,7 +7,8 @@
 * ``config/calendario_tiendas.csv`` — por tienda: su mall, lead time y período de revisión
   (días). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
   de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
-* ``config/prioridad_tiendas.csv`` — prioridad por venta (A, B, C) por marca.
+* ``config/prioridad_tiendas.csv`` — prioridad por venta (A, B, C) por marca y su orden
+  dentro de la letra (1 = la primera: HP Jockey dentro de las A).
 
 En un día dado sólo reciben las tiendas cuyo mall tiene ruta ese día; la cobertura de cada
 tienda es su lead time + su período de revisión (como el reporte), no un valor fijo.
@@ -19,6 +20,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
@@ -98,7 +100,9 @@ def aplicar(
     pedidas = {m.strip().upper() for m in (marcas or [])}
     if pedidas:
         pr = pr[pr["marca"].str.upper().isin(pedidas)]
-    out["prioridad"] = ids.map(
-        pr.drop_duplicates("codigo_tienda").set_index("codigo_tienda")["prioridad"]
+    pr = pr.drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    out["prioridad"] = ids.map(pr["prioridad"])
+    out["orden_prioridad"] = (
+        pd.to_numeric(ids.map(pr["orden"]), errors="coerce") if "orden" in pr else np.nan
     )
     return out

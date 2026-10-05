@@ -99,10 +99,11 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
   cadenas_liquidadoras: ["DH", "SE", "FB"]  # outlets: sin introducciones, últimas en el reparto
   factor_cobertura_liquidadora: 0.75
   importancia_liquidadora: 0.0
-  niveles:                      # prioridad por venta (config/prioridad_tiendas.csv)
+  niveles:                      # prioridad por venta (config/prioridad_tiendas.csv): A > B > C
     A: {factor_cobertura: 1.25, importancia: 1.0}
-    B: {factor_cobertura: 1.0}
+    B: {factor_cobertura: 1.0, importancia: 0.6}
     C: {factor_cobertura: 0.9, importancia: 0.25}
+  paso_orden: 0.03              # dentro de la letra, cada puesto del «orden» resta 0.03 (Jockey 1º en las A)
 
 recepcion:                      # tránsito = pedidos del sistema hacia la tienda (tablas de pedidos)
   transito_pedidos: true

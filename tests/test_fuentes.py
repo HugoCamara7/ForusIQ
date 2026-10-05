@@ -556,6 +556,7 @@ def test_mapeo_automatico_de_pedidos_peru_central():
         "nro_pedido": "nroped_pd",
         "id_linea": "iddeta_pd",
         "id_producto": "codint_pd",
+        "estado_linea": "estado_pd",
         "cantidad_despachada": "candes_pd",
         "cantidad": "canped_pd",
     }
@@ -582,7 +583,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" not in sql  # todo el historial de pedidos
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5\n" in sql + "\n"
+    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7\n" in sql + "\n"
 
 
 M_H = {
@@ -732,3 +733,26 @@ def test_pedido_abierto_antiguo_sigue_en_transito():
 def test_codigo_pedido_por_nombre():
     s = pd.Series(["Prerecepcionado", "Recepcionado", "en Picking", "7", None])
     assert F.codigo_pedido(s, F._NOMBRES_ESTADO).tolist() == [7, 4, 2, 7, pd.NA]
+
+
+def test_lo_recibido_no_es_transito_aunque_la_cabecera_siga_abierta():
+    """Con fecha de recepción o con la línea en estado 4, la mercadería ya está en el stock
+    de la tienda: no suma tránsito aunque la cabecera diga «en Transporte»."""
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["8", "8", "8"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["6", "6", "6"],
+            "clasificacion": ["1", "1", "1"],
+            "con_recepcion": [False, True, False],
+            "estado_linea": ["6", "6", "4"],
+            "unidades": [2, 3, 4],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, set())
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    assert tr["stock_transito"].tolist() == [2.0]
+    m_d = M.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D], M.ALIAS_PEDIDOS_DETALLE)
+    assert m_d["estado_linea"] == "estado_pd"
+    sql = F.sql_pedidos(F.TABLA_PEDIDOS_H, M_H, F.TABLA_PEDIDOS_D, m_d, F.TABLA_ARTI, {}, False)
+    assert "h.`fecrec_ph` IS NOT NULL AS con_recepcion" in sql and "AS estado_linea" in sql
