@@ -80,7 +80,7 @@ def requerir_login(modo_demo: bool, al_ingresar=None) -> bool:
             if (
                 al_ingresar is not None
             ):  # p. ej. leer las marcas de ARTI con el login aún en pantalla
-                with aviso.container():
+                with aviso.container(), st.spinner("Ingresando…"):
                     al_ingresar()
             ss.authenticated = True
             ss.auth_user = auth.normalizar(usuario)

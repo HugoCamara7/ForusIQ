@@ -1,0 +1,57 @@
+name: Corrida diaria 6:30
+
+# Todos los días a las 6:30 de Lima (UTC-5) corre la distribución y guarda el Excel con su
+# fecha en el repositorio privado de datos (forusight/corridas/AAAA-MM/).
+#
+# Cuatro intentos (6:30, 7:00, 7:30, 8:00 de Lima) y no uno: GitHub DESCARTA ejecuciones de
+# un cron programado cuando hay carga (no las retrasa). La corrida es idempotente: si el
+# Excel del día ya está, el intento siguiente no hace nada. Si la carga diaria de stock y
+# venta todavía no trae el cierre de ayer, espera al intento siguiente; el de las 8:00 guarda
+# igual, marcado PRELIMINAR.
+#
+# GitHub desactiva los workflows programados de un repositorio sin actividad en 60 días.
+on:
+  schedule:
+    - cron: "30 11 * * *"
+    - cron: "0 12 * * *"
+    - cron: "30 12 * * *"
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      forzar:
+        description: "Guardar aunque la carga diaria aún no traiga el cierre de ayer"
+        type: boolean
+        default: false
+
+concurrency:
+  group: corrida-diaria
+  cancel-in-progress: false
+
+jobs:
+  corrida:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Instalar
+        run: pip install -e .
+      - name: Secrets de la app
+        env:
+          SECRETS_TOML: ${{ secrets.FORUSIGHT_SECRETS_TOML }}
+        run: |
+          if [ -z "$SECRETS_TOML" ]; then
+            echo "Falta el secreto de Actions FORUSIGHT_SECRETS_TOML (los secrets de Streamlit Cloud)."
+            exit 1
+          fi
+          mkdir -p .streamlit
+          printf '%s' "$SECRETS_TOML" > .streamlit/secrets.toml
+      # El log es PUBLICO: el script solo imprime fecha, estado y contadores.
+      # El Excel NO se sube como artifact: eso lo publicaria. Va al repositorio de datos.
+      - name: Corrida
+        env:
+          FORUSIGHT_FORZAR: ${{ inputs.forzar }}
+        run: python scripts/corrida_diaria.py
