@@ -100,7 +100,9 @@ def repositorio(fuente: str):
     return _repositorio(fuente, huella_config())
 
 
-@st.cache_data(ttl=_TTL, show_spinner="Leyendo marcas de ARTI…", max_entries=8)
+# Sin spinner propio: la lectura se precarga al pulsar «Ingresar» y ahí sólo debe verse
+# «Ingresando…». La barra lateral pone su propio aviso si alguna vez tiene que leerlas.
+@st.cache_data(ttl=_TTL, show_spinner=False, max_entries=8)
 def _marcas_arti(fuente: str, huella: str) -> pd.DataFrame:
     return _repositorio(fuente, huella).marcas_disponibles()
 
@@ -713,11 +715,22 @@ def resultado_o_aviso() -> EngineResult | None:
     return res
 
 
+def marcas_por_defecto(opciones: list[str], pedidas: list[str]) -> list[str]:
+    """Marcas de ARTI que se eligen solas: las de `[forusight] marcas`, o la primera que se les
+    parezca. La usan la barra lateral y la corrida diaria programada: con dos reglas, la
+    corrida de las 6:30 saldría con otra marca que la de la pantalla."""
+    pedidas = [str(m).upper() for m in pedidas]
+    return [m for m in opciones if m in pedidas] or [
+        m for m in opciones if any(p[:5] in m for p in pedidas)
+    ][:1]
+
+
 def _selector_marcas() -> None:
     """Marcas reales de ARTI; por defecto las de `[forusight] marcas` (AZALEIA)."""
     ss = st.session_state
     try:
-        df = marcas_arti(ss.fuente)
+        with st.spinner("Leyendo marcas de ARTI…"):
+            df = marcas_arti(ss.fuente)
     except Exception as exc:
         st.warning(f"No se pudieron leer las marcas de ARTI.\n\n{explicar_error(exc)}")
         return
@@ -727,10 +740,7 @@ def _selector_marcas() -> None:
         _marcas_arti.clear()  # no dejar el vacío en caché
         return
     if ss.marcas is None:
-        pedidas = [m.upper() for m in ajustes().marcas]
-        ss.marcas = [m for m in opciones if m in pedidas] or [
-            m for m in opciones if any(p[:5] in m for p in pedidas)
-        ][:1]
+        ss.marcas = marcas_por_defecto(opciones, ajustes().marcas)
     # Con `key` la identidad del widget no depende de `default`: si se pasa default=ss.marcas,
     # cada cambio crea un widget NUEVO y la siguiente selección se pierde (y se cierra la lista).
     # El estado del widget se crea una vez desde ss.marcas (valor persistente entre páginas).
