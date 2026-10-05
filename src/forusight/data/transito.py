@@ -28,6 +28,8 @@ def aplicar_pedidos(inputs, params):
         rec.estados_transito,
         rec.clasificaciones_transito,
         rec.recepcionados_post_corte,
+        rec.estados_transito_recientes,
+        rec.dias_transito_recientes,
     )
     st = inputs.stock_tienda.drop(columns="stock_transito", errors="ignore")
     st = st.merge(tr, on=["tienda_id", "sku"], how="outer")

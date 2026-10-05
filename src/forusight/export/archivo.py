@@ -172,7 +172,10 @@ def construir_tabla(
         if "venta_post_corte" in d and params.reposicion_venta.descontar_venta_post_corte
         else pd.Series(0.0, index=d.index)
     )
-    posicion = (d["stock_tienda"] + d["stock_transito"] - post.fillna(0)).clip(lower=0)
+    # stock físico neto de la venta posterior al corte (como el reporte cuando stock_bi llega
+    # atrasado)
+    fisico = (d["stock_tienda"] - post.fillna(0)).clip(lower=0)
+    posicion = (fisico + d["stock_transito"]).clip(lower=0)
     fc = d["demanda_semanal"].where(d["demanda_semanal"] > 0)
 
     out = pd.DataFrame(
@@ -238,7 +241,7 @@ def construir_tabla(
     )
     out["Código Centro Origen"] = str(cd_id)
     out["Stock en CD"] = d["stock_cd_disponible"]
-    out["Stock Físico [un]"] = d["stock_tienda"]
+    out["Stock Físico [un]"] = fisico
     if d["stock_transito"].gt(0).any():  # la fuente de stock actual no trae tránsito
         out["Stock Trán. Int. [un]"] = d["stock_transito"]
     out["Posición Stock [un]"] = posicion

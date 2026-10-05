@@ -235,18 +235,20 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     ),
     "Stock Físico [un]": (
         STOCK,
-        "Stock de la tienda al cierre del día anterior al último corte.",
+        "Stock de la tienda, neto de la venta hecha después del corte de stock y antes de hoy.",
         "stock_tiendas del último fecha_corte de este año (el corte de fecha F es el cierre del "
-        "día F − 1; el del año pasado se descarta).",
+        "día F − 1) menos la venta de los días entre el corte y hoy (si stock_bi llega atrasado, "
+        "p. ej. un lunes, como el reporte).",
         "stock_bi · stock_tiendas",
         REP,
     ),
     "Stock Trán. Int. [un]": (
         STOCK,
         "Unidades en camino a la tienda.",
-        "Pedidos del sistema hacia la tienda aprobados, en picking o documentados "
-        "(reposición, llenado de canal y traspasos), de todo el historial. En transporte, "
-        "prerecepcionado o recepcionado (o con fecha de recepción) se toma como ya recibido.",
+        "Pedidos del sistema hacia la tienda aprobados, en picking o documentados (todo el "
+        "historial), y en transporte o prerecepcionados de los últimos 15 días (reposición, "
+        "llenado de canal y traspasos). Recepcionado, con fecha de recepción o más antiguo se "
+        "toma como ya recibido.",
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),

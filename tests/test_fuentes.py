@@ -583,7 +583,8 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" not in sql  # todo el historial de pedidos
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7\n" in sql + "\n"
+    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8\n" in sql + "\n"
+    assert "DATE_DIFF(@fecha_foto, SAFE_CAST(h.`fecped_ph` AS DATE), DAY)" in sql
 
 
 M_H = {
@@ -655,9 +656,9 @@ def test_revisar_transito_de_una_tienda():
     lineas, locales = repo.revisar_transito(
         "97", params().recepcion, pd.Timestamp("2026-10-02").date()
     )
-    # en transporte (6) se toma como ya recibido: sólo cuenta el aprobado
-    assert lineas["cuenta_transito"].tolist() == [True, False, False, False]
-    assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 2
+    # en transporte (6) de hace 1 día cuenta (reciente); recepcionado y devolución no
+    assert lineas["cuenta_transito"].tolist() == [True, True, False, False]
+    assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 5  # 2 pedidas + 3 desp.
     assert lineas["repetida"].tolist() == [False, True, False, False]
     assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
     _, sql, p = fake.consultas[0]
@@ -672,7 +673,7 @@ def test_revisar_transito_de_una_tienda():
         }
     )
     res, tabla = F.comparar_transito(lineas, rep)
-    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 2
+    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 5
     fila = tabla.set_index(["estado_cod", "clasif_cod"]).loc[(1, 1)]
     assert fila["unid_con_transito_neo"] == 2 and fila["estado"] == "Aprobado"
 
@@ -729,6 +730,23 @@ def test_pedido_abierto_antiguo_sigue_en_transito():
     p = F.a_pedidos(crudo, {"5"}, set())
     tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
     assert tr["stock_transito"].tolist() == [42.0]
+
+
+def test_en_transporte_solo_si_el_pedido_es_reciente():
+    """6/7 antiguo = llegó y quedó sin cerrar; 6/7 reciente = en camino de verdad."""
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["8", "8", "8"],
+            "id_producto": ["5", "5", "5"],
+            "estado": ["6", "7", "1"],
+            "clasificacion": ["1", "1", "1"],
+            "dias_pedido": [3, 40, 60],
+            "unidades": [2, 5, 1],
+        }
+    )
+    p = F.a_pedidos(crudo, {"5"}, set())
+    tr = F.transito_de_pedidos(p, [1, 2, 3], [1, 2, 3], False, [6, 7], 15)
+    assert tr["stock_transito"].tolist() == [3.0]  # 2 en transporte (3 días) + 1 aprobado
 
 
 def test_codigo_pedido_por_nombre():

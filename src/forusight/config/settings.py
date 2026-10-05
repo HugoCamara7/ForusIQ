@@ -239,10 +239,13 @@ class RecepcionParams(_Section):
 
     #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
     transito_pedidos: bool = True
-    #: 1 Aprobado, 2 en Picking, 3 Documentado. 6 en Transporte y 7 Prerecepcionado se tratan
-    #: como recibidos (hay pedidos antiguos que se quedan en esos estados), igual que 4.
+    #: 1 Aprobado, 2 en Picking, 3 Documentado: todo el historial.
     #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
     estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
+    #: Estados que cuentan sólo si el pedido es reciente: 6 en Transporte y 7 Prerecepcionado
+    #: (uno antiguo en esos estados ya llegó y quedó sin cerrar).
+    estados_transito_recientes: list[int] = Field(default_factory=lambda: [6, 7])
+    dias_transito_recientes: int = Field(15, ge=1, le=90)
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: Recepcionado (4) ya está en el stock de la tienda: no es tránsito (como Neogística).
@@ -254,9 +257,11 @@ class ReposicionVentaParams(_Section):
     """Reponer lo vendido desde la ruta anterior del mall (venta diaria de BigQuery)."""
 
     reponer_venta_desde_ruta: bool = True
-    #: Restar de la posición la venta posterior al corte de stock. El reporte de distribución
-    #: no lo hace (posición = físico + tránsito): apagado para cuadrar con el reporte.
-    descontar_venta_post_corte: bool = False
+    #: Restar del stock la venta de los días entre el corte de stock_bi y el día de reposición
+    #: (sin el día de hoy). Cuando stock_bi llega con un día de atraso (lunes: corte del
+    #: sábado), el reporte ya trae descontada esa venta (05/10: 147 de 187 filas). Con el corte
+    #: al día no hay días intermedios y no resta nada.
+    descontar_venta_post_corte: bool = True
     dias_venta_diaria: int = Field(14, ge=7, le=31)
     #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden
     #: (el reporte nunca envía con posición > punto de reorden; 7 reportes, 12.106 u).

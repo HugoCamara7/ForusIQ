@@ -561,6 +561,13 @@ def sql_pedidos(
             else "CAST(NULL AS STRING)"
         )
         + " AS estado_linea",
+        # Antigüedad del pedido en días (tope 91): 6/7 sólo cuentan si es reciente.
+        (
+            f"LEAST(IFNULL(DATE_DIFF(@fecha_foto, SAFE_CAST({h('fecha')} AS DATE), DAY), 0), 91)"
+            if "fecha" in m_h
+            else "0"
+        )
+        + " AS dias_pedido",
         f"SUM({cant}) AS unidades",
     ]
     # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
@@ -572,7 +579,7 @@ def sql_pedidos(
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
         f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7, 8"
     )
 
 
@@ -682,6 +689,7 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
         "clasificacion",
         "recibido_post_corte",
         "recepcionado",
+        "dias_pedido",
         "unidades",
     ]
     if df is None or df.empty:
@@ -698,6 +706,11 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
                 else False
             ),
             "recepcionado": recepcionado(df),
+            "dias_pedido": (
+                pd.to_numeric(df["dias_pedido"], errors="coerce").fillna(0)
+                if "dias_pedido" in df
+                else 0
+            ),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
@@ -711,6 +724,8 @@ def transito_de_pedidos(
     estados: list[int],
     clasificaciones: list[int],
     recibidos_post_corte: bool = True,
+    estados_recientes: list[int] | None = None,
+    dias_recientes: int = 15,
 ) -> pd.DataFrame:
     """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
     clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella.
@@ -720,7 +735,8 @@ def transito_de_pedidos(
     tránsito, porque el stock de la tienda todavía no lo trae.
 
     Se considera todo el historial: un pedido que sigue abierto, aunque sea antiguo, es
-    mercadería reservada para la tienda. Lo ya recepcionado (con fecha de recepción o línea
+    mercadería reservada para la tienda. ``estados_recientes`` (en transporte,
+    prerecepcionado) sólo cuentan si el pedido tiene ``dias_recientes`` días o menos. Lo ya recepcionado (con fecha de recepción o línea
     en estado 4) no es tránsito aunque la cabecera siga en otro estado."""
     if pedidos is None or pedidos.empty:
         return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
@@ -729,7 +745,13 @@ def transito_de_pedidos(
         if "recepcionado" in pedidos
         else pd.Series(False, index=pedidos.index)
     )
-    en_estado = pedidos["estado"].isin(estados).fillna(False) & ~recibido
+    en_estado = pedidos["estado"].isin(estados).fillna(False)
+    if estados_recientes and "dias_pedido" in pedidos:  # 6/7: sólo si el pedido es reciente
+        reciente = (
+            pd.to_numeric(pedidos["dias_pedido"], errors="coerce").fillna(0) <= dias_recientes
+        )
+        en_estado |= pedidos["estado"].isin(estados_recientes).fillna(False) & reciente
+    en_estado &= ~recibido
     if recibidos_post_corte and "recibido_post_corte" in pedidos:
         en_estado |= pedidos["estado"].eq(4).fillna(False) & pedidos["recibido_post_corte"].astype(
             bool
