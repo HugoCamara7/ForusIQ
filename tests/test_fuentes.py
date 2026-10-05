@@ -582,7 +582,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "JOIN" in sql and "h.`nroped_ph`" in sql and "d.`nroped_pd`" in sql
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" not in sql  # todo el historial de pedidos
-    assert "SAFE_CAST(h.`fecrec_ph` AS DATE) >= @fecha_foto" in sql
+    assert "SAFE_CAST(h.`fecrec_ph` AS DATE) > @fecha_foto" in sql
     assert "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8\n" in sql + "\n"
     assert "DATE_DIFF(@fecha_foto, SAFE_CAST(h.`fecped_ph` AS DATE), DAY)" in sql
 
@@ -696,23 +696,25 @@ def test_transito_de_pedidos_por_estado_y_clasificacion():
     assert tr.to_dict("records") == [{"tienda_id": "18", "sku": "5", "stock_transito": 6.0}]
 
 
-def test_recepcionado_despues_del_corte_es_transito():
-    """Stock = cierre de ayer; pedidos al minuto: lo recibido hoy aún no está en el stock."""
+def test_recepcionado_despues_del_corte_va_al_fisico():
+    """Stock de fecha F = cierre de F; lo recepcionado después de F no está en ese stock: no es
+    tránsito, se suma al stock físico."""
     crudo = pd.DataFrame(
         {
-            "tienda_cod": ["18", "18", "18"],
-            "id_producto": ["5", "5", "5"],
-            "estado": ["4", "4", "6"],
-            "clasificacion": ["1", "1", "1"],
-            "recibido_post_corte": [True, False, False],
-            "unidades": [2, 10, 3],
+            "tienda_cod": ["18", "18", "18", "18"],
+            "id_producto": ["5", "5", "5", "5"],
+            "estado": ["4", "4", "6", "4"],
+            "clasificacion": ["1", "1", "1", "4"],
+            "recibido_post_corte": [True, False, False, True],
+            "unidades": [2, 10, 3, 9],
         }
     )
     p = F.a_pedidos(crudo, {"5"}, set())
     tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
-    assert tr["stock_transito"].tolist() == [5.0]  # 2 recibidos hoy + 3 en transporte
-    sin = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
-    assert sin["stock_transito"].tolist() == [3.0]
+    assert tr["stock_transito"].tolist() == [3.0]  # sólo el que va en transporte
+    rec = F.recepcion_de_pedidos(p, [1, 2, 3])
+    # 2 recibidos después del corte (la devolución al CD no cuenta)
+    assert rec.to_dict("records") == [{"tienda_id": "18", "sku": "5", "recepcion_post_corte": 2.0}]
 
 
 def test_pedido_abierto_antiguo_sigue_en_transito():
@@ -728,7 +730,7 @@ def test_pedido_abierto_antiguo_sigue_en_transito():
         }
     )
     p = F.a_pedidos(crudo, {"5"}, set())
-    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
     assert tr["stock_transito"].tolist() == [42.0]
 
 
@@ -745,7 +747,7 @@ def test_en_transporte_solo_si_el_pedido_es_reciente():
         }
     )
     p = F.a_pedidos(crudo, {"5"}, set())
-    tr = F.transito_de_pedidos(p, [1, 2, 3], [1, 2, 3], False, [6, 7], 15)
+    tr = F.transito_de_pedidos(p, [1, 2, 3], [1, 2, 3], [6, 7], 15)
     assert tr["stock_transito"].tolist() == [3.0]  # 2 en transporte (3 días) + 1 aprobado
 
 
@@ -769,7 +771,7 @@ def test_lo_recibido_no_es_transito_aunque_la_cabecera_siga_abierta():
         }
     )
     p = F.a_pedidos(crudo, {"5"}, set())
-    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3], recibidos_post_corte=False)
+    tr = F.transito_de_pedidos(p, [1, 2, 3, 6, 7], [1, 2, 3])
     assert tr["stock_transito"].tolist() == [2.0]
     m_d = M.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_PEDIDOS_D], M.ALIAS_PEDIDOS_DETALLE)
     assert m_d["estado_linea"] == "estado_pd"

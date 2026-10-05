@@ -171,6 +171,13 @@ def _correr_motor(
     from forusight.engine import venta_reciente as VR
 
     vr = VR.resumir(getattr(inputs, "venta_diaria", None), dt, dia, diag.get("fecha_foto"))
+    # Recepcionado después del corte de stock_bi: se suma al stock físico (data.transito).
+    recep = TR.recepcion_post_corte(inputs, params)
+    if recep is not None and len(recep):
+        vr = vr.merge(recep, on=["tienda_id", "sku"], how="outer")
+        vr[["venta_desde_ruta", "venta_post_corte", "recepcion_post_corte"]] = vr[
+            ["venta_desde_ruta", "venta_post_corte", "recepcion_post_corte"]
+        ].fillna(0.0)
     bloq = bloqueos_de(bloq_clave)
     from forusight.data import temporadas as TEMP
 
@@ -220,6 +227,10 @@ def _correr_motor(
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
         "tiendas_total": int(dt.loc[dt["activa"], "tienda_id"].nunique()),
         "venta_desde_ruta": int(vr["venta_desde_ruta"].sum()) if len(vr) else 0,
+        "venta_post_corte": int(vr["venta_post_corte"].sum()) if len(vr) else 0,
+        "recepcion_post_corte": (
+            int(vr["recepcion_post_corte"].sum()) if "recepcion_post_corte" in vr else 0
+        ),
         "malls_hoy": sorted({m for m in dt.loc[dt["activa"] & dt["recibe_hoy"], "mall"] if m}),
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
         "niveles_ref": 0,
@@ -758,9 +769,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                 ("Corrida", res.run_id.split("-")[-1]),
                 (
                     "Stock al cierre",
-                    _ddmm(pd.Timestamp(diag["fecha_foto"]) - pd.Timedelta(days=1))
-                    if diag.get("fecha_foto")
-                    else "",
+                    _ddmm(pd.Timestamp(diag["fecha_foto"])) if diag.get("fecha_foto") else "",
                 ),
                 ("Unidades", f"{res.resumen['unidades_a_distribuir']:,}"),
             ]

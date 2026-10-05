@@ -67,6 +67,7 @@ COLUMNAS_EXTRA = [
     "es_introduccion",
     "venta_desde_ruta",
     "venta_post_corte",
+    "recepcion_post_corte",
     "piso_venta",
     "necesidad_bruta",
     "etapa",
@@ -208,13 +209,14 @@ def ejecutar(
     mc = calcular_objetivo_mc(mc, params)
     sku = curva_tallas(sku, base.semanal, params)
     vr = inp.venta_reciente
+    ajustes = ["venta_desde_ruta", "venta_post_corte", "recepcion_post_corte"]
     if vr is not None and len(vr):
         sku = sku.merge(
-            vr[["tienda_id", "sku", "venta_desde_ruta", "venta_post_corte"]],
+            vr[["tienda_id", "sku", *[c for c in ajustes if c in vr]]],
             on=["tienda_id", "sku"],
             how="left",
         )
-    for c in ("venta_desde_ruta", "venta_post_corte"):
+    for c in ajustes:
         sku[c] = sku[c].fillna(0).astype(float) if c in sku else 0.0
     nr = inp.niveles_ref
     if (nr is None or not len(nr)) and params.nivel_neo.activo:

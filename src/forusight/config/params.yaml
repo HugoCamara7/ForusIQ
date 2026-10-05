@@ -111,7 +111,7 @@ recepcion:                      # tránsito = pedidos del sistema hacia la tiend
   estados_transito_recientes: [6, 7]  # en Transporte, Prerecepcionado: sólo pedidos recientes
   dias_transito_recientes: 15         # más antiguo en 6/7 = ya llegó y quedó sin cerrar
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
-  recepcionados_post_corte: false     # recepcionado ya está en el stock de la tienda: no es tránsito
+  sumar_recepcion_post_corte: true    # recepcionado después del corte de stock_bi: se suma al stock físico
 
 calendario:                     # días de reposición por tienda (config/calendario_tiendas.csv)
   aplicar: true                 # en un día sólo reciben las tiendas que reponen ese día
@@ -126,7 +126,7 @@ reposicion_venta:               # reponer lo vendido desde la ruta anterior del 
   reponer_venta_desde_ruta: true  # necesidad = max(nivel máximo − posición, venta desde la ruta anterior)
   dias_venta_diaria: 14
   solo_bajo_punto_reorden: true # como el reporte: lo vendido se repone cuando la talla llega a su punto de reorden
-  descontar_venta_post_corte: true  # stock_bi atrasado (lunes): resta la venta entre el corte y hoy, como el reporte
+  descontar_venta_post_corte: true  # resta la venta neta posterior al corte de stock_bi (fecha F = cierre de F) hasta ayer
 
 surtido:                        # qué se puede reponer
   # colecciones vigentes; las anteriores (VERANO 2025, ESCOLAR 2025…) no se reponen (vacío = todas)

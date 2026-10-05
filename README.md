@@ -152,8 +152,10 @@ tránsito en las tablas de pedidos (`pedidos_header_table` + `pedidos_detail_tab
 estados Aprobado, en Picking y Documentado (todo el historial) y en Transporte o
 Prerecepcionado de los últimos 15 días; clasificaciones Reposición, Llenado de canal y Traspaso
 tiendas. Recepcionado, con fecha de recepción `fecrec_ph`, línea en estado 4 o 6/7 más antiguo
-se toman como ya recibidos. El stock físico se toma neto de la venta entre el corte de stock_bi
-y hoy (cuando stock_bi llega atrasado). El CD se reparte con el disponible del stock.
+se toman como ya recibidos. El stock_bi de fecha F es el cierre de ese día: el stock físico es
+ese stock menos la venta neta posterior a F y más lo recepcionado después de F (con el corte de
+ayer no cambia; un lunes, con el corte del sábado, descuenta y suma el domingo). El CD se
+reparte con el disponible del stock.
 
 ## Configuración de secretos
 

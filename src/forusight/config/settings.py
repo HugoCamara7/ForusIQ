@@ -248,19 +248,19 @@ class RecepcionParams(_Section):
     dias_transito_recientes: int = Field(15, ge=1, le=90)
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
-    #: Recepcionado (4) ya está en el stock de la tienda: no es tránsito (como Neogística).
-    #: Encendido, lo recepcionado desde la fecha del corte de stock contaría como tránsito.
-    recepcionados_post_corte: bool = False
+    #: Recepcionado (4) no es tránsito. El stock_bi de fecha F es el cierre de F: lo
+    #: recepcionado después de F todavía no está en ese stock y se suma al stock físico.
+    sumar_recepcion_post_corte: bool = True
 
 
 class ReposicionVentaParams(_Section):
     """Reponer lo vendido desde la ruta anterior del mall (venta diaria de BigQuery)."""
 
     reponer_venta_desde_ruta: bool = True
-    #: Restar del stock la venta de los días entre el corte de stock_bi y el día de reposición
-    #: (sin el día de hoy). Cuando stock_bi llega con un día de atraso (lunes: corte del
-    #: sábado), el reporte ya trae descontada esa venta (05/10: 147 de 187 filas). Con el corte
-    #: al día no hay días intermedios y no resta nada.
+    #: Restar del stock la venta neta (notas de crédito en negativo) de los días posteriores al
+    #: corte de stock_bi (fecha F = cierre de F) hasta ayer. Con el corte de ayer no resta
+    #: nada; cuando stock_bi llega atrasado (lunes: corte del sábado) resta la venta del
+    #: domingo, que el reporte ya trae descontada.
     descontar_venta_post_corte: bool = True
     dias_venta_diaria: int = Field(14, ge=7, le=31)
     #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden

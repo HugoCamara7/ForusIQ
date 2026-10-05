@@ -623,11 +623,6 @@ class FuentesRepository(BigQueryRepository):
             abierto |= est.isin(recepcion.estados_transito_recientes).fillna(False) & (
                 dias <= recepcion.dias_transito_recientes
             )
-            hoy_rec = (
-                est.eq(4).fillna(False) & (rec >= pd.Timestamp(hoy)).fillna(False)
-                if recepcion.recepcionados_post_corte
-                else False
-            )
             clase_ok = cla.isin(recepcion.clasificaciones_transito).fillna(False) | cla.isna()
             # Ya recibido: con fecha de recepción o línea en estado 4 (está en el stock).
             lineas["recepcionado"] = F.recepcionado(
@@ -636,7 +631,7 @@ class FuentesRepository(BigQueryRepository):
             abierto = abierto & ~lineas["recepcionado"]
             desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
             lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
-            lineas["cuenta_transito"] = (abierto | hoy_rec) & clase_ok
+            lineas["cuenta_transito"] = abierto & clase_ok
             lineas["repetida"] = lineas["filas"] > 1
         cat = set(self._codigos_catalogo())
         if len(locales):

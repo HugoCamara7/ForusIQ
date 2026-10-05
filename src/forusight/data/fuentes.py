@@ -429,7 +429,7 @@ def sql_revisar_venta(
 def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
     """Fechas de corte del último año (sólo lee la columna de fecha).
 
-    La tabla trae el cierre del día anterior de este año y el del mismo día del año pasado:
+    La tabla trae el cierre de ayer (fecha_corte F = cierre del día F) de este año y el del mismo día del año pasado:
     se usa la fecha más reciente (este año) y la del año pasado se descarta.
     """
     f = _c(mapa, "fecha")
@@ -545,9 +545,9 @@ def sql_pedidos(
         f"{sku_sql(d('id_producto'))} AS id_producto",
         f"CAST({h('estado')} AS STRING) AS estado",
         f"{clasif} AS clasificacion",
-        # Recepcionado el día del corte o después: el stock (cierre del día anterior) no lo tiene.
+        # Recepcionado después del día del corte: el stock (cierre de ese día) no lo tiene.
         (
-            f"IFNULL(SAFE_CAST({h('fecha_recepcion')} AS DATE) >= @fecha_foto, FALSE)"
+            f"IFNULL(SAFE_CAST({h('fecha_recepcion')} AS DATE) > @fecha_foto, FALSE)"
             if "fecha_recepcion" in m_h
             else "FALSE"
         )
@@ -723,16 +723,14 @@ def transito_de_pedidos(
     pedidos: pd.DataFrame,
     estados: list[int],
     clasificaciones: list[int],
-    recibidos_post_corte: bool = True,
     estados_recientes: list[int] | None = None,
     dias_recientes: int = 15,
 ) -> pd.DataFrame:
     """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
     clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella.
 
-    El stock es el cierre del día anterior y los pedidos están al minuto: con
-    ``recibidos_post_corte`` lo recepcionado (4) desde la fecha del corte también es
-    tránsito, porque el stock de la tienda todavía no lo trae.
+    Lo recepcionado después del corte no es tránsito: se suma al stock físico
+    (``recepcion_de_pedidos``).
 
     Se considera todo el historial: un pedido que sigue abierto, aunque sea antiguo, es
     mercadería reservada para la tienda. ``estados_recientes`` (en transporte,
@@ -752,10 +750,6 @@ def transito_de_pedidos(
         )
         en_estado |= pedidos["estado"].isin(estados_recientes).fillna(False) & reciente
     en_estado &= ~recibido
-    if recibidos_post_corte and "recibido_post_corte" in pedidos:
-        en_estado |= pedidos["estado"].eq(4).fillna(False) & pedidos["recibido_post_corte"].astype(
-            bool
-        )
     p = pedidos.loc[en_estado]
     if p["clasificacion"].notna().any():
         p = p.loc[p["clasificacion"].isin(clasificaciones)]
@@ -763,6 +757,21 @@ def transito_de_pedidos(
     out = out.rename(columns={"unidades": "stock_transito"})
     out["stock_transito"] = out["stock_transito"].clip(lower=0)
     return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
+
+
+def recepcion_de_pedidos(pedidos: pd.DataFrame, clasificaciones: list[int]) -> pd.DataFrame:
+    """tienda_id, sku, recepcion_post_corte: lo recepcionado en la tienda después del día del
+    corte de stock_bi (el stock de fecha F es el cierre de F y todavía no lo trae)."""
+    cols = ["tienda_id", "sku", "recepcion_post_corte"]
+    if pedidos is None or pedidos.empty or "recibido_post_corte" not in pedidos:
+        return pd.DataFrame(columns=cols)
+    # recibido_post_corte = fecha de recepción posterior al corte (ya recepcionado)
+    p = pedidos.loc[pedidos["recibido_post_corte"].astype(bool)]
+    if p["clasificacion"].notna().any():
+        p = p.loc[p["clasificacion"].isin(clasificaciones)]
+    out = p.groupby(["tienda_id", "sku"], as_index=False)["unidades"].sum()
+    out = out.rename(columns={"unidades": "recepcion_post_corte"})
+    return out.loc[out["recepcion_post_corte"] > 0, cols].reset_index(drop=True)
 
 
 def comparar_transito(lineas: pd.DataFrame, reporte: pd.DataFrame) -> tuple[dict, pd.DataFrame]:

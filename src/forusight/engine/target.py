@@ -193,13 +193,15 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     objetivo = np.where(agotado, 0, objetivo)
     out["stock_objetivo"] = np.where(talla_nueva, 0, objetivo).astype("int64")
 
-    # La venta posterior al corte de stock todavía no está descontada del stock.
+    # Stock físico de hoy: stock_bi (cierre del día del corte) − venta neta posterior al corte
+    # + lo recepcionado después del corte.
     post = (
         out["venta_post_corte"].fillna(0)
         if "venta_post_corte" in out and params.reposicion_venta.descontar_venta_post_corte
         else 0.0
     )
-    pos = (out["stock_disponible"] - post).clip(lower=0) + out["stock_transito"]
+    recep = out["recepcion_post_corte"].fillna(0) if "recepcion_post_corte" in out else 0.0
+    pos = (out["stock_disponible"] - post + recep).clip(lower=0) + out["stock_transito"]
     bruta = np.maximum(0, out["stock_objetivo"] - np.ceil(pos))
     # Nivel de referencia del último reporte de distribución de la tienda: manda sobre el
     # nivel propio (el reporte ya decidió la curva, el surtido y el pronóstico de la talla).
