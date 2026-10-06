@@ -789,6 +789,7 @@ def a_excel_forusight(
     tabla: pd.DataFrame,
     fecha: pd.Timestamp,
     reporte: str = "Distribución CD 320",
+    stock_al=None,
 ) -> bytes:
     """Archivo Forusight con estilo Forus: Resumen, Distribución (filtrada en cantidad > 0),
     Dinámica, SIAL (valores para subir) y Diccionario."""
@@ -802,6 +803,8 @@ def a_excel_forusight(
     )
     titulo = f"Forusight · {reporte}"
     subtitulo = f"Forus Perú · {pd.Timestamp(fecha):%d/%m/%Y}" + (f" · {marcas}" if marcas else "")
+    if stock_al:  # sin la fecha del corte no se puede cuadrar el stock contra el reporte
+        subtitulo += f" · stock al cierre del {pd.Timestamp(stock_al):%d/%m/%Y}"
     kpis = _kpis(tabla)
     _hoja_resumen(lb, tabla, titulo, subtitulo, kpis)
     _hoja_distribucion(lb, tabla, titulo, subtitulo, kpis)

@@ -90,7 +90,7 @@ def correr(ahora, store, fuente: str = "bigquery", forzar: bool = False) -> dict
         return {"estado": "carga diaria pendiente: se reintenta", "fecha": f"{hoy:%Y-%m-%d}"}
     entradas = E.cargar_entradas(fuente, corte, None, "", marcas)[0]
     tabla = tabla_archivo(res, entradas, params, E.ajustes().cd_id, None)
-    contenido = a_excel_forusight(tabla, hoy)
+    contenido = a_excel_forusight(tabla, hoy, stock_al=res.resumen.get("stock_al"))
     ruta = store.guardar(
         C.ruta_diaria(hoy, preliminar=decision == PRELIMINAR),
         contenido,

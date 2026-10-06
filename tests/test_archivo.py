@@ -248,3 +248,31 @@ def test_transito_de_stock_bi_va_aparte_y_no_cambia_la_posicion(corrida):
     pd.testing.assert_series_equal(t["Posición Stock [un]"], base["Posición Stock [un]"])
     cols = list(t.columns)
     assert cols.index("Tránsito stock_bi [un]") < cols.index("Posición Stock [un]")
+
+
+def test_excel_dice_de_que_cierre_es_el_stock(corrida):
+    """Sin la fecha del corte no se puede cuadrar el stock contra el reporte de Neogística."""
+    t = _tabla(corrida)
+    wb = openpyxl.load_workbook(
+        io.BytesIO(a_excel_forusight(t, pd.Timestamp("2026-10-06"), stock_al="2026-10-05"))
+    )
+    textos = [c for fila in wb["Resumen"].iter_rows(values_only=True) for c in fila if c]
+    assert any("stock al cierre del 05/10/2026" in str(c) for c in textos)
+
+
+def test_temporada_del_archivo_es_la_del_motor(corrida):
+    """El motor filtra con la temporada del maestro; el Excel no puede mostrar la de ARTI."""
+    from dataclasses import replace
+
+    inp, corte, p, r = corrida
+    prod = inp.dim_producto.copy()
+    prod["temporada"] = "VERANO 2025"  # lo que diría ARTI
+    det = r.detalle
+    t = construir_tabla(det, inp.ventas, prod, inp.dim_tienda, p, corte)
+    assert set(t["Temporada comercial"].dropna()) == {"VERANO 2025"}
+    motor = prod.assign(temporada="VERANO 2026")
+    r2 = replace(r, productos=motor)
+    from app.components.archivo import tabla_archivo
+
+    t2 = tabla_archivo(r2, replace(inp, dim_producto=prod), p, "320", None)
+    assert set(t2["Temporada comercial"].dropna()) == {"VERANO 2026"}

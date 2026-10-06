@@ -318,7 +318,9 @@ def _correr_motor(
     ).hexdigest()[:8]
     run_id = f"{fecha_corte.replace('-', '')}-{firma}"
     corte = diag.get("corte_venta") or fecha_corte  # venta atrasada: su última semana completa
-    return ejecutar(inputs, params, corte, run_id=run_id, cd_id=ajustes().cd_id), diag
+    res = ejecutar(inputs, params, corte, run_id=run_id, cd_id=ajustes().cd_id)
+    res.resumen["stock_al"] = diag.get("fecha_foto")  # el Excel dice de qué cierre es el stock
+    return res, diag
 
 
 def correr_motor(
