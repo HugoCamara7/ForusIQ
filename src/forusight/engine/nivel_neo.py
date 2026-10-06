@@ -126,7 +126,9 @@ def niveles(
         else s[KEY].assign(smt=np.nan, nivel=np.nan, rop=np.nan, ue=np.nan, fecha=pd.NaT)
     )
     ref.index = s.index
-    frescas = ref["smt"].where(ref["nivel"].notna())
+    # SMT de la propia clave (reporte reciente) o de la tienda espejo (data.planificacion).
+    espejo = ref["espejo"].notna() if "espejo" in ref else pd.Series(False, index=s.index)
+    frescas = ref["smt"].where(ref["nivel"].notna() | espejo)
     smt = _smt(s, prod, m, frescas)
     nivel = np.maximum(smt, np.ceil(d + p.z * np.sqrt(d) - 1e-9))
     if p.nivel_reporte_como_piso:  # la clave de un reporte reciente no baja de su nivel
