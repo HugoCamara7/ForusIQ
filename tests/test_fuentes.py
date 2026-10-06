@@ -375,7 +375,7 @@ def test_matriz_marca_cadena_de_neogistica():
     assert "HUSH PUPPIES" in m["HP"] and "HUSH PUPPIES" in m["FB"]
     assert "HUSH PUPPIES" not in m["RKF"] and m["CLB"] == {"COLUMBIA"} and m["VANS"] == {"VANS"}
     cat = CAD.catalogo_tiendas()
-    assert len(cat) == 79 and cat["codigo_tienda"].is_unique and set(cat["cadena"]) == set(m)
+    assert len(cat) == 71 and cat["codigo_tienda"].is_unique and set(cat["cadena"]) == set(m)
     assert CAD.marcas_por_cadena({"AZ": ["azaleia"]}) == {"AZ": {"AZALEIA"}}
 
 
