@@ -45,6 +45,7 @@ paginas = [
         "app/vistas/1_Dashboard.py", title="Forusight", icon=":material/dashboard:", default=True
     ),
     st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
+    st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
 ]
 if puede("conexion"):

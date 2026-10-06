@@ -200,6 +200,7 @@ def _correr_motor(
     niveles_clave: str = "",
     plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
     cargas: str = "",  # última carga de stock y venta (clave_cargas)
+    rutas_huella: str = "",  # cambia si cambia una ruta o una excepción (mantenedor de rutas)
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -215,7 +216,8 @@ def _correr_motor(
     if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
         inputs = TR.aplicar_pedidos(inputs, params)
     dia = dia_reposicion or hoy_lima().date().isoformat()
-    dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
+    base_rutas, excepciones = rutas_vigentes()
+    dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []), base_rutas, excepciones)
     from forusight.engine import venta_reciente as VR
 
     vr = VR.resumir(getattr(inputs, "venta_diaria", None), dt, dia, diag.get("fecha_foto"))
@@ -347,6 +349,7 @@ def correr_motor(
         niveles_clave,
         huella_planificacion(niveles_clave),
         clave_cargas(fuente, huella_config()),
+        huella_rutas(),
     )
 
 
@@ -547,6 +550,59 @@ def guardar_bloqueos_manuales(nuevos: pd.DataFrame, usuario: str) -> str:
         f"forusight: bloqueos manuales por {usuario}",
     )
     return f"GitHub ({store.repository}: {ruta})"
+
+
+# ------------------------------------------------------------------ mantenedor de rutas
+
+
+def rutas_vigentes() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(ruta semanal por mall, excepciones por fecha) guardadas en GitHub; sin GitHub, la ruta
+    de config y las excepciones de esta sesión."""
+    from forusight.data import rutas as RU
+
+    ss = st.session_state
+    if "rutas_base" not in ss:
+        store = _store_bloqueos()
+        base, exc = RU.base_por_defecto(), RU.excepciones_vacio()
+        if store is not None:
+            with contextlib.suppress(Exception):  # sin GitHub se sigue con la de config
+                base = RU.leer_base(store.leer(f"{store.prefix}/{RU.RUTA_BASE}"))
+            with contextlib.suppress(Exception):
+                exc = RU.leer_excepciones(store.leer(f"{store.prefix}/{RU.RUTA_EXCEPCIONES}"))
+        ss.rutas_base, ss.rutas_excepciones = base, exc
+    return ss.rutas_base, ss.rutas_excepciones
+
+
+def huella_rutas() -> str:
+    from forusight.data import rutas as RU
+
+    return RU.huella(*rutas_vigentes())
+
+
+def _guardar_rutas(ruta: str, contenido: bytes, mensaje: str) -> str:
+    store = _store_bloqueos()
+    if store is None:
+        return "esta sesión (sin GitHub configurado: se pierde al cerrar la app)"
+    return f"GitHub ({store.repository}: {store.guardar(ruta, contenido, mensaje)})"
+
+
+def guardar_ruta_semanal(base: pd.DataFrame, usuario: str) -> str:
+    from forusight.data import rutas as RU
+
+    base = RU.normalizar_base(base)
+    donde = _guardar_rutas(RU.RUTA_BASE, RU.a_csv(base), f"forusight: rutas por {usuario}")
+    st.session_state.rutas_base = base
+    return donde
+
+
+def guardar_excepciones(exc: pd.DataFrame, usuario: str) -> str:
+    from forusight.data import rutas as RU
+
+    donde = _guardar_rutas(
+        RU.RUTA_EXCEPCIONES, RU.a_csv(exc), f"forusight: excepciones de ruta por {usuario}"
+    )
+    st.session_state.rutas_excepciones = exc
+    return donde
 
 
 # ------------------------------------------------------------------ reporte del día como base
