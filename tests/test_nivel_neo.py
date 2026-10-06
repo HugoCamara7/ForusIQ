@@ -153,9 +153,10 @@ def test_el_espejo_no_pisa_una_tienda_con_claves_propias():
 
 
 def test_espejos_configurados():
-    """Cada tienda con espejo falta en el maestro de planificación y su espejo está en él."""
+    """Cada tienda con espejo falta en el maestro de planificación y su espejo está en él.
+    (HP CHACARILLA y HP PLAZA ANGAMOS salieron al llegar sus claves con el reporte del 06/10.)"""
     tabla, claves = PLAN.espejos(), PLAN.por_defecto().claves
     ids = set(claves["tienda_id"].astype(str))
-    assert {"7", "30"} <= set(tabla["tienda_id"])
+    assert {"7", "30"} <= ids
     assert not set(tabla["tienda_id"]) & ids
     assert set(tabla["espejo_id"]) <= ids
