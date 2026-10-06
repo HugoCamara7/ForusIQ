@@ -126,3 +126,36 @@ def test_maestro_desde_reporte_y_guardado():
     r = PLAN.desde_bytes(PLAN.a_bytes(u))
     assert len(r.claves) == 2 and r.claves["sku"].tolist() == u.claves["sku"].tolist()
     assert len(PLAN.vigente(u, "2026-12-31", 30).claves) == 0
+
+
+def test_tienda_sin_planificacion_toma_el_smt_de_su_espejo():
+    """T1 no está en ningún reporte de Neogística. Sin espejo su SMT es la moda del SKU en las
+    demás tiendas (8, tiendas grandes); con espejo toma el de la tienda parecida (1) y el nivel
+    sale de su propia venta (4), como HP CHACARILLA y HP PLAZA ANGAMOS con HP LA MOLINA."""
+    inp, (s38, _, _) = _escenario(stock38=0)
+    f = DIA - pd.Timedelta(days=5)
+    m = _maestro(
+        [("T2", s38, 8, 9, 8, 1, f), ("T3", s38, 8, 9, 8, 1, f), ("ESP", s38, 1, 3, 2, 1, f)]
+    )
+    assert _det(inp, _params(), m).loc[s38, "stock_objetivo"] == 8
+    tabla = pd.DataFrame({"tienda_id": ["T1"], "espejo_id": ["ESP"]})
+    me = PLAN.con_espejos(m, tabla)
+    fila = me.claves.loc[me.claves["tienda_id"].eq("T1")].iloc[0]
+    assert fila["espejo"] == "ESP" and pd.isna(fila["nivel"])  # el nivel no se copia
+    assert _det(inp, _params(), me).loc[s38, "stock_objetivo"] == 4
+
+
+def test_el_espejo_no_pisa_una_tienda_con_claves_propias():
+    f = DIA - pd.Timedelta(days=5)
+    m = _maestro([("T1", "S", 5, 6, 5, 1, f), ("ESP", "S", 1, 2, 1, 1, f)])
+    me = PLAN.con_espejos(m, pd.DataFrame({"tienda_id": ["T1"], "espejo_id": ["ESP"]}))
+    assert len(me.claves) == 2 and "espejo" not in me.claves
+
+
+def test_espejos_configurados():
+    """Cada tienda con espejo falta en el maestro de planificación y su espejo está en él."""
+    tabla, claves = PLAN.espejos(), PLAN.por_defecto().claves
+    ids = set(claves["tienda_id"].astype(str))
+    assert {"7", "30"} <= set(tabla["tienda_id"])
+    assert not set(tabla["tienda_id"]) & ids
+    assert set(tabla["espejo_id"]) <= ids

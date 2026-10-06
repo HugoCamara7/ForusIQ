@@ -23,6 +23,8 @@ import pandas as pd
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 RUTA_CLAVES = CONFIG / "planificacion_claves.csv.gz"
 RUTA_K = CONFIG / "planificacion_k.csv"
+#: Tienda que Neogística no planifica → tienda parecida de la que toma SMT, UE y categoría.
+RUTA_ESPEJOS = CONFIG / "tiendas_espejo.csv"
 
 COLS_CLAVES = [
     "tienda_id",
@@ -210,3 +212,35 @@ def vigente(m: Maestro, dia, dias_maximos: int) -> Maestro:
     dia = pd.Timestamp(dia).normalize()
     c = m.claves.loc[(dia - pd.to_datetime(m.claves["fecha"])).dt.days.between(0, dias_maximos)]
     return Maestro(c, m.k, dia)
+
+
+def espejos() -> pd.DataFrame:
+    """tienda_id → espejo_id (``config/tiendas_espejo.csv``)."""
+    if not RUTA_ESPEJOS.exists():
+        return pd.DataFrame(columns=["tienda_id", "nombre_tienda", "espejo_id", "nombre_espejo"])
+    return pd.read_csv(RUTA_ESPEJOS, dtype=str).dropna(subset=["tienda_id", "espejo_id"])
+
+
+def con_espejos(m: Maestro, tabla: pd.DataFrame | None = None) -> Maestro:
+    """Una tienda sin claves toma las de su espejo: SMT, UE y categoría del planificador, sin
+    nivel ni reorden (los calcula la fórmula con la venta de la propia tienda). Sin espejo, el
+    SMT sería la moda del SKU en todas las tiendas, casi todas A: alto para una tienda chica.
+    Columna ``espejo``: de qué tienda salió la clave."""
+    tabla = espejos() if tabla is None else tabla
+    c = m.claves
+    if c.empty or tabla.empty:
+        return m
+    ids = set(c["tienda_id"].astype(str))
+    copias = []
+    for t, e in zip(tabla["tienda_id"].astype(str), tabla["espejo_id"].astype(str), strict=True):
+        if t in ids or e not in ids:  # con claves propias manda lo suyo
+            continue
+        x = c.loc[c["tienda_id"].astype(str).eq(e)].copy()
+        x["tienda_id"] = t
+        x[["nivel", "rop"]] = np.nan
+        x["almacenamiento"] = pd.NA
+        x["espejo"] = e
+        copias.append(x)
+    if not copias:
+        return m
+    return Maestro(pd.concat([c, *copias], ignore_index=True), m.k, m.dia)

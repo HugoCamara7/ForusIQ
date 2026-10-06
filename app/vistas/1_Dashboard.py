@@ -95,6 +95,16 @@ if sin_plan:
         "«Reportes de distribución (Neogística)».",
     )
 
+con_espejo = diag.get("tiendas_con_espejo") or []
+if con_espejo:
+    issue_box(
+        "info",
+        f"{len(con_espejo)} tienda(s) que Neogística no planifica, con tienda espejo: "
+        f"{', '.join(con_espejo)}",
+        "Toman el stock mínimo, la unidad de empaque y la categoría de su espejo; el pronóstico "
+        "sale de su propia venta. Se cambia en config/tiendas_espejo.csv.",
+    )
+
 # --- acción única: aprobar y descargar el archivo Forusight
 with st.container(key="accion_archivo"):
     boton_archivo("archivo_dashboard")
