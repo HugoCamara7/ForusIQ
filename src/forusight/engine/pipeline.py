@@ -132,6 +132,8 @@ class EngineResult:
     resumen: dict = field(default_factory=dict)
     #: Tiendas de la corrida con calendario aplicado (mall, lead time, revisión, recibe hoy).
     tiendas: pd.DataFrame | None = None
+    #: Productos con la temporada comercial del maestro (la que filtró la corrida).
+    productos: pd.DataFrame | None = None
 
     @property
     def propuesta(self) -> pd.DataFrame:
@@ -300,4 +302,5 @@ def ejecutar(
         mc=mc,
         resumen=resumen,
         tiendas=base.tiendas,
+        productos=inp.dim_producto,
     )

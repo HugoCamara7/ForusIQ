@@ -31,7 +31,7 @@ def cantidad_aprobada() -> pd.Series | None:
 @st.cache_data(max_entries=6, show_spinner=False)
 def _excel(run_id: str, aprob: str, _res, _entradas, _params, cd_id: str, _cantidad) -> bytes:
     tabla = tabla_archivo(_res, _entradas, _params, cd_id, _cantidad)
-    return a_excel_forusight(tabla, hoy_lima())
+    return a_excel_forusight(tabla, hoy_lima(), stock_al=_res.resumen.get("stock_al"))
 
 
 def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
@@ -53,13 +53,15 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
     return construir_tabla(
         res.detalle,
         entradas.ventas,
-        entradas.dim_producto,
+        # con la temporada del maestro: la que usó el motor (la de ARTI puede ser otra)
+        res.productos if getattr(res, "productos", None) is not None else entradas.dim_producto,
         # tiendas con el calendario aplicado (lead time y período de revisión de cada una)
         res.tiendas if getattr(res, "tiendas", None) is not None else entradas.dim_tienda,
         params,
         res.fecha_corte,
         cd_id,
         cantidad,
+        getattr(entradas, "stock_tienda", None),
     )
 
 

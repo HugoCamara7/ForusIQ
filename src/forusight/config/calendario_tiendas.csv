@@ -1,6 +1,6 @@
 codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
 2,RKF JOCKEY,Jockey Plaza,3.0,2.33,reportes
-7,HP CHACARILLA,Chacarilla,,7.0,Forus (período oficial)
+7,HP CHACARILLA,Chacarilla,5,7,reporte 06/10
 8,HP JOCKEY,Jockey Plaza,3.0,2.33,Forus (período oficial)
 12,HP CHICLAYO,Provincia,6.0,2.33,Forus (período oficial)
 16,HP LARCOMAR,Larcomar,5.0,3.5,Forus (período oficial)
@@ -10,7 +10,7 @@ codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
 23,HP CHORRILLOS,Chorrillos,4.0,7.0,Forus (período oficial)
 26,RKF CUSCO,Provincia,4.0,2.33,reportes
 29,RKF TRUJILLO,Provincia,4.0,2.33,reportes
-30,HP PLAZA ANGAMOS,Plaza Angamos,,7.0,Forus (período oficial)
+30,HP PLAZA ANGAMOS,Plaza Angamos,6,7,reporte 06/10
 31,RKF AREQUIPA,Provincia,4.0,2.33,reportes
 37,HP PIURA 2,Provincia,6.0,2.33,Forus (período oficial)
 43,HP SAN MIGUEL 2,Plaza San Miguel,6.0,3.5,Forus (período oficial)
@@ -23,7 +23,7 @@ codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
 61,HP CUSCO,Provincia,6.0,2.33,Forus (confirmado: 3 despachos por semana)
 88,DH AEROPUERTO 2,Aeropuerto,1.0,7.0,reportes
 95,FB OVALO PAPAL TRUJILLO,Provincia,3.0,2.33,reportes
-97,HP SALAVERRY 2,Real Plaza Salaverry,,3.5,Forus (período oficial)
+97,HP SALAVERRY 2,Real Plaza Salaverry,4,3.5,reporte 06/10
 111,DH LURIN,Lurín,1.0,7.0,reportes
 112,CLB LARCOMAR,Larcomar,6.0,3.5,reportes
 113,CLB PLAZA NORTE,Plaza Norte,3.0,3.5,reportes
@@ -58,3 +58,8 @@ codigo_tienda,nombre_tienda,mall,leadtime_dias,revision_dias,fuente
 156,VANS PIURA,Provincia,3.0,2.33,reportes
 157,VANS CHICLAYO,Provincia,2.0,2.33,reportes
 159,FB MINKA,Minka,3.0,3.5,reportes
+145,CLB ANGAMOS,Plaza Angamos,5.6,7,reporte 06/10
+20,SE HUALLAGA,Huallaga,4,7,reporte 06/10
+83,RKF SALAVERRY,Real Plaza Salaverry,2,3.5,reporte 06/10
+84,CLB SALAVERRY,Real Plaza Salaverry,2,3.5,reporte 06/10
+96,FB CAMACHO,Camacho,2,7,reporte 06/10

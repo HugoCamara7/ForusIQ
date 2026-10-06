@@ -6,7 +6,7 @@ import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
 RAIZ = Path(__file__).resolve().parents[1]
-PAGINAS = ["1_Dashboard", "8_Bloqueos", "5_Parametros"]  # vista única + configuración
+PAGINAS = ["1_Dashboard", "8_Bloqueos", "9_Rutas", "5_Parametros"]  # vista única + configuración
 
 
 def _app(monkeypatch, secrets=None):
@@ -122,3 +122,31 @@ def test_mantenedor_de_bloqueos(monkeypatch):
     assert (
         m.iloc[-1]["accion"] == "BLOQUEAR" and m.iloc[-1]["modelo_color_id"] == "HP10201162490-N11"
     )
+
+
+def test_mantenedor_de_rutas_mueve_un_despacho(monkeypatch):
+    """Un aprobador mueve el despacho de Plaza Norte del jueves 08/10 (feriado) al miércoles
+    07/10: queda registrado y la ruta de esos días cambia."""
+    import datetime as dt
+
+    from forusight.data import rutas as RU
+
+    app = _app(monkeypatch, USUARIOS)
+    app.text_input[0].input("ana@forus.pe")
+    app.text_input[1].input("clave-ana")
+    app.button[0].click().run()
+    app.switch_page("app/vistas/9_Rutas.py").run()
+    assert not app.exception, app.exception
+    app.date_input(key="rt_mov_desde").set_value(dt.date(2026, 10, 8))
+    app.date_input(key="rt_mov_hacia").set_value(dt.date(2026, 10, 7))
+    app.multiselect(key="rt_mov_malls").set_value(["Plaza Norte"])
+    app.text_input(key="rt_mov_motivo").input("Feriado")
+    app.run()
+    app.button(key="btn_mover").click().run()
+    assert not app.exception, app.exception
+    exc = app.session_state.rutas_excepciones
+    base = app.session_state.rutas_base
+    assert len(exc) == 2
+    assert RU.despacha("Plaza Norte", "2026-10-07", base, exc)
+    assert not RU.despacha("Plaza Norte", "2026-10-08", base, exc)
+    assert any("movido" in s.value for s in app.success)

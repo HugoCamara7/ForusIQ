@@ -78,6 +78,7 @@ COLUMNAS: list[Col] = [
     _num("Stock en CD", ancho=10, siempre=True),
     _num("Stock Físico [un]", "#,##0.0", "#C4A687", siempre=True),
     _num("Stock Trán. Int. [un]", "#,##0.0", "#C4A687"),
+    _num("Tránsito stock_bi [un]", "#,##0.0", "#C4A687"),
     _num("Posición Stock [un]", "#,##0.0", "#C4A687", siempre=True),
     Col("Cantidad Pedida Final [un]", "#C2C567", "#,##0", 10, True, rojo=True, siempre=True),
     _num("Unidad Empaque Distribución", ancho=15),
@@ -102,8 +103,12 @@ def construir_tabla(
     fecha_corte: pd.Timestamp,
     cd_id: str = "320",
     cantidad: pd.Series | None = None,
+    stock_tienda: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Detalle del motor → tabla con columnas del archivo (sólo las que tienen dato)."""
+    """Detalle del motor → tabla con columnas del archivo (sólo las que tienen dato).
+
+    ``stock_tienda`` (entradas sin el tránsito de pedidos) aporta el tránsito de stock_bi, que
+    sólo se muestra: la posición usa el de pedidos."""
     d = detalle.copy()
     if cantidad is not None:
         d["cantidad"] = cantidad.reindex(d.index).fillna(0).astype(int)
@@ -250,6 +255,14 @@ def construir_tabla(
     out["Stock Físico [un]"] = fisico
     if d["stock_transito"].gt(0).any():  # la fuente de stock actual no trae tránsito
         out["Stock Trán. Int. [un]"] = d["stock_transito"]
+    if stock_tienda is not None and "stock_transito_bi" in stock_tienda:
+        bi = stock_tienda.groupby(["tienda_id", "sku"])["stock_transito_bi"].sum()
+        tr_bi = pd.MultiIndex.from_frame(d[["tienda_id", "sku"]].astype(str)).map(
+            bi.rename(index=str).to_dict().get
+        )
+        tr_bi = pd.Series(tr_bi, index=d.index, dtype=float).fillna(0.0)
+        if tr_bi.ne(0).any():
+            out["Tránsito stock_bi [un]"] = tr_bi
     out["Posición Stock [un]"] = posicion
     out["Cantidad Pedida Final [un]"] = d["cantidad"]
     out["Unidad Empaque Distribución"] = (
@@ -776,6 +789,7 @@ def a_excel_forusight(
     tabla: pd.DataFrame,
     fecha: pd.Timestamp,
     reporte: str = "Distribución CD 320",
+    stock_al=None,
 ) -> bytes:
     """Archivo Forusight con estilo Forus: Resumen, Distribución (filtrada en cantidad > 0),
     Dinámica, SIAL (valores para subir) y Diccionario."""
@@ -789,6 +803,8 @@ def a_excel_forusight(
     )
     titulo = f"Forusight · {reporte}"
     subtitulo = f"Forus Perú · {pd.Timestamp(fecha):%d/%m/%Y}" + (f" · {marcas}" if marcas else "")
+    if stock_al:  # sin la fecha del corte no se puede cuadrar el stock contra el reporte
+        subtitulo += f" · stock al cierre del {pd.Timestamp(stock_al):%d/%m/%Y}"
     kpis = _kpis(tabla)
     _hoja_resumen(lb, tabla, titulo, subtitulo, kpis)
     _hoja_distribucion(lb, tabla, titulo, subtitulo, kpis)

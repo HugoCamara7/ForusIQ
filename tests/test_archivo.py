@@ -91,7 +91,12 @@ def test_columnas_son_del_reporte_y_en_su_orden(corrida):
     nombres = ["SEMANAS" if c in semanas else c for c in t.columns]
     nombres = [n for i, n in enumerate(nombres) if n != "SEMANAS" or nombres.index("SEMANAS") == i]
     # columnas propias de Forusight (no están en el reporte original)
-    propias = {"Motivo Forusight", "Venta desde ruta anterior [un]", "Venta después del corte [un]"}
+    propias = {
+        "Motivo Forusight",
+        "Venta desde ruta anterior [un]",
+        "Venta después del corte [un]",
+        "Tránsito stock_bi [un]",
+    }
     nombres = [n for n in nombres if n not in propias]
     assert set(nombres) <= set(NEOGISTICA), set(nombres) - set(NEOGISTICA)
     posiciones = [NEOGISTICA.index(n) for n in nombres]
@@ -223,3 +228,51 @@ def test_github_store_hace_put_con_sha(monkeypatch):
     assert llamadas[0][0] == "GET" and "ref=rama" in llamadas[0][1]
     body = json.loads(llamadas[1][2])
     assert llamadas[1][0] == "PUT" and body["sha"] == "abc" and body["branch"] == "rama"
+
+
+def test_transito_de_stock_bi_va_aparte_y_no_cambia_la_posicion(corrida):
+    """Dos tránsitos para comparar: el de pedidos (Stock Trán. Int., el que usa la posición) y
+    el de stock_bi (Tránsito stock_bi), sólo informativo."""
+    inp, corte, p, r = corrida
+    base = _tabla(corrida)
+    assert "Tránsito stock_bi [un]" not in base  # sin dato no se muestra
+    det = r.detalle
+    fila = det.loc[det["stock_tienda"] > 0].iloc[0]
+    st = pd.DataFrame(
+        {"tienda_id": [fila["tienda_id"]], "sku": [fila["sku"]], "stock_transito_bi": [7.0]}
+    )
+    t = construir_tabla(
+        det, inp.ventas, inp.dim_producto, inp.dim_tienda, p, corte, stock_tienda=st
+    )
+    assert t["Tránsito stock_bi [un]"].sum() == 7
+    pd.testing.assert_series_equal(t["Posición Stock [un]"], base["Posición Stock [un]"])
+    cols = list(t.columns)
+    assert cols.index("Tránsito stock_bi [un]") < cols.index("Posición Stock [un]")
+
+
+def test_excel_dice_de_que_cierre_es_el_stock(corrida):
+    """Sin la fecha del corte no se puede cuadrar el stock contra el reporte de Neogística."""
+    t = _tabla(corrida)
+    wb = openpyxl.load_workbook(
+        io.BytesIO(a_excel_forusight(t, pd.Timestamp("2026-10-06"), stock_al="2026-10-05"))
+    )
+    textos = [c for fila in wb["Resumen"].iter_rows(values_only=True) for c in fila if c]
+    assert any("stock al cierre del 05/10/2026" in str(c) for c in textos)
+
+
+def test_temporada_del_archivo_es_la_del_motor(corrida):
+    """El motor filtra con la temporada del maestro; el Excel no puede mostrar la de ARTI."""
+    from dataclasses import replace
+
+    inp, corte, p, r = corrida
+    prod = inp.dim_producto.copy()
+    prod["temporada"] = "VERANO 2025"  # lo que diría ARTI
+    det = r.detalle
+    t = construir_tabla(det, inp.ventas, prod, inp.dim_tienda, p, corte)
+    assert set(t["Temporada comercial"].dropna()) == {"VERANO 2025"}
+    motor = prod.assign(temporada="VERANO 2026")
+    r2 = replace(r, productos=motor)
+    from app.components.archivo import tabla_archivo
+
+    t2 = tabla_archivo(r2, replace(inp, dim_producto=prod), p, "320", None)
+    assert set(t2["Temporada comercial"].dropna()) == {"VERANO 2026"}

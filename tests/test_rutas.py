@@ -1,0 +1,104 @@
+"""Mantenedor de rutas: ruta semanal por mall y excepciones por fecha (feriados, imprevistos)."""
+
+import pandas as pd
+import pytest
+
+from forusight.config.settings import EngineParams
+from forusight.data import calendario as CAL
+from forusight.data import rutas as RU
+
+BASE = RU.base_por_defecto()
+JUE, MIE = "2026-10-08", "2026-10-07"  # jueves 08/10: feriado Combate de Angamos
+
+
+def _exc(*filas):
+    return RU.agregar(
+        RU.excepciones_vacio(),
+        pd.concat([RU.nuevas_excepciones([f], [m], a, "", "test") for f, m, a in filas]),
+    )
+
+
+def test_ruta_semanal_sin_excepciones():
+    assert RU.dias_de("Plaza Norte", BASE) == "MA,JU"
+    assert RU.despacha("Plaza Norte", JUE, BASE, None)
+    assert not RU.despacha("Plaza Norte", MIE, BASE, None)
+
+
+def test_feriado_nacional_y_excepcion_de_un_mall():
+    exc = _exc((JUE, RU.TODOS, RU.SIN_DESPACHO), (JUE, "Larcomar", RU.DESPACHO_EXTRA))
+    assert not RU.despacha("Plaza Norte", JUE, BASE, exc)  # TODOS: no sale
+    assert RU.despacha("Larcomar", JUE, BASE, exc)  # la del mall manda sobre TODOS
+
+
+def test_mover_un_despacho_por_feriado():
+    mov = RU.mover_despacho(JUE, MIE, ["Plaza Norte", "Mega Plaza"], "Feriado", "ana")
+    assert len(mov) == 4 and set(mov["accion"]) == {RU.SIN_DESPACHO, RU.DESPACHO_EXTRA}
+    exc = RU.agregar(RU.excepciones_vacio(), mov)
+    assert RU.despacha("Plaza Norte", MIE, BASE, exc) and not RU.despacha(
+        "Plaza Norte", JUE, BASE, exc
+    )
+    assert RU.despacha("Plaza San Miguel", JUE, BASE, exc)  # los demás malls siguen igual
+    with pytest.raises(ValueError):
+        RU.mover_despacho(JUE, JUE, ["Plaza Norte"], "", "ana")
+
+
+def test_la_ultima_excepcion_de_un_dia_reemplaza_a_la_anterior():
+    exc = _exc((JUE, "Plaza Norte", RU.SIN_DESPACHO))
+    exc = RU.agregar(exc, RU.nuevas_excepciones([JUE], ["Plaza Norte"], RU.DESPACHO_EXTRA, "", "x"))
+    assert len(exc) == 1 and RU.despacha("Plaza Norte", JUE, BASE, exc)
+
+
+def test_guardar_y_leer_es_ida_y_vuelta():
+    exc = _exc((JUE, "Plaza Norte", RU.SIN_DESPACHO))
+    leido = RU.leer_excepciones(RU.a_csv(exc))
+    assert (
+        leido["fecha"].iloc[0] == pd.Timestamp(JUE) and leido["accion"].iloc[0] == RU.SIN_DESPACHO
+    )
+    base = RU.leer_base(RU.a_csv(BASE))
+    pd.testing.assert_frame_equal(base, RU.normalizar_base(BASE.copy()))
+    assert RU.huella(BASE, exc) != RU.huella(BASE, RU.excepciones_vacio())
+
+
+def test_ruta_semanal_se_valida():
+    df = pd.DataFrame(
+        {
+            "mall": ["Lurín", "Nuevo", None],
+            "patrones": ["lurin", "NUEVO", ""],
+            "dias": ["mi, ma", "xx", ""],
+        }
+    )
+    out = RU.normalizar_base(df)
+    assert out["dias"].tolist() == ["MA,MI", ""] and out["patrones"].tolist() == ["LURIN", "NUEVO"]
+    with pytest.raises(ValueError, match="repetido"):
+        RU.normalizar_base(
+            pd.DataFrame({"mall": ["A", "a"], "patrones": ["X", "Y"], "dias": ["LU", "MA"]})
+        )
+    with pytest.raises(ValueError, match="reconocer"):
+        RU.normalizar_base(pd.DataFrame({"mall": ["A"], "patrones": [""], "dias": ["LU"]}))
+
+
+def test_la_corrida_toma_el_feriado_y_el_despacho_movido():
+    """HP PLAZA NORTE (44) repone MA y JU. Con el jueves 08/10 movido al miércoles 07/10, la
+    corrida del jueves no la incluye y la del miércoles sí."""
+    t = pd.DataFrame({"tienda_id": ["44", "8"], "nombre": ["HP PLAZA NORTE", "HP JOCKEY"]})
+    p = EngineParams()
+    hoy_jue = CAL.aplicar(t, JUE, p).set_index("tienda_id")["recibe_hoy"]
+    assert hoy_jue["44"] and not hoy_jue["8"]
+    exc = RU.agregar(RU.excepciones_vacio(), RU.mover_despacho(JUE, MIE, ["Plaza Norte"], "", "x"))
+    jue = CAL.aplicar(t, JUE, p, None, BASE, exc).set_index("tienda_id")["recibe_hoy"]
+    mie = CAL.aplicar(t, MIE, p, None, BASE, exc).set_index("tienda_id")["recibe_hoy"]
+    assert not jue["44"] and mie["44"] and mie["8"]  # Jockey sigue con su miércoles
+
+
+def test_ruta_semanal_editada_cambia_los_dias_de_la_tienda():
+    t = pd.DataFrame({"tienda_id": ["111"], "nombre": ["DH LURIN"]})
+    base = BASE.copy()
+    base.loc[base["mall"].eq("Lurín"), "dias"] = "MA,MI"
+    mar = CAL.aplicar(t, "2026-10-06", EngineParams(), None, base, RU.excepciones_vacio())
+    assert mar["recibe_hoy"].iloc[0] and mar["dias_reposicion"].iloc[0] == "MA,MI"
+
+
+def test_cada_tienda_del_catalogo_cae_en_un_mall():
+    t = RU.tiendas_por_mall(BASE)
+    assert set(t["mall"]) - {""} <= set(BASE["mall"])
+    assert t.loc[t["codigo_tienda"].eq("20"), "mall"].iloc[0] == "Huallaga"

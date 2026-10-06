@@ -50,9 +50,9 @@ def rutas() -> pd.DataFrame:
     return pd.read_csv(CONFIG / "rutas_mall.csv", dtype=str)
 
 
-def mall_de(*textos) -> str:
+def mall_de(*textos, tabla: pd.DataFrame | None = None) -> str:
     """Mall (ruta) cuyo nombre aparece en alguno de los textos, en orden ('' si ninguno)."""
-    r = rutas()
+    r = rutas() if tabla is None else tabla
     for texto in textos:
         t = str(texto or "").upper() if not pd.isna(texto) else ""
         if not t:
@@ -63,9 +63,9 @@ def mall_de(*textos) -> str:
     return ""
 
 
-def dias_de_mall(mall: str) -> str:
+def dias_de_mall(mall: str, tabla: pd.DataFrame | None = None) -> str:
     """Días de despacho del mall ('LU,MI,VI'); '' si no tiene ruta."""
-    d = rutas().drop_duplicates("mall").set_index("mall")["dias"]
+    d = (rutas() if tabla is None else tabla).drop_duplicates("mall").set_index("mall")["dias"]
     return str(d.get(mall, "")) if mall else ""
 
 
@@ -74,9 +74,20 @@ def dia_semana(fecha) -> str:
 
 
 def aplicar(
-    dim_tienda: pd.DataFrame, fecha, params, marcas: list[str] | None = None
+    dim_tienda: pd.DataFrame,
+    fecha,
+    params,
+    marcas: list[str] | None = None,
+    rutas_mall: pd.DataFrame | None = None,
+    excepciones: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Agrega ``leadtime_dias``, ``revision_dias``, ``recibe_hoy`` y ``prioridad``."""
+    """Agrega ``leadtime_dias``, ``revision_dias``, ``recibe_hoy`` y ``prioridad``.
+
+    ``rutas_mall`` y ``excepciones`` vienen del mantenedor de rutas (``data.rutas``); sin ellas,
+    la ruta semanal de ``config/rutas_mall.csv`` y ninguna excepción."""
+    from forusight.data import rutas as RU
+
+    tabla_rutas = rutas() if rutas_mall is None else rutas_mall
     c = params.calendario
     out = dim_tienda.copy()
     cal = calendario().set_index("codigo_tienda")
@@ -92,18 +103,28 @@ def aplicar(
     col = lambda n: out[n] if n in out else pd.Series("", index=out.index)  # noqa: E731
     del_cal = ids.map(cal["mall"]).fillna("").astype(str)
     out["mall"] = [
-        m or mall_de(cc, z, n)
+        m or mall_de(cc, z, n, tabla=tabla_rutas)
         for m, cc, z, n in zip(
             del_cal, col("centro_comercial"), col("zona"), col("nombre"), strict=True
         )
     ]
-    dias = out["mall"].map(dias_de_mall)
+    dias = out["mall"].map(lambda m: dias_de_mall(m, tabla_rutas))
     out["dias_reposicion"] = dias
     # Revisión de una tienda fuera del calendario: 7 días / despachos por semana de su mall.
     sin_cal = ~ids.isin(cal.index) & dias.ne("")
     out.loc[sin_cal, "revision_dias"] = [round(7 / len(d.split(",")), 2) for d in dias[sin_cal]]
-    # Tienda sin mall con ruta: no sabemos cuándo repone → recibe cualquier día.
-    out["recibe_hoy"] = [(not d) or (dia in d.split(",")) for d in dias] if c.aplicar else True
+
+    # Tienda sin mall con ruta: no sabemos cuándo repone → recibe cualquier día. Con ruta, manda
+    # el mantenedor: la semana y las excepciones del día (feriado, despacho movido o extra).
+    def recibe(mall: str, d: str) -> bool:
+        exc = RU.excepcion_de(mall, fecha, excepciones)  # del mall o de TODOS
+        if exc is not None:
+            return exc["accion"] == RU.DESPACHO_EXTRA
+        return (not d) or (dia in d.split(","))
+
+    out["recibe_hoy"] = (
+        [recibe(m, d) for m, d in zip(out["mall"], dias, strict=True)] if c.aplicar else True
+    )
     pr = prioridades()
     pedidas = {m.strip().upper() for m in (marcas or [])}
     if pedidas:

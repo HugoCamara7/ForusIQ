@@ -300,7 +300,7 @@ def test_jockey_siempre_primero_luego_lima_luego_provincia():
     cen = CAL.prioridad_centros()
     jockey = cen["centro_comercial"].str.upper().eq("JOCKEY")
     lima = cen["zona_cc"].str.upper().eq("LIMA")
-    assert jockey.sum() == 7
+    assert jockey.sum() == 6  # HP, HPK, CLB, BSOUL, VANS y RKF (BBG ya no es de Forus)
     assert cen.loc[jockey, "prioridad"].eq("A").all() and cen.loc[jockey, "orden"].eq(1).all()
     assert cen.loc[~jockey & lima, "orden"].eq(2).all()
     assert cen.loc[~lima, "orden"].eq(3).all()

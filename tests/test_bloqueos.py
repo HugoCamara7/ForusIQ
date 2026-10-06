@@ -221,3 +221,13 @@ def test_carga_excel_mod_col_y_tienda():
 
     with pytest.raises(ValueError):
         B.leer_carga(buf2.getvalue(), "malo.xlsx")
+
+
+def test_modelo_sin_temporada_se_repone():
+    """Sólo se corta una temporada conocida que no está en la lista. Un modelo sin temporada (en el
+    maestro ni en ARTI) se repone: puede ser de una temporada nueva que todavía no figura."""
+    t = pd.Series(["44", "44", "44"])
+    mc = pd.Series(["A-1", "B-1", "C-1"])
+    temp = pd.Series(["VERANO 2026", "VERANO 2025", pd.NA], dtype="string")
+    _, fuera = B.fuera_de_surtido(t, mc, temp, None, ["VERANO 2026", "ESCOLAR 2026"])
+    assert fuera.tolist() == [False, True, False]
