@@ -518,6 +518,7 @@ def test_stock_bi_con_disponible_y_reservas():
     ]
     s = M.mapear(cols, M.ALIAS_STOCK)
     assert s["disponible"] == "disponible" and "transito" not in s
+    assert s["transito_bi"] == "transito"  # sólo informativo: columna aparte en el Excel
     assert all(s[r] == r for r in M.RESERVAS)
     assert M.faltantes("stock", s) == []
     a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)

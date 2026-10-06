@@ -261,6 +261,15 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),
+    "Tránsito stock_bi [un]": (
+        STOCK,
+        "Tránsito que registra stock_bi, para comparar con el de pedidos. No entra en el cálculo.",
+        "Columna transito de stock_bi en el corte del día. Es lo que sale de la tienda ORIGEN "
+        "(no lo que llega a esta), por eso la posición usa el tránsito de pedidos (Stock Trán. "
+        "Int.).",
+        "stock_bi · transito",
+        "—",
+    ),
     "Posición Stock [un]": (
         STOCK,
         "Lo que la tienda tiene y lo que ya viene en camino.",

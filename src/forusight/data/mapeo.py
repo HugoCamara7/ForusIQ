@@ -230,6 +230,8 @@ ALIAS_STOCK: dict[str, list[str]] = {
     "reserva_wholesale": ["reserva_wholesale"],
     "reserva_multicanal": ["reserva_multicanal"],
     "reserva_ecommerce": ["reserva_ecommerce"],
+    # Tránsito de stock_bi: sólo informativo (Excel), no entra en la posición (data.fuentes).
+    "transito_bi": ["transito"],
 }
 
 #: Reservas del CD en stock_bi (se descuentan en la opción «tiendas+bodega-reservas»).

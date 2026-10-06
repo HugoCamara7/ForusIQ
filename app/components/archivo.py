@@ -60,6 +60,7 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
         res.fecha_corte,
         cd_id,
         cantidad,
+        getattr(entradas, "stock_tienda", None),
     )
 
 

@@ -458,7 +458,7 @@ def sql_stock_foto(
     ]
     if "tienda_nombre" in mapa:
         sel.append(f"ANY_VALUE(CAST({_c(mapa, 'tienda_nombre')} AS STRING)) AS tienda_nombre")
-    for campo in ("stock_tienda", "stock_bodega", "disponible", *RESERVAS):
+    for campo in ("stock_tienda", "stock_bodega", "disponible", *RESERVAS, "transito_bi"):
         if campo in mapa:
             sel.append(f"SUM(COALESCE(SAFE_CAST({_c(mapa, campo)} AS FLOAT64), 0)) AS {campo}")
     where = f"DATE({f}) = @fecha_foto"
@@ -1045,12 +1045,15 @@ def construir_entradas(
     f = f.loc[f["sku"].isin(skus) & f["tienda_id"].ne("")]
     en_cd = f["tienda_id"].eq(cd)
     tiendas_f = f.loc[~en_cd & ~f["tienda_id"].isin(excluidas)]
+    if "transito_bi" not in tiendas_f:
+        tiendas_f = tiendas_f.assign(transito_bi=0.0)
     st = tiendas_f.groupby(["tienda_id", "sku"], as_index=False).agg(
-        stock_disponible=("stock_tienda", "sum")
+        stock_disponible=("stock_tienda", "sum"), stock_transito_bi=("transito_bi", "sum")
     )
     st["stock_disponible"] = st["stock_disponible"].clip(lower=0)
     # stock_bi.transito es la salida de la tienda ORIGEN, no lo que llega: el tránsito sale de
-    # las tablas de pedidos (data.transito.aplicar_pedidos).
+    # las tablas de pedidos (data.transito.aplicar_pedidos). El de stock_bi queda aparte, sólo
+    # para comparar en el Excel («Tránsito stock_bi [un]»).
     st["stock_transito"] = 0.0
 
     # --- venta real semanal (cerradas + semana en curso)
