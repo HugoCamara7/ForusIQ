@@ -16,6 +16,7 @@ from typing import Protocol
 import pandas as pd
 
 from forusight.config.settings import AppSettings
+from forusight.data import corridas as C
 from forusight.data.bq_client import BigQueryClient, validar_identificador
 from forusight.engine.pipeline import EngineInputs, EngineResult
 
@@ -581,7 +582,7 @@ class FuentesRepository(BigQueryRepository):
         cuando las dos llegan a ayer. Lectura barata (sólo la columna de fecha, 10 días)."""
         from forusight.data import fuentes as F
 
-        hoy = hoy or dt.date.today()
+        hoy = hoy or C.hoy_lima().date()
         tablas = self.tablas()
         mapas = self.mapeos({k: tablas[k] for k in ("stock", "ventas") if tablas[k]})
         out: dict[str, str | None] = {"stock": None, "ventas": None}
@@ -617,7 +618,7 @@ class FuentesRepository(BigQueryRepository):
             if falta:
                 raise ValueError(f"Mapeo de {fuente} incompleto: falta {', '.join(falta)}.")
         m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
-        hoy = fecha_foto or dt.date.today()
+        hoy = fecha_foto or C.hoy_lima().date()
         lineas = self.client.query_df(
             F.sql_revisar_transito(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
             {

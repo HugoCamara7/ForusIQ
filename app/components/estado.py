@@ -24,6 +24,7 @@ from forusight.data.bq_client import (
     explicar_error,
     leer_st_secrets,
 )
+from forusight.data.corridas import hoy_lima
 from forusight.data.fuentes import leer_stock_cd_archivo
 from forusight.data.repository import BigQueryRepository, FuentesRepository, SyntheticRepository
 from forusight.engine.pipeline import EngineInputs, EngineResult, ejecutar
@@ -128,7 +129,7 @@ def _ultimas_cargas(fuente: str, huella: str, hoy: str) -> dict:
 def aviso_carga(diag: dict, dia: str | None = None) -> str | None:
     """Texto de alerta si la corrida se hizo antes de la carga diaria (stock o venta sin el
     cierre de ayer)."""
-    hoy = pd.Timestamp.today().normalize()
+    hoy = hoy_lima()
     ref = min(pd.Timestamp(dia).normalize(), hoy) if dia else hoy  # reposición de otro día
     ayer = (ref - pd.Timedelta(days=1)).date()
     faltan = []
@@ -181,7 +182,7 @@ def cargar_entradas(
 
 def clave_cargas(fuente: str, huella: str) -> str:
     """Última carga de stock y venta: cambia cuando termina la carga diaria."""
-    cargas = _ultimas_cargas(fuente, huella, pd.Timestamp.today().date().isoformat())
+    cargas = _ultimas_cargas(fuente, huella, hoy_lima().date().isoformat())
     return "|".join(f"{k}={v}" for k, v in sorted(cargas.items()))
 
 
@@ -213,7 +214,7 @@ def _correr_motor(
     transito_pedidos = TR.usa_pedidos(inputs, params)
     if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
         inputs = TR.aplicar_pedidos(inputs, params)
-    dia = dia_reposicion or pd.Timestamp.today().date().isoformat()
+    dia = dia_reposicion or hoy_lima().date().isoformat()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []))
     from forusight.engine import venta_reciente as VR
 
@@ -560,7 +561,7 @@ def _entradas_reporte(
         raise ValueError("El reporte no tiene filas para las marcas elegidas.")
     wk = R.semanas(df)
     diag = {
-        "fecha_foto": (fecha or pd.Timestamp.today()).date().isoformat(),
+        "fecha_foto": (fecha or hoy_lima()).date().isoformat(),
         "fuente_venta": "reporte del día",
         "venta_hasta": (pd.Timestamp(max(wk)) + pd.Timedelta(days=6)).date().isoformat()
         if wk
@@ -624,7 +625,7 @@ def limpiar_cache() -> None:
 
 
 def lunes_actual() -> pd.Timestamp:
-    hoy = pd.Timestamp.today().normalize()
+    hoy = hoy_lima()
     return hoy - pd.Timedelta(days=hoy.weekday())
 
 
@@ -672,7 +673,7 @@ def ejecutar_corrida() -> EngineResult:
         cd[0],
         cd[1],
         marcas,
-        pd.Timestamp(ss.get("dia_reposicion") or pd.Timestamp.today()).date().isoformat(),
+        pd.Timestamp(ss.get("dia_reposicion") or hoy_lima()).date().isoformat(),
         clave_bloqueos(),
         ss.get("niveles_clave", ""),
     )
@@ -858,7 +859,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                 )
             if not ss.get("reporte"):
                 if "sb_dia" not in ss:
-                    ss.sb_dia = ss.get("dia_reposicion") or pd.Timestamp.today().date()
+                    ss.sb_dia = ss.get("dia_reposicion") or hoy_lima().date()
                 st.date_input(
                     "Día de reposición",
                     key="sb_dia",
@@ -903,7 +904,7 @@ def barra_lateral(paginas: list | None = None) -> None:
                 )
                 info = resumen_planificacion(
                     maestro_planificacion(ss.niveles_clave),
-                    ss.get("dia_reposicion") or pd.Timestamp.today(),
+                    ss.get("dia_reposicion") or hoy_lima(),
                 )
                 if info.get("claves"):
                     st.caption(

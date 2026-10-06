@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from app.components.estado import ajustes, entradas_de_la_corrida
+from forusight.data.corridas import hoy_lima
 from forusight.export.archivo import a_excel_forusight, construir_tabla, nombre_archivo
 
 
@@ -30,7 +31,7 @@ def cantidad_aprobada() -> pd.Series | None:
 @st.cache_data(max_entries=6, show_spinner=False)
 def _excel(run_id: str, aprob: str, _res, _entradas, _params, cd_id: str, _cantidad) -> bytes:
     tabla = tabla_archivo(_res, _entradas, _params, cd_id, _cantidad)
-    return a_excel_forusight(tabla, pd.Timestamp.today())
+    return a_excel_forusight(tabla, hoy_lima())
 
 
 def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
@@ -113,7 +114,7 @@ def boton_archivo(key: str, en_barra: bool = False) -> None:
     (st.sidebar if en_barra else st).download_button(
         etiqueta,
         data=generar,
-        file_name=nombre_archivo(pd.Timestamp.today()),
+        file_name=nombre_archivo(hoy_lima()),
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary",
         icon=":material/verified:" if aprobada else ":material/download:",

@@ -26,6 +26,13 @@ def ahora_lima() -> datetime:
     return datetime.now(LIMA)
 
 
+def hoy_lima() -> pd.Timestamp:
+    """Fecha de hoy en Lima, sin hora ni zona. Streamlit Cloud y el runner corren en UTC: con
+    ``pd.Timestamp.today()``, desde las 19:00 de Lima la app ya vivía en «mañana» (pedía el
+    cierre de hoy, que la carga diaria trae a las 3:00, y armaba la ruta del día siguiente)."""
+    return pd.Timestamp(ahora_lima().date())
+
+
 def carpeta_del_mes(fecha) -> str:
     return f"{CARPETA}/{pd.Timestamp(fecha):%Y-%m}"
 

@@ -212,3 +212,22 @@ def test_el_login_no_anuncia_la_lectura_de_arti():
     ]
     assert spinner == [False]
     assert "Ingresando…" in login
+
+
+def test_de_noche_en_lima_la_app_no_vive_en_manana(monkeypatch):
+    """El servidor corre en UTC: el lunes 05/10 a las 20:00 de Lima ya es martes 06/10 01:00
+    UTC. La app pedía el cierre del 05/10 (llega a las 3:00) y armaba la ruta del martes.
+    Con la hora de Lima el «hoy» sigue siendo el lunes y el stock al 04/10 está al día."""
+    from app.components import estado as E
+
+    noche = datetime(2026, 10, 5, 20, 0, tzinfo=C.LIMA)
+    assert noche.astimezone(C.timezone.utc).date().isoformat() == "2026-10-06"
+    monkeypatch.setattr(C, "ahora_lima", lambda: noche)
+    assert C.hoy_lima() == pd.Timestamp("2026-10-05")
+    assert E.lunes_actual() == pd.Timestamp("2026-10-05")
+    al_dia = {"fecha_foto": "2026-10-04", "venta_hasta": "2026-10-04"}
+    assert E.aviso_carga(al_dia) is None
+
+    # El martes a las 7:00 sin la carga de las 3:00: ahí sí falta el cierre del 05/10.
+    monkeypatch.setattr(C, "ahora_lima", lambda: datetime(2026, 10, 6, 7, 0, tzinfo=C.LIMA))
+    assert "05/10" in E.aviso_carga(al_dia)

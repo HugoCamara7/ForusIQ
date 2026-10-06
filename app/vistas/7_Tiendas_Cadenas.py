@@ -6,6 +6,7 @@ from app.components.ui import chips, hero, html, kpi_row, section
 from forusight.config.settings import load_params
 from forusight.data import cadenas as CAD
 from forusight.data import calendario as CAL
+from forusight.data.corridas import hoy_lima
 
 ss = st.session_state
 diag = ss.get("diagnostico") or {}
@@ -33,7 +34,7 @@ if res is not None and "tienda_id" in tiendas:
 tiendas = tiendas[tiendas["origen_tienda"].notna()]  # sólo tiendas identificadas
 if "tienda_id" in tiendas and len(tiendas):
     params = ss.get("params") or load_params(ajustes().params_path)
-    cal_t = CAL.aplicar(tiendas, ss.get("fecha_corte") or pd.Timestamp.today(), params)
+    cal_t = CAL.aplicar(tiendas, ss.get("fecha_corte") or hoy_lima(), params)
     tiendas = tiendas.assign(mall=cal_t["mall"], dias_reposicion=cal_t["dias_reposicion"])
 
 todas_marcas = sorted({m for ms in matriz.values() for m in ms})
