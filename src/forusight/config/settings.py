@@ -195,7 +195,7 @@ class PrioridadTiendasParams(_Section):
     cadenas_liquidadoras: list[str] = Field(default_factory=lambda: ["DH", "SE", "FB"])
     factor_cobertura_liquidadora: float = Field(0.75, gt=0, le=1.0)
     importancia_liquidadora: float = Field(0.0, ge=0, le=1.0)
-    #: Prioridad por venta de config/prioridad_tiendas.csv (A, B, C).
+    #: Prioridad A, B, C (config/prioridad_centros.csv; prioridad_tiendas.csv si falta).
     niveles: dict[str, NivelPrioridad] = Field(
         default_factory=lambda: {
             "A": NivelPrioridad(factor_cobertura=1.25, importancia=1.0),
@@ -203,8 +203,8 @@ class PrioridadTiendasParams(_Section):
             "C": NivelPrioridad(factor_cobertura=0.9, importancia=0.25),
         }
     )
-    #: Dentro de una letra, cada puesto del «orden» (prioridad_tiendas.csv) resta esto a la
-    #: importancia: HP Jockey (A, 1) 1.0, Larcomar (A, 2) 0.97, San Miguel (A, 3) 0.94…
+    #: Dentro de una letra, cada puesto del «orden» (prioridad_centros.csv) resta esto a la
+    #: importancia: en las A, Jockey (1) 1.0, resto de Lima (2) 0.97, provincia (3) 0.94.
     paso_orden: float = Field(0.03, ge=0, le=0.2)
 
 
