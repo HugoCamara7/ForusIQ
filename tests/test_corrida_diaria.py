@@ -251,3 +251,15 @@ def test_revision_de_la_carga_dice_si_ya_llego_el_stock(monkeypatch):
         assert "_consultado" not in E.clave_cargas("bigquery", "h")
     finally:
         del st.session_state["fuente"]
+
+
+def test_antes_de_ejecutar_se_ve_si_el_stock_trae_el_cierre_de_ayer(monkeypatch):
+    from app.components import estado as E
+
+    monkeypatch.setattr(C, "ahora_lima", lambda: datetime(2026, 10, 7, 8, 0, tzinfo=C.LIMA))
+    ok = E.estado_stock({"stock": "2026-10-06", "ventas": "2026-10-06", "_consultado": "08:00"})
+    assert ok[0] == "ok" and "06/10" in ok[1] and "Listo" in ok[1]
+    falta = E.estado_stock({"stock": "2026-10-05", "ventas": "2026-10-06", "_consultado": "08:00"})
+    assert falta[0] == "warn" and "05/10" in falta[1] and "06/10" in falta[1]
+    assert E.estado_stock(None) is None  # demo: no se muestra
+    assert E.estado_stock({})[0] == "warn"  # la consulta falló
