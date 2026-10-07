@@ -121,9 +121,12 @@ def _ultimas_cargas(fuente: str, huella: str, hoy: str) -> dict:
     if not hasattr(repo, "ultimas_cargas"):
         return {}
     try:
-        return repo.ultimas_cargas(pd.Timestamp(hoy).date())
+        out = repo.ultimas_cargas(pd.Timestamp(hoy).date())
     except Exception:  # sin la consulta se sigue con la caché normal
         return {}
+    from forusight.data.corridas import ahora_lima
+
+    return {**out, "_consultado": f"{ahora_lima():%H:%M}"}  # «_»: no entra en clave_cargas
 
 
 def aviso_carga(diag: dict, dia: str | None = None) -> str | None:
@@ -183,7 +186,28 @@ def cargar_entradas(
 def clave_cargas(fuente: str, huella: str) -> str:
     """Última carga de stock y venta: cambia cuando termina la carga diaria."""
     cargas = _ultimas_cargas(fuente, huella, hoy_lima().date().isoformat())
-    return "|".join(f"{k}={v}" for k, v in sorted(cargas.items()))
+    return "|".join(f"{k}={v}" for k, v in sorted(cargas.items()) if not k.startswith("_"))
+
+
+def revision_carga(diag: dict) -> str | None:
+    """Debajo del aviso de carga: a qué hora se revisó y hasta qué día llega cada tabla ahora
+    (se consulta cada 5 minutos). Si el stock ya trae un cierre más nuevo que el de la corrida,
+    lo dice: basta con volver a ejecutar."""
+    fuente = st.session_state.get("fuente")
+    if not fuente or fuente == "synthetic":
+        return None
+    cargas = _ultimas_cargas(fuente, huella_config(), hoy_lima().date().isoformat())
+    if not cargas:
+        return "No se pudo revisar la última carga en BigQuery (se reintenta en 5 minutos)."
+    ddmm = lambda f: f"{pd.Timestamp(f):%d/%m}" if f else "—"  # noqa: E731
+    texto = (
+        f"Revisado a las {cargas.get('_consultado', '—')}: la tabla de stock llega al cierre del "
+        f"{ddmm(cargas.get('stock'))} y la de venta al {ddmm(cargas.get('ventas'))}."
+    )
+    foto = diag.get("fecha_foto")
+    if cargas.get("stock") and foto and pd.Timestamp(cargas["stock"]) > pd.Timestamp(foto):
+        texto += " Ya llegó el stock nuevo: vuelve a ejecutar la corrida."
+    return texto
 
 
 @st.cache_resource(ttl=_TTL, show_spinner="Calculando distribución…", max_entries=8)
@@ -911,6 +935,8 @@ def barra_lateral(paginas: list | None = None) -> None:
             )
             if diag.get("aviso_carga"):
                 st.sidebar.error(diag["aviso_carga"])
+                if revision := revision_carga(diag):
+                    st.sidebar.caption(revision)
             from app.components.archivo import boton_archivo
 
             boton_archivo("archivo_barra", en_barra=True)

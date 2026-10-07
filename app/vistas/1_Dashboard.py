@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 from app.components.archivo import boton_archivo
 from app.components.corridas_guardadas import panel as panel_corridas
-from app.components.estado import entradas_de_la_corrida
+from app.components.estado import entradas_de_la_corrida, revision_carga
 from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
 ss = st.session_state
@@ -43,6 +43,8 @@ env = det[det["cantidad"] > 0]
 
 if diag.get("aviso_carga"):  # corrida antes de la carga diaria de stock / venta
     st.error(diag["aviso_carga"])
+    if revision := revision_carga(diag):
+        st.caption(revision)
 
 meta = [f"Semana {_fecha(r['fecha_corte'])}"]
 if diag.get("fecha_foto"):  # el corte de fecha F es el cierre del día F

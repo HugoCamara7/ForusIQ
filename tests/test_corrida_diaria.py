@@ -231,3 +231,23 @@ def test_de_noche_en_lima_la_app_no_vive_en_manana(monkeypatch):
     # El martes a las 7:00 sin la carga de las 3:00: ahí sí falta el cierre del 05/10.
     monkeypatch.setattr(C, "ahora_lima", lambda: datetime(2026, 10, 6, 7, 0, tzinfo=C.LIMA))
     assert "05/10" in E.aviso_carga(al_dia)
+
+
+def test_revision_de_la_carga_dice_si_ya_llego_el_stock(monkeypatch):
+    """Debajo del aviso: a qué hora se revisó, hasta qué cierre llega cada tabla y, si el stock ya
+    trae un cierre más nuevo que el de la corrida, que se vuelva a ejecutar. La hora de la
+    revisión no entra en la clave de caché (si no, se releería BigQuery cada 5 minutos)."""
+    import streamlit as st
+    from app.components import estado as E
+
+    cargas = {"stock": "2026-10-06", "ventas": "2026-10-06", "_consultado": "07:40"}
+    monkeypatch.setattr(E, "_ultimas_cargas", lambda *a: cargas)
+    monkeypatch.setattr(E, "huella_config", lambda: "h")
+    st.session_state["fuente"] = "bigquery"
+    try:
+        texto = E.revision_carga({"fecha_foto": "2026-10-05"})
+        assert "07:40" in texto and "06/10" in texto and "vuelve a ejecutar" in texto
+        assert "vuelve a ejecutar" not in E.revision_carga({"fecha_foto": "2026-10-06"})
+        assert "_consultado" not in E.clave_cargas("bigquery", "h")
+    finally:
+        del st.session_state["fuente"]
