@@ -189,14 +189,43 @@ def clave_cargas(fuente: str, huella: str) -> str:
     return "|".join(f"{k}={v}" for k, v in sorted(cargas.items()) if not k.startswith("_"))
 
 
+def cargas_actuales() -> dict | None:
+    """Última fecha cargada de stock y venta en BigQuery ahora (consulta cada 5 minutos); None
+    con datos de demo."""
+    fuente = st.session_state.get("fuente")
+    if not fuente or fuente == "synthetic":
+        return None
+    return _ultimas_cargas(fuente, huella_config(), hoy_lima().date().isoformat())
+
+
+def estado_stock(cargas: dict | None) -> tuple[str, str] | None:
+    """(nivel, texto) para ver ANTES de ejecutar si el stock ya trae el cierre de ayer."""
+    if cargas is None:
+        return None
+    if not cargas:
+        return "warn", "No se pudo revisar la carga de BigQuery (se reintenta en 5 minutos)."
+    ayer = (hoy_lima() - pd.Timedelta(days=1)).normalize()
+    hora = cargas.get("_consultado", "—")
+    stock, venta = cargas.get("stock"), cargas.get("ventas")
+    ddmm = lambda f: f"{pd.Timestamp(f):%d/%m}" if f else "—"  # noqa: E731
+    if stock and pd.Timestamp(stock) >= ayer:
+        return "ok", (
+            f"Stock al cierre de ayer ({ddmm(stock)}) · venta al {ddmm(venta)} · revisado a las "
+            f"{hora}. Listo para ejecutar."
+        )
+    return "warn", (
+        f"El stock todavía llega al {ddmm(stock)}: falta el cierre de ayer ({ayer:%d/%m}). "
+        f"Revisado a las {hora}; se vuelve a revisar cada 5 minutos."
+    )
+
+
 def revision_carga(diag: dict) -> str | None:
     """Debajo del aviso de carga: a qué hora se revisó y hasta qué día llega cada tabla ahora
     (se consulta cada 5 minutos). Si el stock ya trae un cierre más nuevo que el de la corrida,
     lo dice: basta con volver a ejecutar."""
-    fuente = st.session_state.get("fuente")
-    if not fuente or fuente == "synthetic":
+    cargas = cargas_actuales()
+    if cargas is None:
         return None
-    cargas = _ultimas_cargas(fuente, huella_config(), hoy_lima().date().isoformat())
     if not cargas:
         return "No se pudo revisar la última carga en BigQuery (se reintenta en 5 minutos)."
     ddmm = lambda f: f"{pd.Timestamp(f):%d/%m}" if f else "—"  # noqa: E731
@@ -904,6 +933,10 @@ def barra_lateral(paginas: list | None = None) -> None:
             "corte disponible.",
         )
         ss.fecha_corte = ss.sb_semana
+        if estado := estado_stock(cargas_actuales()):  # ¿ya llegó el cierre de ayer?
+            (st.success if estado[0] == "ok" else st.warning)(
+                estado[1], icon=":material/inventory_2:"
+            )
         if st.button(
             "Ejecutar corrida",
             type="primary",
