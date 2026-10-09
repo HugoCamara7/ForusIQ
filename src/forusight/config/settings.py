@@ -30,6 +30,9 @@ class AppSettings(BaseSettings):
     #: Dataset de BigQuery donde el modo MART guarda corridas y auditoría (opcional).
     dataset_app: str | None = None
     cd_id: str = "320"
+    #: Bodega de origen por marca (si no está, la de ``cd_id``). AZALEIA sale de la 380 mientras
+    #: arranca la marca; su stock se lee de esa bodega y el archivo la pone como origen.
+    cd_por_marca: dict[str, str] = Field(default_factory=lambda: {"AZALEIA": "380"})
     cache_ttl_seconds: int = 3600
     params_path: Path = DEFAULT_PARAMS_PATH
     #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas). PENDIENTE confirmar.
@@ -183,6 +186,17 @@ class ExhibicionParams(_Section):
 
     def minimo(self, categoria: str) -> int:
         return int(self.minimo_por_categoria.get(categoria, self.minimo_por_talla_core))
+
+
+class LlenadoInicialParams(_Section):
+    """Marca nueva (p. ej. AZALEIA): tiendas de su cadena sin stock ni venta de la marca.
+    Cada modelo-color con stock en el CD entra con ``unidades_por_talla_core`` en cada talla
+    core (si el modelo no fabrica core, en sus ``exhibicion.tallas_minimas_sin_core`` tallas
+    principales). Desde la corrida siguiente la tienda ya tiene stock y se repone normal.
+    Apagado por defecto: Forusight es reposición; el llenado se pide en «Nueva corrida»."""
+
+    activo: bool = False
+    unidades_por_talla_core: int = Field(1, ge=1)
 
 
 class PrioridadTiendasParams(_Section):
@@ -359,6 +373,7 @@ class EngineParams(_Section):
     cobertura: CoberturaParams = Field(default_factory=CoberturaParams)
     rotacion: RotacionParams = Field(default_factory=RotacionParams)
     exhibicion: ExhibicionParams = Field(default_factory=ExhibicionParams)
+    llenado_inicial: LlenadoInicialParams = Field(default_factory=LlenadoInicialParams)
     tope_tienda: TopeTiendaParams = Field(default_factory=TopeTiendaParams)
     afinidad: AfinidadParams = Field(default_factory=AfinidadParams)
     asignacion: AsignacionParams = Field(default_factory=AsignacionParams)

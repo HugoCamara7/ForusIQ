@@ -298,3 +298,42 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
             req, np.maximum(sub["minimo_exhibicion"], 1), 0
         ).astype("int64")
     return out
+
+
+def aplicar_llenado_inicial(
+    sku: pd.DataFrame, tiendas: pd.DataFrame, params: EngineParams
+) -> pd.DataFrame:
+    """Marca nueva: las tiendas con ``llenado_inicial`` (de su cadena, sin stock ni venta de la
+    marca) reciben ``unidades_por_talla_core`` en cada talla core de cada modelo-color con stock
+    en el CD. Bloqueos, temporadas y topes se aplican después, igual que siempre."""
+    out = sku.copy()
+    out["llenado_inicial"] = False
+    p = params.llenado_inicial
+    if not p.activo or "llenado_inicial" not in tiendas:
+        return out
+    nuevas = set(tiendas.loc[tiendas["llenado_inicial"].fillna(False).astype(bool), "tienda_id"])
+    en = out["tienda_id"].isin(nuevas) & out["cd_disponible"].gt(0)
+    if not en.any():
+        return out
+    sub = out.loc[en].sort_values(KEY_MC + ["talla_orden"], kind="mergesort")
+    core = sub["es_core"].fillna(False).astype(bool)
+    tiene_core = core.groupby([sub[c] for c in KEY_MC], sort=False).transform("any")
+    orden = (
+        sub["share_talla"]
+        .fillna(0)
+        .groupby([sub[c] for c in KEY_MC], sort=False)
+        .rank(method="first", ascending=False)
+    )
+    elegida = core | (~tiene_core & orden.le(params.exhibicion.tallas_minimas_sin_core))
+    idx = sub.index[elegida.to_numpy()]
+    pos = np.ceil(out.loc[idx, "stock_disponible"] + out.loc[idx, "stock_transito"])
+    falta = (p.unidades_por_talla_core - pos).clip(lower=0).astype("int64")
+    out.loc[idx, "stock_objetivo"] = np.maximum(
+        out.loc[idx, "stock_objetivo"], p.unidades_por_talla_core
+    )
+    out.loc[idx, "necesidad"] = np.maximum(out.loc[idx, "necesidad"], falta)
+    if "necesidad_bruta" in out:
+        out.loc[idx, "necesidad_bruta"] = np.maximum(out.loc[idx, "necesidad_bruta"], falta)
+    out.loc[idx, "llenado_inicial"] = True
+    out.loc[idx[falta.to_numpy() > 0], "motivo_bloqueo"] = ""
+    return out

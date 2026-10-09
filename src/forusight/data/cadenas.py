@@ -68,11 +68,21 @@ def pares_permitidos(
 ) -> tuple[pd.DataFrame, str]:
     """(tienda_id, modelo_id) donde se puede introducir un modelo, y la regla usada."""
     t = dim_tienda.loc[dim_tienda["cadena"].notna(), ["tienda_id", "cadena"]]
-    if cadena_modelo is not None and len(cadena_modelo):
-        pares = t.merge(cadena_modelo[["modelo_id", "cadena"]], on="cadena")
-        return pares[["tienda_id", "modelo_id"]].drop_duplicates(), "maestro modelo→cadena"
     mm = pd.DataFrame([(c, m) for c, ms in matriz.items() for m in ms], columns=["cadena", "marca"])
     modelos = dim_producto[["modelo_id", "marca"]].dropna().drop_duplicates()
     modelos = modelos.assign(marca=modelos["marca"].astype("string").str.upper())
-    pares = t.merge(mm, on="cadena").merge(modelos, on="marca")
-    return pares[["tienda_id", "modelo_id"]].drop_duplicates(), "matriz marca × cadena"
+    por_matriz = t.merge(mm, on="cadena").merge(modelos, on="marca")[["tienda_id", "modelo_id"]]
+    if cadena_modelo is not None and len(cadena_modelo):
+        pares = t.merge(cadena_modelo[["modelo_id", "cadena"]], on="cadena")[
+            ["tienda_id", "modelo_id"]
+        ]
+        # Marca que el maestro todavía no tiene (ningún modelo suyo, p. ej. AZALEIA nueva):
+        # sus modelos usan la matriz marca × cadena. Las marcas del maestro no cambian.
+        en_maestro = set(
+            modelos.loc[modelos["modelo_id"].isin(set(cadena_modelo["modelo_id"])), "marca"]
+        )
+        nuevos = set(modelos.loc[~modelos["marca"].isin(en_maestro), "modelo_id"])
+        sin_maestro = por_matriz.loc[por_matriz["modelo_id"].isin(nuevos)]
+        pares = pd.concat([pares, sin_maestro], ignore_index=True)
+        return pares.drop_duplicates(), "maestro modelo→cadena"
+    return por_matriz.drop_duplicates(), "matriz marca × cadena"

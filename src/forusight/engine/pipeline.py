@@ -18,7 +18,11 @@ from forusight.engine.demand import estimar_demanda
 from forusight.engine.reasons import asignar_codigos, generar_textos
 from forusight.engine.similarity import tiendas_similares
 from forusight.engine.size_curve import curva_tallas
-from forusight.engine.target import calcular_necesidad, calcular_objetivo_mc
+from forusight.engine.target import (
+    aplicar_llenado_inicial,
+    calcular_necesidad,
+    calcular_objetivo_mc,
+)
 from forusight.engine.universe import construir_base
 
 COLUMNAS_SALIDA = [
@@ -235,6 +239,7 @@ def ejecutar(
             how="left",
         )
     sku = calcular_necesidad(sku, mc, params)
+    sku = aplicar_llenado_inicial(sku, base.tiendas, params)  # marca nueva: primer envío
     sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params)
 
     disp = dict(zip(base.cd["sku"], base.cd["disponible"], strict=True))
@@ -259,6 +264,10 @@ def ejecutar(
             base.tiendas.loc[base.tiendas["recibe_hoy"].fillna(True).astype(bool), "tienda_id"]
         )
         det = det.loc[det["tienda_id"].isin(hoy)]
+    if "cd_origen" in inp.dim_producto:  # bodega de cada SKU (AZALEIA: 380) para el texto
+        det["cd_origen"] = det["sku"].map(
+            inp.dim_producto.drop_duplicates("sku").set_index("sku")["cd_origen"]
+        )
     det["motivo_texto"] = generar_textos(det, params, cd_id)
     det["run_id"] = run_id
     det = det.rename(

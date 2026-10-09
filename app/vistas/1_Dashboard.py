@@ -23,8 +23,8 @@ if res is None:
     with cabecera:
         hero(
             "Forusight",
-            "Distribución del CD 320 a tiendas por modelo, talla y cantidad, con el motivo de "
-            "cada envío.",
+            "Reposición del CD 320 (y la bodega 380 de Azaleia) a tiendas por modelo, talla y "
+            "cantidad, con el motivo de cada envío.",
             eyebrow="Reposición",
         )
     issue_box(
@@ -89,6 +89,21 @@ if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_
         f"(hace {plan['dias']} días)",
         "Para reponer al mismo ritmo que Neogística, sube el reporte de distribución de hoy en "
         "Parámetros → «Planificación Neogística» y vuelve a ejecutar la corrida.",
+    )
+
+tiendas_res = getattr(res, "tiendas", None)
+if (
+    tiendas_res is not None
+    and "llenado_inicial" in tiendas_res
+    and tiendas_res["llenado_inicial"].fillna(False).astype(bool).any()
+    and not res.params.llenado_inicial.activo
+):
+    n_nuevas = int(tiendas_res["llenado_inicial"].fillna(False).astype(bool).sum())
+    issue_box(
+        "info",
+        f"{n_nuevas} tienda(s) de marca nueva sin stock ni venta",
+        "Esta corrida es sólo reposición, así que no les envía nada. Para su primer envío "
+        "(1 por talla core) activa «Llenado inicial de marca nueva» arriba y vuelve a ejecutar.",
     )
 
 sin_plan = diag.get("tiendas_sin_planificacion") or []

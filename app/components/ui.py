@@ -45,13 +45,19 @@ def html(markup: str, sidebar: bool = False) -> None:
 
 def forusight_logo_html(archivo: str = "forusight_logo.png") -> str:
     src = image_data_uri(ASSETS / archivo)
-    return f'<img src="{src}" alt="Forusight">' if src else "<strong>FORUSIGHT</strong>"
+    # Tamaño máximo también en línea: si la hoja de estilos llega tarde (al entrar, mientras
+    # carga la app), el logo no se ve a su tamaño original (1200 px).
+    return (
+        f'<img src="{src}" alt="Forusight" style="max-width:340px;max-height:60px">'
+        if src
+        else "<strong>FORUSIGHT</strong>"
+    )
 
 
 def forus_logo_html() -> str:
     src = image_data_uri(ASSETS / "forus_logo.png")
     return (
-        f'<img src="{src}" alt="FORUS">'
+        f'<img src="{src}" alt="FORUS" style="max-width:180px;max-height:48px">'
         if src
         else '<div class="login-forus-fallback">FORUS<small>CONSUMER FANATIC</small></div>'
     )
@@ -63,7 +69,8 @@ def brand_strip() -> None:
         src = image_data_uri(ASSETS / "brands" / archivo)
         if src:
             chips.append(
-                f'<span class="brand-chip"><img src="{src}" alt="{escape(nombre)}"></span>'
+                f'<span class="brand-chip"><img src="{src}" alt="{escape(nombre)}" '
+                'style="max-width:76px;max-height:22px"></span>'
             )
     if chips:
         html(f'<div class="login-brands">{"".join(chips)}</div>')
@@ -98,7 +105,8 @@ def logos_marcas(marcas: list[str]) -> str:
         archivo = por_nombre.get(str(m).upper().replace(" ", ""))
         src = image_data_uri(ASSETS / "brands" / archivo) if archivo else ""
         fichas.append(
-            f'<span class="sb-marca"><img src="{src}" alt="{escape(str(m))}"></span>'
+            f'<span class="sb-marca"><img src="{src}" alt="{escape(str(m))}" '
+            'style="max-width:120px;max-height:26px"></span>'
             if src
             else f'<span class="sb-marca sb-marca-txt">{escape(str(m))}</span>'
         )

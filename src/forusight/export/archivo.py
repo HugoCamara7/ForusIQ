@@ -250,7 +250,13 @@ def construir_tabla(
         if "smt_ref" in d
         else d["minimo_exhibicion"].where(d["es_core"], 0)
     )
-    out["Código Centro Origen"] = str(cd_id)
+    # Bodega de origen por SKU (AZALEIA sale de la 380): con ella se crean los pedidos.
+    origen = (
+        d["sku"].map(dim_producto.drop_duplicates("sku").set_index("sku")["cd_origen"])
+        if "cd_origen" in dim_producto
+        else pd.Series(pd.NA, index=d.index)
+    )
+    out["Código Centro Origen"] = origen.fillna(str(cd_id)).astype(str)
     out["Stock en CD"] = d["stock_cd_disponible"]
     out["Stock Físico [un]"] = fisico
     if d["stock_transito"].gt(0).any():  # la fuente de stock actual no trae tránsito
