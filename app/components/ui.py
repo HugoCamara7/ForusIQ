@@ -197,7 +197,9 @@ def app_styles() -> None:
     .sb-card b {{ display:block; font-size:15px; font-weight:900; color:#FFFFFF; }}
     .sb-card em {{ display:block; font-style:normal; font-size:12px; color:#94A3C4;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    .sb-sec {{ font-size:13px; font-weight:900; color:#FFFFFF; margin:20px 2px 8px; }}
+    .sb-sec {{ font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase;
+        color:#8EA0C6; padding:26px 4px 12px; margin:0; }}
+    [data-testid="stMarkdownContainer"]:has(> .sb-sec) {{ margin-bottom:0 !important; }}
     .st-key-sb_salir button {{ background:transparent; border:1.5px solid #F87171;
         border-radius:12px; min-height:40px; }}
     .st-key-sb_salir button p {{ color:#FCA5A5 !important; font-weight:800; }}
