@@ -453,6 +453,14 @@ class FuentesRepository(BigQueryRepository):
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
         )
+        if not entradas.dim_tienda["activa"].any():
+            nombres = ", ".join(marcas or []) or "la marca"
+            raise ValueError(
+                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta de la "
+                "marca y la marca no está asignada a ninguna cadena. Si es una marca nueva, "
+                "agrégala a las cadenas que la venden en config/cadenas.yaml "
+                "(marcas_por_cadena) o en los secrets ([forusight.marcas_por_cadena])."
+            )
         # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
         dp = entradas.dim_producto
         if (

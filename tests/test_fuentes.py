@@ -786,3 +786,32 @@ def test_sql_ultima_fecha_solo_lee_la_fecha():
     sql = F.sql_ultima_fecha("p.d.stock", {"fecha": "fecha_corte"})
     assert "MAX(DATE(`fecha_corte`)) AS ultima" in sql
     assert "@desde_carga" in sql and "@hasta_carga" in sql
+
+
+def _marca_nueva(fake):
+    """Sólo stock en el CD 320: ninguna tienda tiene stock ni venta de la marca."""
+    d = fake.datos
+    d["stock_foto"] = d["stock_foto"].loc[d["stock_foto"]["tienda_cod"].astype(str).eq("320")]
+    d["ventas"] = d["ventas"].iloc[0:0]
+    d["venta_diaria"] = d["venta_diaria"].iloc[0:0]
+
+
+def test_marca_nueva_reciben_las_tiendas_de_sus_cadenas():
+    """Antes: «You are trying to merge on str and float64 columns for key 'tienda_id'»."""
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
+        CORTE, marcas=["HUSH PUPPIES"]
+    )
+    activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
+    assert len(activas) and set(activas["cadena"]) <= {"DH", "FB", "HP", "HPK", "SE"}
+    assert "39" not in set(inp.dim_tienda["tienda_id"])  # cerrada: no recibe
+    ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
+
+
+def test_marca_nueva_sin_cadena_es_mensaje_claro():
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    with pytest.raises(ValueError, match="Ninguna tienda puede recibir AZALEIA"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
