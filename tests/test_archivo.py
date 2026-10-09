@@ -230,6 +230,56 @@ def test_github_store_hace_put_con_sha(monkeypatch):
     assert llamadas[1][0] == "PUT" and body["sha"] == "abc" and body["branch"] == "rama"
 
 
+def test_github_store_dos_guardados_seguidos_no_chocan():
+    """Dos clics seguidos: GitHub todavía devuelve el sha viejo al leer. El segundo guardado usa
+    el sha que dejó el primero; y si igual choca (409), vuelve a leer y reintenta."""
+    from urllib.error import HTTPError
+
+    from forusight.data import github_store as GS
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+
+        def read(self):
+            return json.dumps(self.data).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    estado = {"sha": "v1", "n": 1, "puts": [], "choques": 0, "atrasada": None}
+
+    def opener(req, timeout=30):
+        if req.get_method() == "GET":  # la primera lectura después de guardar viene atrasada
+            sha, estado["atrasada"] = estado["atrasada"] or estado["sha"], None
+            return Resp({"sha": sha})
+        body = json.loads(req.data)
+        estado["puts"].append(body.get("sha"))
+        if estado["choques"]:
+            estado["choques"] -= 1
+            raise HTTPError(req.full_url, 409, "conflict", {}, None)
+        if body.get("sha") != estado["sha"]:
+            raise HTTPError(req.full_url, 409, "conflict", {}, None)
+        estado["n"] += 1
+        estado["atrasada"], estado["sha"] = estado["sha"], f"v{estado['n']}"
+        return Resp({"content": {"sha": estado["sha"]}})
+
+    GS._ULTIMA_ESCRITURA.clear()
+    s = GitHubStore("o/r", "t", "rama", "forusight", opener=opener, dormir=lambda _s: None)
+    s.guardar("rutas/excepciones.csv", b"a", "1")
+    s.guardar("rutas/excepciones.csv", b"b", "2")  # antes: 409 «does not match»
+    assert estado["sha"] == "v3" and estado["puts"] == ["v1", "v2"]
+    estado["choques"] = 1  # otro guardado se cruza: reintenta solo
+    s.guardar("rutas/excepciones.csv", b"c", "3")
+    assert estado["sha"] == "v4"
+    estado["choques"] = 9
+    with pytest.raises(GS.GitHubError, match="al mismo tiempo"):
+        s.guardar("rutas/excepciones.csv", b"d", "4")
+
+
 def test_transito_de_stock_bi_va_aparte_y_no_cambia_la_posicion(corrida):
     """Dos tránsitos para comparar: el de pedidos (Stock Trán. Int., el que usa la posición) y
     el de stock_bi (Tránsito stock_bi), sólo informativo."""

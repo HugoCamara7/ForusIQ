@@ -148,7 +148,7 @@ with st.container(key="card_rutas"):
         tabla["Tiendas"] = tabla["Mall"].map(nombres_tienda).fillna("")
         columnas = {
             e: st.column_config.CheckboxColumn(
-                f"🚫 {e}" if e in fer else ("● " + e if f == hoy else e), width=84
+                f"🚫 {e}" if e in fer else ("● " + e if f == hoy else e), width=104
             )
             for e, f in zip(etiquetas, fechas, strict=True)
         }
@@ -157,7 +157,11 @@ with st.container(key="card_rutas"):
             hide_index=True,
             width="stretch",
             disabled=["Mall", "Tiendas"] if editable else True,
-            column_config={**columnas, "Tiendas": st.column_config.TextColumn(width="large")},
+            column_config={
+                "Mall": st.column_config.TextColumn(pinned=True),
+                **columnas,
+                "Tiendas": st.column_config.TextColumn(width="large"),
+            },
             key=f"rt_editor_{fechas[0]:%Y%m%d}_{RU.huella(base, excepciones)}",
         )
         cambios = RU.cambios_semana(base, excepciones, ss.rt_fecha)

@@ -435,7 +435,10 @@ class FuentesRepository(BigQueryRepository):
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer el maestro de {fuente}: {explicar_error(exc)}")
 
+        from forusight.data.cadenas import tiendas_cerradas
+
         excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
+        excl |= {F.codigo_tienda(t) for t in tiendas_cerradas()}
         entradas = F.construir_entradas(
             arti,
             ventas,

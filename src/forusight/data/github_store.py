@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from collections.abc import Mapping
 from typing import Any
 from urllib.error import HTTPError
@@ -23,6 +24,17 @@ from urllib.request import Request, urlopen
 
 class GitHubError(RuntimeError):
     pass
+
+
+class GitHubConflicto(GitHubError):
+    """El archivo cambió entre leer su versión (sha) y guardarlo."""
+
+
+#: Última escritura de cada archivo en este proceso: (sha que se reemplazó, sha nuevo). Justo
+#: después de guardar, GitHub puede seguir devolviendo unos segundos la versión anterior; con el
+#: sha viejo el siguiente guardado choca (409). Si la lectura trae el sha que ya se reemplazó, se
+#: usa el nuevo.
+_ULTIMA_ESCRITURA: dict[tuple[str, str, str], tuple[str | None, str]] = {}
 
 
 def config_github(secrets: Mapping[str, Any] | None) -> dict | None:
@@ -53,11 +65,12 @@ class GitHubStore:
         prefix: str = "forusight",
         timeout: int = 30,
         opener=urlopen,
+        dormir=time.sleep,
     ) -> None:
         owner, repo = repository.split("/", 1)
         self.base = f"https://api.github.com/repos/{quote(owner)}/{quote(repo)}/contents"
         self.token, self.branch, self.prefix = token, branch, prefix.strip("/")
-        self.timeout, self._open = timeout, opener
+        self.timeout, self._open, self._dormir = timeout, opener, dormir
         self.repository = repository
 
     def _request(self, method: str, path: str, payload: dict | None = None):
@@ -83,27 +96,51 @@ class GitHubStore:
             if exc.code == 404 and method == "GET":
                 return None
             detalle = exc.read().decode("utf-8", errors="replace")[:300]
+            if exc.code == 409 or (exc.code == 422 and "sha" in detalle):
+                raise GitHubConflicto(detalle) from exc
             raise GitHubError(
                 f"GitHub respondió {exc.code} ({method}) en {self.repository} "
                 f"(rama {self.branch}): {detalle}"
             ) from exc
 
-    def guardar(self, ruta: str, contenido: bytes, mensaje: str) -> str:
-        """Crea o reemplaza ``prefix/ruta``. Devuelve la ruta escrita."""
+    def guardar(self, ruta: str, contenido: bytes, mensaje: str, intentos: int = 4) -> str:
+        """Crea o reemplaza ``prefix/ruta``. Devuelve la ruta escrita. Si otro guardado del mismo
+        archivo se cruza (dos clics seguidos, dos usuarios), vuelve a leer la versión y reintenta
+        en vez de mostrar el error de GitHub."""
         path = f"{self.prefix}/{ruta}"
-        actual = self._request("GET", path)
-        body = {
-            "message": mensaje,
-            "content": base64.b64encode(contenido).decode("ascii"),
-            "branch": self.branch,
-        }
-        if isinstance(actual, dict) and actual.get("sha"):
-            body["sha"] = actual["sha"]
-        self._request("PUT", path, body)
-        return path
+        clave = (self.repository, self.branch, path)
+        for intento in range(intentos):
+            if intento:
+                self._dormir(0.8 * intento)
+            actual = self._request("GET", path)
+            sha = actual.get("sha") if isinstance(actual, dict) else None
+            previa = _ULTIMA_ESCRITURA.get(clave)
+            if previa and sha == previa[0]:  # GitHub aún devuelve la versión ya reemplazada
+                sha = previa[1]
+            body = {
+                "message": mensaje,
+                "content": base64.b64encode(contenido).decode("ascii"),
+                "branch": self.branch,
+            }
+            if sha:
+                body["sha"] = sha
+            try:
+                r = self._request("PUT", path, body)
+            except GitHubConflicto:
+                _ULTIMA_ESCRITURA.pop(clave, None)
+                continue
+            nuevo = ((r or {}).get("content") or {}).get("sha")
+            if nuevo:
+                _ULTIMA_ESCRITURA[clave] = (sha, nuevo)
+            return path
+        raise GitHubError(
+            "No se pudo guardar: el archivo se estaba guardando al mismo tiempo desde otro lado. "
+            "Espera unos segundos y vuelve a intentarlo."
+        )
 
     def borrar(self, ruta_completa: str, sha: str, mensaje: str) -> None:
         """Borra un archivo (ruta completa y sha, tal como los da ``listar``)."""
+        _ULTIMA_ESCRITURA.pop((self.repository, self.branch, ruta_completa), None)
         self._request(
             "DELETE", ruta_completa, {"message": mensaje, "sha": sha, "branch": self.branch}
         )
