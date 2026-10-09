@@ -185,7 +185,7 @@ def app_styles() -> None:
     [data-testid="stSidebarHeader"] img[data-testid="stLogo"] {{ height:40px; max-width:200px; }}
     [data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarHeader"] button svg {{
         color:#C7D2E8; fill:#C7D2E8; }}
-    .sb-card {{ display:flex; align-items:center; gap:12px; padding:13px 14px; margin:4px 0 10px;
+    .sb-card {{ display:flex; align-items:center; gap:12px; padding:13px 14px; margin:4px 0 0;
         background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
         border-radius:16px; }}
     .sb-avatar {{ flex:0 0 auto; width:46px; height:46px; border-radius:13px; display:grid;
@@ -199,7 +199,11 @@ def app_styles() -> None:
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
     .sb-sec {{ font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase;
         color:#8EA0C6; padding:26px 4px 12px; margin:0; }}
-    [data-testid="stMarkdownContainer"]:has(> .sb-sec) {{ margin-bottom:0 !important; }}
+    [data-testid="stMarkdownContainer"]:has(> .sb-sec),
+    [data-testid="stMarkdownContainer"]:has(> .sb-card) {{ margin-bottom:0 !important; }}
+    .st-key-sb_salir {{ margin-top:6px; }}
+    .st-key-sb_salir [data-testid="stIconMaterial"] {{ color:#F87171 !important; }}
+    .st-key-sb_releer [data-testid="stIconMaterial"] {{ color:#D6DEEF !important; }}
     .st-key-sb_salir button {{ background:transparent; border:1.5px solid #F87171;
         border-radius:12px; min-height:40px; }}
     .st-key-sb_salir button p {{ color:#FCA5A5 !important; font-weight:800; }}
