@@ -225,3 +225,127 @@ def tiendas_por_mall(base: pd.DataFrame) -> pd.DataFrame:
         for m, cc, z, n in zip(del_cal, cols[0], cols[1], cat["nombre_tienda"], strict=True)
     ]
     return cat[["codigo_tienda", "nombre_tienda", "mall"]]
+
+
+# ------------------------------------------------------------------ una semana en un cuadro
+#
+# La página Rutas muestra una semana con fechas: mall × día, marcado si sale el camión. El
+# cuadro es la verdad de esa semana: lo que difiere de la ruta fija se guarda como excepción
+# de esa fecha (desmarcar = no despacha, marcar fuera de ruta = despacho extra) y lo que
+# coincide no deja excepción. Un feriado es «TODOS no despacha» en esa fecha.
+
+MOTIVO_FERIADO = "Feriado"
+
+
+def fechas_semana(fecha) -> list[pd.Timestamp]:
+    """Lunes a domingo de la semana de ``fecha``."""
+    d = pd.Timestamp(fecha).normalize()
+    lunes = d - pd.Timedelta(days=d.weekday())
+    return [lunes + pd.Timedelta(days=i) for i in range(7)]
+
+
+def etiqueta(fecha) -> str:
+    return f"{CAL.dia_semana(fecha)} {pd.Timestamp(fecha):%d/%m}"
+
+
+def _de_las_fechas(excepciones: pd.DataFrame, fechas) -> pd.Series:
+    dias = {pd.Timestamp(f).normalize() for f in fechas}
+    return pd.to_datetime(excepciones["fecha"]).dt.normalize().isin(dias)
+
+
+def feriados(excepciones: pd.DataFrame, fechas) -> list[pd.Timestamp]:
+    """Fechas (de ``fechas``) con «TODOS no despacha»."""
+    if excepciones is None or excepciones.empty:
+        return []
+    e = excepciones.loc[
+        _de_las_fechas(excepciones, fechas)
+        & excepciones["mall"].astype(str).str.upper().eq(TODOS)
+        & excepciones["accion"].eq(SIN_DESPACHO)
+    ]
+    return sorted(pd.to_datetime(e["fecha"]).dt.normalize().unique())
+
+
+def marcar_feriados(excepciones: pd.DataFrame, fechas, elegidos, usuario: str) -> pd.DataFrame:
+    """Los feriados de la semana pasan a ser exactamente ``elegidos`` (TODOS no despacha)."""
+    elegidos = {pd.Timestamp(f).normalize() for f in elegidos}
+    todos = excepciones["mall"].astype(str).str.upper().eq(TODOS)
+    resto = excepciones.loc[~(todos & _de_las_fechas(excepciones, fechas))]
+    ya = set(feriados(excepciones, fechas))
+    nuevas = [
+        nuevas_excepciones([f], [TODOS], SIN_DESPACHO, MOTIVO_FERIADO, usuario)
+        for f in sorted(elegidos - ya)
+    ]
+    se_quedan = excepciones.loc[todos & _de_las_fechas(excepciones, sorted(elegidos & ya))]
+    return agregar(resto, pd.concat([se_quedan, *nuevas], ignore_index=True))
+
+
+def tabla_semana(base: pd.DataFrame, excepciones: pd.DataFrame, fecha) -> pd.DataFrame:
+    """Mall + una columna por día (``LU 12/10``): True si ese día sale el camión."""
+    fechas = fechas_semana(fecha)
+    return pd.DataFrame(
+        {
+            "Mall": base["mall"].tolist(),
+            **{
+                etiqueta(f): [despacha(m, f, base, excepciones) for m in base["mall"]]
+                for f in fechas
+            },
+        }
+    )
+
+
+def aplicar_semana(
+    base: pd.DataFrame, excepciones: pd.DataFrame, fecha, tabla: pd.DataFrame, usuario: str
+) -> pd.DataFrame:
+    """Excepciones por mall de la semana a partir del cuadro editado. Las que ya estaban y
+    siguen valiendo se conservan tal cual (con su motivo y usuario)."""
+    fechas = fechas_semana(fecha)
+    fer = set(feriados(excepciones, fechas))
+    por_mall = ~excepciones["mall"].astype(str).str.upper().eq(TODOS)
+    semana_mall = excepciones.loc[por_mall & _de_las_fechas(excepciones, fechas)]
+    resto = excepciones.loc[~(por_mall & _de_las_fechas(excepciones, fechas))]
+    previas = {
+        (pd.Timestamp(r.fecha).normalize(), str(r.mall).upper(), r.accion): r
+        for r in semana_mall.itertuples(index=False)
+    }
+    filas = []
+    for _, fila in tabla.iterrows():
+        mall = str(fila["Mall"])
+        for f in fechas:
+            sale = bool(fila[etiqueta(f)])
+            por_ruta = f not in fer and CAL.dia_semana(f) in dias_de(mall, base).split(",")
+            if sale == por_ruta:
+                continue
+            accion = DESPACHO_EXTRA if sale else SIN_DESPACHO
+            previa = previas.get((f, mall.upper(), accion))
+            if previa is not None:
+                filas.append(pd.DataFrame([previa._asdict()], columns=COLS_EXC))
+                continue
+            motivo = "Por feriado" if fer else "Cambio de ruta"
+            filas.append(nuevas_excepciones([f], [mall], accion, motivo, usuario))
+    return agregar(resto, pd.concat(filas, ignore_index=True) if filas else excepciones_vacio())
+
+
+def cambios_semana(base: pd.DataFrame, excepciones: pd.DataFrame, fecha) -> list[str]:
+    """En palabras, qué cambia esta semana respecto de la ruta fija."""
+    fechas = fechas_semana(fecha)
+    out = [f"{etiqueta(f)}: feriado, no sale el camión" for f in feriados(excepciones, fechas)]
+    for mall in base["mall"]:
+        extra = [
+            etiqueta(f)
+            for f in fechas
+            if despacha(mall, f, base, excepciones)
+            and CAL.dia_semana(f) not in dias_de(mall, base).split(",")
+        ]
+        quita = [
+            etiqueta(f)
+            for f in fechas
+            if not despacha(mall, f, base, excepciones)
+            and CAL.dia_semana(f) in dias_de(mall, base).split(",")
+            and f not in feriados(excepciones, [f])
+        ]
+        if extra or quita:
+            partes = ([f"sale {', '.join(extra)}"] if extra else []) + (
+                [f"no sale {', '.join(quita)}"] if quita else []
+            )
+            out.append(f"{mall}: {' · '.join(partes)}")
+    return out
