@@ -393,7 +393,7 @@ class FuentesRepository(BigQueryRepository):
         if arti.empty:
             raise ValueError(
                 f"ARTI no devolvió productos para las marcas {marcas}. Elige la "
-                "marca en la barra lateral (se listan las que existen en ARTI)."
+                "marca en Inicio (se listan las que existen en ARTI)."
             )
         cortes = q("cortes", F.sql_cortes(tablas["stock"], m_s))
         # Último corte = cierre de ayer de este año (el del año pasado queda fuera).

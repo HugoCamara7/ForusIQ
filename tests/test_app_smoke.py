@@ -28,7 +28,7 @@ def _en_dashboard(app) -> bool:
 def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
     app = _app(monkeypatch)
     assert app.session_state.auth_user == "demo"
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     assert app.session_state.resultado is not None
     app.switch_page(f"app/vistas/{pagina}.py").run()
     assert not app.exception, app.exception
@@ -36,7 +36,7 @@ def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
 
 def test_vista_unica_aprobar_y_velocimetro(monkeypatch):
     app = _app(monkeypatch)
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     res = app.session_state.resultado
     assert any('class="gauge"' in m.value for m in app.markdown)  # disponibilidad del retail
     descargas = [b.label for b in app.get("download_button")]
@@ -104,7 +104,7 @@ def test_dashboard_con_aprobacion_en_curso(monkeypatch):
     import pandas as pd
 
     app = _app(monkeypatch)
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     app.session_state["aprobacion"] = pd.DataFrame({"cantidad_aprobada": [1]})
     app.switch_page("app/vistas/1_Dashboard.py").run()
     assert not app.exception, app.exception

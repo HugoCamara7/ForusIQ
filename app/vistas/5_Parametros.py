@@ -2,7 +2,7 @@ import hashlib
 
 import streamlit as st
 import yaml
-from app.components.estado import SETTINGS
+from app.components.estado import SETTINGS, carga_planificacion
 from app.components.login import puede
 from app.components.ui import hero
 from pydantic import BaseModel, ValidationError
@@ -79,7 +79,7 @@ def _aplicar_yaml(clave: str) -> None:
 # Conexión), el formulario se vuelve a crear con los valores vigentes en vez de conservar los
 # viejos (que «Aplicar a la sesión» volvería a imponer).
 VER = huella_params()
-tab_form, tab_yaml = st.tabs(["Formulario", "YAML avanzado"])
+tab_form, tab_yaml, tab_plan = st.tabs(["Formulario", "YAML avanzado", "Planificación Neogística"])
 with tab_form, st.form("form_params"):
     nuevos = {}
     for seccion in EngineParams.model_fields:
@@ -105,3 +105,11 @@ with tab_yaml:
         ruta = save_params(ss.params, SETTINGS.params_path)
         st.success(f"Guardado en {ruta}. En despliegue se versionará en el dataset APP.")
     st.download_button("Descargar params.yaml", dump_params(ss.params), file_name="params.yaml")
+
+with tab_plan:
+    st.caption(
+        "Stock mínimo, nivel, punto de reorden y empaque por tienda × SKU salen de los reportes "
+        "de distribución de Neogística. Sube el más reciente de cada ruta cuando cambie: queda "
+        "guardado y lo usan la pantalla y la corrida de las 6:30."
+    )
+    carga_planificacion()
