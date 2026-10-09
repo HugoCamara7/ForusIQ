@@ -15,7 +15,7 @@ from app.components.estado import _store_bloqueos, huella_config
 from forusight.data import corridas as C
 
 MESES_A_LISTAR = 2
-MAXIMO_EN_PANEL = 14
+MAXIMO_EN_PANEL = 7 * C.SEMANAS_A_GUARDAR * 2  # definitiva + preliminar
 
 
 @st.cache_data(ttl=300, show_spinner=False, max_entries=4)
@@ -51,7 +51,9 @@ def panel() -> None:
     with st.expander(f"Corridas guardadas ({len(lista)})", icon=":material/history:"):
         st.caption(
             "Todos los días a las 6:30 se corre la distribución sola y el Excel queda aquí con "
-            "su fecha. PRELIMINAR = se corrió sin el cierre de ayer en la carga diaria."
+            "su fecha. Se guardan sólo las de esta semana (lunes a domingo): el lunes se "
+            "borran las de la semana anterior. PRELIMINAR = se corrió sin el cierre de ayer "
+            "en la carga diaria."
         )
         if not lista:
             st.info("Todavía no hay corridas guardadas.")
