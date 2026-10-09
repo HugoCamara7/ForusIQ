@@ -5,6 +5,7 @@
 # Para agregar una cadena o marca (p. ej. AZALEIA) edita este archivo o usa
 # [forusight.marcas_por_cadena] en los secrets.
 marcas_por_cadena:
+  AZALEIA: [AZALEIA]            # cadena propia, nueva (10/2026): tiendas creadas, sin stock aún
   BSOUL: [BSOUL]
   CLB: [COLUMBIA]
   DH: [ACCESORIOS HP, BSOUL, COLUMBIA, HUSH PUPPIES, HUSH PUPPIES KIDS, KEDS, NORSEG,

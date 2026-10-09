@@ -376,7 +376,10 @@ def test_matriz_marca_cadena_de_neogistica():
     assert "HUSH PUPPIES" not in m["RKF"] and m["CLB"] == {"COLUMBIA"} and m["VANS"] == {"VANS"}
     cat = CAD.catalogo_tiendas()
     assert (
-        len(cat) == 70 and cat["codigo_tienda"].is_unique and set(cat["cadena"]) == set(m)
+        len(cat) == 70
+        and cat["codigo_tienda"].is_unique
+        and set(cat["cadena"])
+        == set(m) - {"AZALEIA"}  # Azaleia: tiendas nuevas, aún no en el catálogo
     )  # 71 menos RKF SAN BORJA (cerró)
     assert CAD.marcas_por_cadena({"AZ": ["azaleia"]}) == {"AZ": {"AZALEIA"}}
 
@@ -812,6 +815,29 @@ def test_marca_nueva_reciben_las_tiendas_de_sus_cadenas():
 def test_marca_nueva_sin_cadena_es_mensaje_claro():
     fake = _FakeBQ()
     _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="MARCA NUEVA")
+    with pytest.raises(ValueError, match="no está asignada a ninguna cadena"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
+            CORTE, marcas=["MARCA NUEVA"]
+        )
+
+
+def test_azaleia_reciben_sus_tiendas_del_maestro():
+    """Cadena AZALEIA: tiendas creadas en el maestro, todavía sin stock ni venta."""
+    fake = _FakeBQ()
+    _marca_nueva(fake)
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
-    with pytest.raises(ValueError, match="Ninguna tienda puede recibir AZALEIA"):
+    with pytest.raises(ValueError, match="no se encontraron tiendas de la cadena AZALEIA"):
         FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    nuevas = pd.DataFrame(
+        {
+            "tienda_cod": ["501", "502"],
+            "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA"],
+            "centro_comercial": ["JOCKEY", "MEGA PLAZA"],
+            "zona": ["LIMA", "LIMA"],
+        }
+    )
+    fake.datos["maestro_tiendas"] = pd.concat([fake.datos["maestro_tiendas"], nuevas])
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
+    assert set(activas["tienda_id"]) == {"501", "502"} and set(activas["cadena"]) == {"AZALEIA"}
