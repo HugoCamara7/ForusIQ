@@ -150,7 +150,7 @@ def aviso_carga(diag: dict, dia: str | None = None) -> str | None:
     )
 
 
-@st.cache_resource(ttl=_TTL, show_spinner="Leyendo datos…", max_entries=4)
+@st.cache_resource(ttl=_TTL, show_spinner=False, max_entries=4)
 def _cargar_entradas(
     fuente: str,
     huella: str,
@@ -240,7 +240,7 @@ def revision_carga(diag: dict) -> str | None:
     return texto
 
 
-@st.cache_resource(ttl=_TTL, show_spinner="Calculando distribución…", max_entries=8)
+@st.cache_resource(ttl=_TTL, show_spinner=False, max_entries=8)
 def _correr_motor(
     fuente: str,
     huella: str,
@@ -467,7 +467,7 @@ def registrar_planificacion(archivos: list[tuple[bytes, str]]) -> str:
     return clave
 
 
-@st.cache_data(ttl=_TTL, show_spinner="Leyendo maestro de planificación…", max_entries=2)
+@st.cache_data(ttl=_TTL, show_spinner=False, max_entries=2)
 def _planif_github(huella: str) -> list[bytes]:
     store = _store_bloqueos()
     if store is None:
@@ -747,7 +747,9 @@ def inicializar() -> None:
     app_styles()
 
 
-def ejecutar_corrida() -> EngineResult:
+def ejecutar_corrida(avance=None) -> EngineResult:
+    """``avance(paso)``: 1 leer y calcular, 2 preparar el resultado (barra de progreso)."""
+    avance = avance or (lambda _paso: None)
     ss = st.session_state
     if ss.get("reporte"):
         marcas = tuple(ss.get("marcas_reporte") or ()) or None
@@ -768,6 +770,7 @@ def ejecutar_corrida() -> EngineResult:
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
     if ss.fuente == "bigquery" and ss.get("marcas") is not None and not ss.marcas:
         raise ValueError("Elige al menos una marca en Inicio (p. ej. HUSH PUPPIES).")
+    avance(1)
     res, diag = correr_motor(
         ss.fuente,
         pd.Timestamp(ss.fecha_corte).date().isoformat(),
@@ -789,6 +792,7 @@ def ejecutar_corrida() -> EngineResult:
         cd[1],
         marcas,
     )
+    avance(2)
     # Se guarda la referencia (sin copiar): si la caché vence (TTL 1 h) o desaloja la entrada
     # (max_entries=4, compartida entre usuarios), un rerun cualquiera NO vuelve a leer BigQuery
     # y el Excel se arma con las mismas entradas que produjeron `res`.
@@ -936,10 +940,9 @@ def barra_lateral(paginas: list | None = None, actual=None) -> None:
                 help="Ignora la caché, trae los datos de nuevo y vuelve a correr",
             ):
                 limpiar_cache()
-                try:
-                    ejecutar_corrida()
-                except Exception as exc:
-                    st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+                ss.releer_pendiente = True  # corre en Inicio, con la barra de progreso
+                if paginas:
+                    st.switch_page(paginas[0])
 
 
 def carga_planificacion() -> None:
@@ -1023,12 +1026,39 @@ def panel_corrida() -> None:
                 f"{icon('check-circle' if estado[0] == 'ok' else 'alert', 15)}"
                 f"<span>{escape(estado[1])}</span></div>"
             )
-    if ejecutar:
-        try:
-            with st.spinner("Ejecutando la corrida…"):
-                ejecutar_corrida()
-        except Exception as exc:  # errores de datos/credenciales visibles al usuario
-            st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+    if ejecutar or ss.pop("releer_pendiente", False):
+        _correr_con_progreso()
+
+
+PASOS_CORRIDA = ["Leyendo BigQuery y calculando", "Preparando el resultado"]
+DETALLES_CORRIDA = [
+    "Stock de tiendas y del CD 320",
+    "Venta de las últimas 12 semanas",
+    "Tránsito de pedidos y bloqueos",
+    "Rutas de despacho del día",
+    "Demanda y curva de tallas",
+    "Cantidad por tienda y talla",
+]
+
+
+def _correr_con_progreso() -> None:
+    """Una sola barra de progreso (sin spinners de caché) y, mientras corre, se oculta el
+    resultado anterior: sin eso queda atenuado debajo y la pantalla parece pegada."""
+    from app.components.ui import progreso
+
+    html('<style>[data-testid="stMain"] [data-stale="true"]{display:none !important;}</style>')
+    barra = st.empty()
+
+    def avance(paso: int) -> None:
+        barra.markdown(progreso(paso, PASOS_CORRIDA, DETALLES_CORRIDA), unsafe_allow_html=True)
+
+    try:
+        ejecutar_corrida(avance)
+    except Exception as exc:  # errores de datos/credenciales visibles al usuario
+        barra.empty()
+        st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+        return
+    barra.empty()
 
 
 def _ddmm(fecha) -> str:

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
@@ -130,9 +131,8 @@ def test_mantenedor_de_bloqueos(monkeypatch):
     )
 
 
-def test_mantenedor_de_rutas_mueve_un_despacho(monkeypatch):
-    """Un aprobador mueve el despacho de Plaza Norte del jueves 08/10 (feriado) al miércoles
-    07/10: queda registrado y la ruta de esos días cambia."""
+def test_rutas_un_solo_cuadro_y_feriado_con_un_clic(monkeypatch):
+    """Un aprobador marca feriado el jueves 08/10 desde el cuadro de la semana."""
     import datetime as dt
 
     from forusight.data import rutas as RU
@@ -143,19 +143,15 @@ def test_mantenedor_de_rutas_mueve_un_despacho(monkeypatch):
     app.button[0].click().run()
     app.switch_page("app/vistas/9_Rutas.py").run()
     assert not app.exception, app.exception
-    app.date_input(key="rt_mov_desde").set_value(dt.date(2026, 10, 8))
-    app.date_input(key="rt_mov_hacia").set_value(dt.date(2026, 10, 7))
-    app.multiselect(key="rt_mov_malls").set_value(["Plaza Norte"])
-    app.text_input(key="rt_mov_motivo").input("Feriado")
-    app.run()
-    app.button(key="btn_mover").click().run()
+    app.date_input(key="rt_fecha").set_value(dt.date(2026, 10, 8)).run()
+    assert app.session_state.rt_fecha == dt.date(2026, 10, 5)  # se ajusta al lunes
+    app.pills(key="rt_feriados").set_value(["JU 08/10"]).run()
     assert not app.exception, app.exception
     exc = app.session_state.rutas_excepciones
-    base = app.session_state.rutas_base
-    assert len(exc) == 2
-    assert RU.despacha("Plaza Norte", "2026-10-07", base, exc)
-    assert not RU.despacha("Plaza Norte", "2026-10-08", base, exc)
-    assert any("movido" in s.value for s in app.success)
+    assert RU.feriados(exc, RU.fechas_semana("2026-10-08")) == [pd.Timestamp("2026-10-08")]
+    assert any("Feriados de la semana: JU 08/10" in s.value for s in app.success)
+    app.segmented_control(key="rt_modo").set_value("Ruta fija").run()
+    assert not app.exception, app.exception
 
 
 def test_descargas_lista_las_corridas_de_la_semana(monkeypatch):

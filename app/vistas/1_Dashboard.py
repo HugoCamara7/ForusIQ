@@ -7,7 +7,10 @@ from app.components.estado import entradas_de_la_corrida, panel_corrida, revisio
 from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
 ss = st.session_state
-panel_corrida()  # lo primero de la pantalla: marca, fechas y «Ejecutar corrida»
+# Arriba el recuadro azul y debajo la consulta. El recuadro muestra la corrida que se acaba de
+# ejecutar, así que se reserva su lugar y se llena después de la consulta.
+cabecera = st.container()
+panel_corrida()  # marca, fechas y «Ejecutar corrida»
 res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
 
@@ -17,12 +20,13 @@ def _fecha(x) -> str:
 
 
 if res is None:
-    hero(
-        "Forusight",
-        "Distribución del CD 320 a tiendas por modelo, talla y cantidad, con el motivo de "
-        "cada envío.",
-        eyebrow="Reposición",
-    )
+    with cabecera:
+        hero(
+            "Forusight",
+            "Distribución del CD 320 a tiendas por modelo, talla y cantidad, con el motivo de "
+            "cada envío.",
+            eyebrow="Reposición",
+        )
     issue_box(
         "info",
         "Empieza aquí",
@@ -70,12 +74,13 @@ aprobada = ss.get("aprobacion_confirmada") == res.run_id
 if aprobada and ss.get("aprobacion_info"):
     info = ss.aprobacion_info
     meta.append(f"Aprobada {info['hora']} · {info['usuario']}")
-hero(
-    f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
-    f"Distribución sugerida desde el CD {r['cd_id']}.",
-    eyebrow="Aprobada" if aprobada else "Propuesta",
-    meta=meta,
-)
+with cabecera:
+    hero(
+        f"{r['unidades_a_distribuir']:,} unidades para {r['tiendas_con_envio']} tiendas",
+        f"Distribución sugerida desde el CD {r['cd_id']}.",
+        eyebrow="Aprobada" if aprobada else "Propuesta",
+        meta=meta,
+    )
 plan = diag.get("planificacion") or {}
 if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_reporte:
     issue_box(

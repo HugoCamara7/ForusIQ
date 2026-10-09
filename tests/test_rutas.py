@@ -102,3 +102,53 @@ def test_cada_tienda_del_catalogo_cae_en_un_mall():
     t = RU.tiendas_por_mall(BASE)
     assert set(t["mall"]) - {""} <= set(BASE["mall"])
     assert t.loc[t["codigo_tienda"].eq("20"), "mall"].iloc[0] == "Huallaga"
+
+
+# ------------------------------------------------------------------ una semana en un cuadro
+
+
+def test_cuadro_de_la_semana_marca_los_dias_de_la_ruta():
+    tabla = RU.tabla_semana(BASE, RU.excepciones_vacio(), JUE)
+    assert list(tabla.columns[1:]) == [
+        "LU 05/10",
+        "MA 06/10",
+        "MI 07/10",
+        "JU 08/10",
+        "VI 09/10",
+        "SA 10/10",
+        "DO 11/10",
+    ]
+    fila = tabla.set_index("Mall").loc["Plaza Norte"]
+    assert fila["MA 06/10"] and fila["JU 08/10"] and not fila["MI 07/10"]
+
+
+def test_feriado_con_un_clic_y_se_quita_igual():
+    fechas = RU.fechas_semana(JUE)
+    exc = RU.marcar_feriados(RU.excepciones_vacio(), fechas, [pd.Timestamp(JUE)], "ana")
+    assert RU.feriados(exc, fechas) == [pd.Timestamp(JUE)]
+    assert not RU.despacha("Plaza Norte", JUE, BASE, exc)
+    assert RU.marcar_feriados(exc, fechas, [], "ana").empty
+
+
+def test_mover_un_despacho_desde_el_cuadro():
+    """Feriado el jueves 08/10 y Plaza Norte sale el miércoles 07/10: se marca su casilla."""
+    fechas = RU.fechas_semana(JUE)
+    exc = RU.marcar_feriados(RU.excepciones_vacio(), fechas, [pd.Timestamp(JUE)], "ana")
+    tabla = RU.tabla_semana(BASE, exc, JUE)
+    tabla.loc[tabla["Mall"].eq("Plaza Norte"), "MI 07/10"] = True
+    nuevas = RU.aplicar_semana(BASE, exc, JUE, tabla, "ana")
+    assert RU.despacha("Plaza Norte", MIE, BASE, nuevas)
+    assert not RU.despacha("Plaza Norte", JUE, BASE, nuevas)
+    assert RU.feriados(nuevas, fechas) == [pd.Timestamp(JUE)]  # el feriado se conserva
+    assert len(nuevas) == 2  # TODOS el jueves + Plaza Norte el miércoles
+    cambios = RU.cambios_semana(BASE, nuevas, JUE)
+    assert cambios[0].startswith("JU 08/10: feriado") and "Plaza Norte: sale MI 07/10" in cambios
+    # volver a dejar la casilla como estaba borra la excepción
+    tabla.loc[tabla["Mall"].eq("Plaza Norte"), "MI 07/10"] = False
+    assert len(RU.aplicar_semana(BASE, nuevas, JUE, tabla, "ana")) == 1
+
+
+def test_guardar_el_cuadro_sin_cambios_no_toca_otras_semanas():
+    otra = _exc(("2026-10-15", "Larcomar", RU.SIN_DESPACHO))
+    tabla = RU.tabla_semana(BASE, otra, JUE)
+    assert RU.aplicar_semana(BASE, otra, JUE, tabla, "ana").equals(otra)

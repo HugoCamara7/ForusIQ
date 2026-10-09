@@ -69,6 +69,27 @@ def brand_strip() -> None:
         html(f'<div class="login-brands">{"".join(chips)}</div>')
 
 
+def progreso(paso: int, pasos: list[str], detalles: list[str] | None = None) -> str:
+    """Barra de progreso de la corrida. El paso largo (leer BigQuery y calcular) no avisa cuánto
+    lleva: la barra avanza sola hacia el final del tramo y los textos de ``detalles`` rotan."""
+    total = len(pasos)
+    desde, hasta = (paso - 1) / total * 100, (paso - 0.08) / total * 100
+    hitos = "".join(
+        f'<span class="pg-hito {"ok" if i < paso else "on" if i == paso else ""}">'
+        f"<i>{'✓' if i < paso else i}</i>{escape(t)}</span>"
+        for i, t in enumerate(pasos, start=1)
+    )
+    rota = "".join(
+        f'<span style="animation-delay:{i * 4}s">{escape(d)}</span>'
+        for i, d in enumerate(detalles or [])
+    )
+    n = max(len(detalles or []), 1)
+    return f"""<div class="pg" style="--pg-desde:{desde:.0f}%;--pg-hasta:{hasta:.0f}%;
+        --pg-n:{n * 4}s"><div class="pg-top"><span class="pg-pulso"></span>
+        <b>{escape(pasos[paso - 1])}</b><span class="pg-rota">{rota}</span></div>
+        <div class="pg-barra"><i></i></div><div class="pg-hitos">{hitos}</div></div>"""
+
+
 def logos_marcas(marcas: list[str]) -> str:
     """Logos de las marcas elegidas (en fichas blancas); la que no tiene logo va como texto."""
     por_nombre = {n.upper().replace(" ", ""): a for n, a in BRAND_LOGOS}
@@ -259,6 +280,41 @@ def app_styles() -> None:
     .dl-hoy {{ background:#E7F7EE; color:#0B7A3B; }}
     .dl-pre {{ background:#FFFBEB; color:#92400E; }}
     .st-key-card_descargas .stDownloadButton button {{ min-height:42px; font-size:14px; }}
+    /* ---- progreso de la corrida */
+    .pg {{ background:#FFFFFF; border:1px solid var(--line); border-radius:18px;
+        padding:18px 20px 16px; box-shadow:0 14px 34px rgba(16,27,112,.10); margin:4px 0 18px; }}
+    .pg-top {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
+    .pg-top b {{ font-size:15.5px; font-weight:900; color:#0B1B46; }}
+    .pg-pulso {{ width:10px; height:10px; border-radius:50%; background:{BRAND_BLUE};
+        box-shadow:0 0 0 0 rgba(35,103,255,.5); animation:pg-pulso 1.4s infinite; }}
+    @keyframes pg-pulso {{ 70% {{ box-shadow:0 0 0 10px rgba(35,103,255,0); }}
+        100% {{ box-shadow:0 0 0 0 rgba(35,103,255,0); }} }}
+    .pg-rota {{ position:relative; flex:1 1 220px; height:18px; overflow:hidden; }}
+    .pg-rota span {{ position:absolute; left:0; top:0; opacity:0; font-size:12.5px;
+        font-weight:700; color:var(--text-muted); white-space:nowrap;
+        animation:pg-rota var(--pg-n) infinite; }}
+    @keyframes pg-rota {{ 0% {{ opacity:0; transform:translateY(8px); }}
+        4%,22% {{ opacity:1; transform:none; }} 27%,100% {{ opacity:0; transform:translateY(-8px); }} }}
+    .pg-barra {{ position:relative; height:10px; border-radius:999px; background:#EAF0FB;
+        overflow:hidden; margin:14px 0 12px; }}
+    .pg-barra i {{ position:absolute; inset:0 auto 0 0; border-radius:999px;
+        background:linear-gradient(90deg,{BRAND_PRIMARY},{BRAND_BLUE},{BRAND_ACCENT});
+        animation:pg-avance 40s cubic-bezier(.1,.7,.2,1) forwards; overflow:hidden; }}
+    .pg-barra i::after {{ content:""; position:absolute; inset:0; transform:translateX(-100%);
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+        animation:pg-brillo 1.6s infinite; }}
+    @keyframes pg-avance {{ from {{ width:var(--pg-desde); }} to {{ width:var(--pg-hasta); }} }}
+    @keyframes pg-brillo {{ to {{ transform:translateX(100%); }} }}
+    .pg-hitos {{ display:flex; flex-wrap:wrap; gap:6px 18px; }}
+    .pg-hito {{ display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:750;
+        color:#94A3B8; }}
+    .pg-hito i {{ display:inline-grid; place-items:center; width:20px; height:20px;
+        border-radius:50%; background:#EEF2F8; font-style:normal; font-size:10.5px;
+        font-weight:900; }}
+    .pg-hito.on {{ color:#0B1B46; }} .pg-hito.on i {{ background:{BRAND_BLUE}; color:#FFF; }}
+    .pg-hito.ok {{ color:#0B7A3B; }} .pg-hito.ok i {{ background:#16A34A; color:#FFF; }}
+    @media (prefers-reduced-motion: reduce) {{ .pg-barra i, .pg-barra i::after, .pg-pulso,
+        .pg-rota span {{ animation-duration:0s !important; }} }}
     .run-estado {{ display:inline-flex; align-items:center; gap:8px; margin-top:4px;
         padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:750; }}
     .run-ok {{ background:#E7F7EE; color:#0B7A3B; }}
