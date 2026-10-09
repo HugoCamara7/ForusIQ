@@ -732,6 +732,8 @@ def lunes_actual() -> pd.Timestamp:
 
 
 def inicializar() -> None:
+    # Los estilos primero: tapan al instante lo que quedó de la pantalla de acceso.
+    app_styles()
     ss = st.session_state
     if "params" not in ss:
         ss.params = load_params(ajustes().params_path)
@@ -744,7 +746,6 @@ def inicializar() -> None:
     ss.setdefault("marcas", None)
     ss.setdefault("reporte", None)  # (bytes, nombre) del reporte de distribución del día
     ss.setdefault("criterio", "reporte")
-    app_styles()
 
 
 def ejecutar_corrida(avance=None) -> EngineResult:
