@@ -6,7 +6,13 @@ import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
 RAIZ = Path(__file__).resolve().parents[1]
-PAGINAS = ["1_Dashboard", "8_Bloqueos", "9_Rutas", "5_Parametros"]  # vista única + configuración
+PAGINAS = [
+    "1_Dashboard",
+    "10_Descargas",
+    "8_Bloqueos",
+    "9_Rutas",
+    "5_Parametros",
+]  # vista única + configuración
 
 
 def _app(monkeypatch, secrets=None):
@@ -28,7 +34,7 @@ def _en_dashboard(app) -> bool:
 def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
     app = _app(monkeypatch)
     assert app.session_state.auth_user == "demo"
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     assert app.session_state.resultado is not None
     app.switch_page(f"app/vistas/{pagina}.py").run()
     assert not app.exception, app.exception
@@ -36,7 +42,7 @@ def test_paginas_modo_demo_sin_login(monkeypatch, pagina):
 
 def test_vista_unica_aprobar_y_velocimetro(monkeypatch):
     app = _app(monkeypatch)
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     res = app.session_state.resultado
     assert any('class="gauge"' in m.value for m in app.markdown)  # disponibilidad del retail
     descargas = [b.label for b in app.get("download_button")]
@@ -104,7 +110,7 @@ def test_dashboard_con_aprobacion_en_curso(monkeypatch):
     import pandas as pd
 
     app = _app(monkeypatch)
-    app.sidebar.button[0].click().run()
+    app.button(key="btn_ejecutar").click().run()
     app.session_state["aprobacion"] = pd.DataFrame({"cantidad_aprobada": [1]})
     app.switch_page("app/vistas/1_Dashboard.py").run()
     assert not app.exception, app.exception
@@ -150,3 +156,30 @@ def test_mantenedor_de_rutas_mueve_un_despacho(monkeypatch):
     assert RU.despacha("Plaza Norte", "2026-10-07", base, exc)
     assert not RU.despacha("Plaza Norte", "2026-10-08", base, exc)
     assert any("movido" in s.value for s in app.success)
+
+
+def test_descargas_lista_las_corridas_de_la_semana(monkeypatch):
+    """La página Descargas muestra un botón por cada Excel guardado en el repositorio."""
+    import app.components.corridas_guardadas as CG
+
+    from forusight.data import corridas as C
+
+    hoy = C.hoy_lima()
+
+    class Store:
+        def listar(self, carpeta):
+            if carpeta != C.carpeta_del_mes(hoy):
+                return []
+            nombre = C.nombre_diario(hoy)
+            return [{"name": nombre, "path": f"forusight/{carpeta}/{nombre}", "sha": "1"}]
+
+        def leer(self, path):
+            return b"xlsx"
+
+    monkeypatch.setattr(CG, "_store_bloqueos", lambda: Store())
+    CG._listado.clear()
+    app = _app(monkeypatch)
+    app.switch_page("app/vistas/10_Descargas.py").run()
+    assert not app.exception, app.exception
+    assert [b.label for b in app.get("download_button")] == ["Descargar"]
+    assert any(f"{hoy:%d/%m/%Y}" in m.value for m in app.markdown)

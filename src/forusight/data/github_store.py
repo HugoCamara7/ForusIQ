@@ -84,7 +84,7 @@ class GitHubStore:
                 return None
             detalle = exc.read().decode("utf-8", errors="replace")[:300]
             raise GitHubError(
-                f"GitHub respondió {exc.code} al guardar en {self.repository} "
+                f"GitHub respondió {exc.code} ({method}) en {self.repository} "
                 f"(rama {self.branch}): {detalle}"
             ) from exc
 
@@ -101,6 +101,12 @@ class GitHubStore:
             body["sha"] = actual["sha"]
         self._request("PUT", path, body)
         return path
+
+    def borrar(self, ruta_completa: str, sha: str, mensaje: str) -> None:
+        """Borra un archivo (ruta completa y sha, tal como los da ``listar``)."""
+        self._request(
+            "DELETE", ruta_completa, {"message": mensaje, "sha": sha, "branch": self.branch}
+        )
 
     def listar(self, carpeta: str) -> list[dict]:
         """Archivos de ``prefix/carpeta`` (nombre, ruta completa); [] si no existe."""

@@ -39,11 +39,10 @@ if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic", al_ingresar
     st.stop()
 
 inicializar()
-# Una sola vista (generar, aprobar y descargar). Parámetros y Conexión quedan en «Más opciones».
+# Inicio (generar, aprobar y descargar) y las páginas de configuración, todas en el menú.
 paginas = [
-    st.Page(
-        "app/vistas/1_Dashboard.py", title="Forusight", icon=":material/dashboard:", default=True
-    ),
+    st.Page("app/vistas/1_Dashboard.py", title="Inicio", icon=":material/home:", default=True),
+    st.Page("app/vistas/10_Descargas.py", title="Descargas", icon=":material/download:"),
     st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
     st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
@@ -53,5 +52,5 @@ if puede("conexion"):
         st.Page("app/vistas/6_Conexion.py", title="Conexión", icon=":material/database:")
     )
 nav = st.navigation(paginas, position="hidden")
-barra_lateral(paginas)
+barra_lateral(paginas, nav)
 nav.run()

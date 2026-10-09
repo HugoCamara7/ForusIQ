@@ -340,7 +340,7 @@ if exp:
 st.divider()
 st.subheader("Prueba de lectura")
 st.caption(
-    f"Lee los datos para la semana y la marca elegidas en la barra lateral, con dry run y "
+    f"Lee los datos para la semana y la marca elegidas en Inicio, con dry run y "
     f"tope de {repo.client.max_gb:.0f} GB por consulta."
 )
 if st.button("Leer datos y ver diagnóstico"):

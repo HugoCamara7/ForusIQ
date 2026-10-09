@@ -1,4 +1,4 @@
-"""Panel «Corridas guardadas»: los Excel que dejó la corrida diaria de las 6:30.
+"""Página «Descargas»: los Excel que dejó la corrida diaria de las 6:30 (semana en curso).
 
 Se listan del repositorio privado de datos (la misma carpeta y el mismo nombre que usa
 ``scripts/corrida_diaria.py``, vía ``forusight.data.corridas``). El listado se cachea 5
@@ -8,6 +8,8 @@ gris -- y cada archivo se baja sólo al pulsar su botón.
 
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -15,7 +17,7 @@ from app.components.estado import _store_bloqueos, huella_config
 from forusight.data import corridas as C
 
 MESES_A_LISTAR = 2
-MAXIMO_EN_PANEL = 14
+MAXIMO_EN_PANEL = 7 * C.SEMANAS_A_GUARDAR * 2  # definitiva + preliminar
 
 
 @st.cache_data(ttl=300, show_spinner=False, max_entries=4)
@@ -43,28 +45,50 @@ def _contenido(path: str, sha: str) -> bytes:
     return (store.leer(path) if store is not None else None) or b""
 
 
-def panel() -> None:
+DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+
+def pagina() -> None:
+    from app.components.ui import html, issue_box
+
     if _store_bloqueos() is None:
+        issue_box(
+            "info",
+            "Sin repositorio de datos",
+            "Las corridas de las 6:30 se guardan en el repositorio privado de datos: configúralo "
+            "en los secrets ([ticketing] o [forusight] github_repository / github_token).",
+        )
         return
     hoy = C.ahora_lima()
     lista = _listado(huella_config(), f"{hoy:%Y-%m}-01")
-    with st.expander(f"Corridas guardadas ({len(lista)})", icon=":material/history:"):
-        st.caption(
-            "Todos los días a las 6:30 se corre la distribución sola y el Excel queda aquí con "
-            "su fecha. PRELIMINAR = se corrió sin el cierre de ayer en la carga diaria."
+    if not lista:
+        issue_box(
+            "info",
+            "Todavía no hay corridas esta semana",
+            "Cada día a las 6:30 la distribución se corre sola y el Excel aparece aquí.",
         )
-        if not lista:
-            st.info("Todavía no hay corridas guardadas.")
-            return
+        return
+    with st.container(key="card_descargas"):
         for a in lista[:MAXIMO_EN_PANEL]:
-            etiqueta = f"{a['fecha']:%d/%m/%Y}" + (" · PRELIMINAR" if a["preliminar"] else "")
-            st.download_button(
-                etiqueta,
-                data=lambda a=a: _contenido(a["path"], a["sha"] or ""),
-                file_name=a["name"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                icon=":material/download:",
-                key=f"corrida_{a['name']}",
-                on_click="ignore",
-                width="stretch",
-            )
+            f = a["fecha"]
+            es_hoy = f.normalize() == pd.Timestamp(hoy.date())
+            c_txt, c_btn = st.columns([3, 1.2], vertical_alignment="center")
+            with c_txt:
+                etiquetas = ('<span class="dl-tag dl-hoy">Hoy</span>' if es_hoy else "") + (
+                    '<span class="dl-tag dl-pre">Preliminar</span>' if a["preliminar"] else ""
+                )
+                html(
+                    f'<div class="dl-fila"><b>{DIAS[f.weekday()]} {f:%d/%m/%Y}</b>'
+                    f"{etiquetas}<span>{escape(a['name'])}</span></div>"
+                )
+            with c_btn:
+                st.download_button(
+                    "Descargar",
+                    data=lambda a=a: _contenido(a["path"], a["sha"] or ""),
+                    file_name=a["name"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    icon=":material/download:",
+                    key=f"corrida_{a['name']}",
+                    on_click="ignore",
+                    width="stretch",
+                )

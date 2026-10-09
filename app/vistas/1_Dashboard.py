@@ -3,11 +3,11 @@
 import pandas as pd
 import streamlit as st
 from app.components.archivo import boton_archivo
-from app.components.corridas_guardadas import panel as panel_corridas
-from app.components.estado import entradas_de_la_corrida, revision_carga
+from app.components.estado import entradas_de_la_corrida, panel_corrida, revision_carga
 from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
 ss = st.session_state
+panel_corrida()  # lo primero de la pantalla: marca, fechas y «Ejecutar corrida»
 res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
 
@@ -26,9 +26,8 @@ if res is None:
     issue_box(
         "info",
         "Empieza aquí",
-        "Elige la marca y la semana en la barra lateral y presiona «Ejecutar corrida».",
+        "Elige la marca y las fechas arriba y presiona «Ejecutar corrida».",
     )
-    panel_corridas()
     st.stop()
 
 r = res.resumen
@@ -84,7 +83,7 @@ if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_
         f"El último reporte de Neogística cargado es del {_fecha(plan['ultimo_reporte'])} "
         f"(hace {plan['dias']} días)",
         "Para reponer al mismo ritmo que Neogística, sube el reporte de distribución de hoy en "
-        "Más opciones → «Reportes de distribución (Neogística)» y vuelve a ejecutar la corrida.",
+        "Parámetros → «Planificación Neogística» y vuelve a ejecutar la corrida.",
     )
 
 sin_plan = diag.get("tiendas_sin_planificacion") or []
@@ -93,8 +92,8 @@ if sin_plan:
         "warn",
         f"{len(sin_plan)} tienda(s) sin datos de planificación: {', '.join(sin_plan)}",
         "Su stock mínimo, nivel y punto de reorden se estiman con los de otras tiendas y pueden "
-        "salir altos. Sube un reporte de Neogística que incluya esas tiendas en Más opciones → "
-        "«Reportes de distribución (Neogística)».",
+        "salir altos. Sube un reporte de Neogística que incluya esas tiendas en Parámetros → "
+        "«Planificación Neogística».",
     )
 
 con_espejo = diag.get("tiendas_con_espejo") or []
@@ -165,5 +164,3 @@ with c2, st.container(key="card_disponibilidad"):
             f"Después del envío: {despues:.1%} · {activos:,} SKU activos · meta ≥ 93 %",
         )
     )
-
-panel_corridas()

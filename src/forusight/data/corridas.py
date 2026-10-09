@@ -19,6 +19,12 @@ CARPETA = "corridas"
 #: Lima ya sería el día siguiente.
 LIMA = timezone(timedelta(hours=-5), "America/Lima")
 SUFIJO_PRELIMINAR = "_PRELIMINAR"
+#: Se guardan sólo las corridas de la semana en curso (lunes a domingo): el lunes, la corrida
+#: borra las de la semana anterior. Con 2 quedaría también la semana pasada.
+SEMANAS_A_GUARDAR = 1
+#: Meses que se revisan al limpiar: una semana puede empezar en el mes anterior.
+MESES_A_LIMPIAR = 2
+_FECHA_INICIAL = re.compile(r"^(\d{4}-\d{2}-\d{2})_")
 _PATRON = re.compile(r"^(\d{4}-\d{2}-\d{2})_Distribucion_Forusight(_PRELIMINAR)?\.xlsx$")
 
 
@@ -75,3 +81,26 @@ def corridas_listadas(archivos: list[dict]) -> list[dict]:
         if leido:
             out.append({**a, "fecha": leido[0], "preliminar": leido[1]})
     return sorted(out, key=lambda a: (a["fecha"], not a["preliminar"]), reverse=True)
+
+
+def lunes_de(fecha) -> pd.Timestamp:
+    d = pd.Timestamp(fecha).normalize()
+    return d - pd.Timedelta(days=d.weekday())
+
+
+def vencidas(archivos: list[dict], hoy, semanas: int = SEMANAS_A_GUARDAR) -> list[dict]:
+    """Archivos de semanas anteriores a las que se guardan: corridas, preliminares y los
+    ``_ERROR.txt``, todos empiezan con su fecha. Lo que no empieza con fecha no se toca."""
+    desde = lunes_de(hoy) - pd.Timedelta(weeks=max(int(semanas), 1) - 1)
+    out = []
+    for a in archivos:
+        m = _FECHA_INICIAL.match(str(a.get("name") or ""))
+        if not m:
+            continue
+        try:
+            fecha = pd.Timestamp(m.group(1))
+        except ValueError:
+            continue
+        if fecha < desde:
+            out.append(a)
+    return out

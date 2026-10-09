@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+from html import escape
 from pathlib import Path
 
 import pandas as pd
@@ -412,34 +413,11 @@ _BLOQUEOS: dict[str, pd.DataFrame] = {}
 
 
 @st.cache_data(max_entries=16, show_spinner="Leyendo reporte de bloqueos…")
-def _leer_bloqueo(contenido: bytes) -> pd.DataFrame:
-    from forusight.data import bloqueos as B
-
-    return B.leer(contenido)
-
-
 def clave_bloqueos() -> str:
     """Clave de bloqueos para la corrida: archivo base + huella del mantenedor."""
     base = st.session_state.get("bloq_clave", "defecto") or "defecto"
     h = huella_manuales()
     return f"{base}|{h}" if h else base
-
-
-def registrar_bloqueos(archivos: list[bytes]) -> str:
-    """Une los archivos de bloqueos y devuelve su huella ('' si no hay)."""
-    from forusight.data import bloqueos as B
-
-    if not archivos:
-        return ""
-    clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a in archivos)).hexdigest()[:12]
-    if clave not in _BLOQUEOS:
-        partes = [_leer_bloqueo(a) for a in archivos]
-        _BLOQUEOS[clave] = B.unir(partes)
-        t = pd.concat([p[["modelo_color_id", "temporada"]] for p in partes]).dropna()
-        _TEMPORADAS[clave] = pd.Series(
-            t["temporada"].to_numpy(), index=t["modelo_color_id"].to_numpy()
-        ).pipe(lambda x: x[~x.index.duplicated()])
-    return clave
 
 
 #: Temporadas comerciales aprendidas de los archivos subidos (modelo-color → temporada).
@@ -789,7 +767,7 @@ def ejecutar_corrida() -> EngineResult:
     cd = ss.get("cd_archivo") or (None, "")
     marcas = tuple(ss.marcas) if ss.fuente == "bigquery" and ss.marcas else None
     if ss.fuente == "bigquery" and ss.get("marcas") is not None and not ss.marcas:
-        raise ValueError("Elige al menos una marca en la barra lateral (p. ej. HUSH PUPPIES).")
+        raise ValueError("Elige al menos una marca en Inicio (p. ej. HUSH PUPPIES).")
     res, diag = correr_motor(
         ss.fuente,
         pd.Timestamp(ss.fecha_corte).date().isoformat(),
@@ -834,7 +812,7 @@ def resultado_o_aviso() -> EngineResult | None:
     res = st.session_state.get("resultado")
     if res is None:
         st.info(
-            "Todavía no hay una corrida. Elige la marca y la fecha en la barra lateral y "
+            "Todavía no hay una corrida. Elige la marca y la fecha arriba, en Inicio, y "
             "presiona **Ejecutar corrida**."
         )
     return res
@@ -901,165 +879,61 @@ def _semana_a_lunes() -> None:
     ss.sb_semana = (d - pd.Timedelta(days=d.weekday())).date()
 
 
-def _cambiar_fuente() -> None:
-    ss = st.session_state
-    ss.fuente = ss.sb_fuente or ss.fuente
+def _nombre_de_correo(correo: str) -> str:
+    """hugo.camara@forus.pe → Hugo Camara."""
+    local = (correo or "").split("@")[0]
+    return " ".join(p.capitalize() for p in local.replace("_", ".").split(".") if p) or correo
 
 
-def barra_lateral(paginas: list | None = None) -> None:
-    """Barra lateral mínima: logo arriba, páginas, y sólo marca + semana + ejecutar."""
+def barra_lateral(paginas: list | None = None, actual=None) -> None:
+    """Barra lateral oscura (como Catálogo Control Center): usuario, menú, marcas y acciones.
+    La corrida (marca, fechas y «Ejecutar») vive en Inicio: ``panel_corrida``."""
+    from app.components.ui import logos_marcas
+
     ss = st.session_state
     raiz = Path(__file__).resolve().parents[2] / "assets"
     st.logo(
-        str(raiz / "forusight_logo.png"), size="large", icon_image=str(raiz / "forusight_icon.png")
+        str(raiz / "forusight_logo_blanco.png"),
+        size="large",
+        icon_image=str(raiz / "forusight_icon.png"),
     )
+    opciones = fuentes_disponibles()
+    preferida = fuente_por_defecto()
+    ss.fuente = preferida if preferida in opciones else opciones[0]
+    # Siempre desde la conexión: sin archivos subidos (bloqueos guardados + mantenedor).
+    ss.reporte, ss.cd_archivo, ss.bloq_clave = None, None, "defecto"
     with st.sidebar:
-        html('<div class="sb-sec">Nueva corrida</div>', sidebar=True)
-        opciones = fuentes_disponibles()
-        if ss.fuente not in opciones:
-            ss.fuente = opciones[0]
-        # Sin reporte del día: la distribución sale de BigQuery (el reporte no se usa como base).
-        ss.reporte = None
-        if ss.fuente == "bigquery":
-            _selector_marcas()
-        if "sb_semana" not in ss:
-            ss.sb_semana = ss.fecha_corte
-        st.date_input(
-            "Semana (lunes)",
-            key="sb_semana",
-            format="DD/MM/YYYY",
-            on_change=_semana_a_lunes,
-            help="Venta de las 12 semanas previas (se ajusta al lunes); el stock es el último "
-            "corte disponible.",
+        correo = usuario_actual()
+        nombre = "Modo demo" if ss.get("sin_login") else _nombre_de_correo(correo)
+        iniciales = "".join(p[0] for p in nombre.split()[:2]).upper() or "F"
+        html(
+            f'<div class="sb-card"><span class="sb-avatar">{iniciales}</span><span>'
+            f"<small>{escape(rol_actual())}</small><b>{escape(nombre)}</b>"
+            f"<em>{escape(correo)}</em></span></div>",
+            sidebar=True,
         )
-        ss.fecha_corte = ss.sb_semana
-        if estado := estado_stock(cargas_actuales()):  # ¿ya llegó el cierre de ayer?
-            (st.success if estado[0] == "ok" else st.warning)(
-                estado[1], icon=":material/inventory_2:"
-            )
-        if st.button(
-            "Ejecutar corrida",
-            type="primary",
-            width="stretch",
-            icon=":material/play_arrow:",
-            disabled=not puede("ejecutar"),
-        ):
-            try:
-                ejecutar_corrida()
-            except Exception as exc:  # errores de datos/credenciales visibles al usuario
-                st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
+        if ss.get("sin_login"):
+            st.caption(":material/lock_open: Datos de ejemplo")
+        elif st.button("Cerrar sesión", icon=":material/logout:", key="sb_salir"):
+            cerrar_sesion()
 
-        res = ss.resultado
-        if res is not None:
-            diag = ss.get("diagnostico") or {}
-            filas = [
-                ("Corrida", res.run_id.split("-")[-1]),
-                (
-                    "Stock al cierre",
-                    _ddmm(pd.Timestamp(diag["fecha_foto"])) if diag.get("fecha_foto") else "",
-                ),
-                ("Unidades", f"{res.resumen['unidades_a_distribuir']:,}"),
-            ]
-            html(
-                '<div class="sb-run">'
-                + "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in filas if v)
-                + "</div>",
-                sidebar=True,
-            )
-            if diag.get("aviso_carga"):
-                st.sidebar.error(diag["aviso_carga"])
-                if revision := revision_carga(diag):
-                    st.sidebar.caption(revision)
-            from app.components.archivo import boton_archivo
+        html('<div class="sb-sec">Menú</div>', sidebar=True)
+        for i, pg in enumerate(paginas or []):
+            activa = actual is not None and pg.title == actual.title
+            with st.container(key=f"sb_nav_{i}" + ("_on" if activa else "")):
+                st.page_link(pg)
 
-            boton_archivo("archivo_barra", en_barra=True)
+        if ss.fuente == "bigquery" and ss.get("marcas"):
+            html('<div class="sb-sec">Marca(s) de la corrida</div>', sidebar=True)
+            html(logos_marcas(ss.marcas), sidebar=True)
 
-        with st.expander("Más opciones", icon=":material/tune:"):
-            if len(opciones) > 1:
-                if ss.get("sb_fuente") != ss.fuente:
-                    ss.sb_fuente = ss.fuente
-                # on_change corre ANTES del script: la barra ya se dibuja con la fuente nueva
-                st.segmented_control(
-                    "Datos",
-                    opciones,
-                    key="sb_fuente",
-                    format_func=FUENTES.get,
-                    required=True,
-                    on_change=_cambiar_fuente,
-                )
-            if not ss.get("reporte"):
-                if "sb_dia" not in ss:
-                    ss.sb_dia = ss.get("dia_reposicion") or hoy_lima().date()
-                st.date_input(
-                    "Día de reposición",
-                    key="sb_dia",
-                    format="DD/MM/YYYY",
-                    help="Sólo reciben las tiendas que reponen ese día (calendario por tienda).",
-                )
-                ss.dia_reposicion = ss.sb_dia
-            st.caption("Tránsito: pedidos del sistema aprobados, en picking o documentados.")
-            archivos_b = st.file_uploader(
-                "Reporte de bloqueos",
-                type=["xlsx"],
-                accept_multiple_files=True,
-                key="bloq_uploader",
-                help="Modelos bloqueados por tienda (todas sus partes): no se reponen ahí.",
-            )
-            try:
-                from forusight.data import bloqueos as B
-
-                # sin archivo nuevo se usan los bloqueos guardados (reporte de bloqueos del 28/09)
-                ss.bloq_clave = (
-                    registrar_bloqueos([a.getvalue() for a in archivos_b or []]) or "defecto"
-                )
-                origen = "subidos" if ss.bloq_clave != "defecto" else f"del {B.FECHA_POR_DEFECTO}"
-                st.caption(
-                    f"Bloqueos {origen}: {len(bloqueos_de(ss.bloq_clave)):,} modelo-color × tienda"
-                )
-            except Exception as exc:
-                st.error(f"No se pudo leer el reporte de bloqueos: {exc}")
-                ss.bloq_clave = "defecto"
-            archivos_n = st.file_uploader(
-                "Reportes de distribución (Neogística)",
-                type=["xlsx"],
-                accept_multiple_files=True,
-                key="plan_uploader",
-                help="Actualizan el maestro de planificación (stock mínimo, nivel, reorden y "
-                "empaque por tienda × SKU; factor de pronóstico por categoría). Sube el más "
-                "reciente de cada ruta: con un reporte de hasta 3 días la tienda cuadra ~90 %.",
-            )
-            try:
-                ss.niveles_clave = registrar_planificacion(
-                    [(a.getvalue(), a.name) for a in archivos_n or []]
-                )
-                info = resumen_planificacion(
-                    maestro_planificacion(ss.niveles_clave),
-                    ss.get("dia_reposicion") or hoy_lima(),
-                )
-                if info.get("claves"):
-                    st.caption(
-                        f"Planificación: {info['claves']:,} tienda × SKU · último reporte del "
-                        f"{_ddmm(info['ultimo_reporte'])} (hace {info['dias']} días)"
-                    )
-            except Exception as exc:
-                st.error(f"No se pudo leer el reporte de distribución: {exc}")
-                ss.niveles_clave = ""
-            if ss.fuente == "bigquery":
-                archivo = st.file_uploader(
-                    "Stock CD con reservas (opcional)",
-                    type=["xlsx", "xls", "csv"],
-                    key="cd_uploader",
-                )
-                ss.cd_archivo = (archivo.getvalue(), archivo.name) if archivo else None
-            if paginas and len(paginas) > 1:
-                st.caption("Configuración")
-                for pg in paginas:
-                    st.page_link(pg)
-            if ss.fuente != "synthetic" and st.button(
+        if ss.fuente != "synthetic":
+            html('<div class="sb-sec">Acciones</div>', sidebar=True)
+            if st.button(
                 "Volver a leer BigQuery",
-                width="stretch",
                 icon=":material/refresh:",
-                help="Ignora la caché y trae los datos de nuevo",
+                key="sb_releer",
+                help="Ignora la caché, trae los datos de nuevo y vuelve a correr",
             ):
                 limpiar_cache()
                 try:
@@ -1067,15 +941,94 @@ def barra_lateral(paginas: list | None = None) -> None:
                 except Exception as exc:
                     st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
 
-        html(
-            f'<div class="sb-user">{icon("shield", 14)}<span><b>{usuario_actual()}</b>'
-            f"<br>{rol_actual()}</span></div>",
-            sidebar=True,
+
+def carga_planificacion() -> None:
+    """Reportes de distribución de Neogística → maestro de planificación (se guarda en GitHub y
+    lo usan la pantalla y la corrida de las 6:30). Vive en Parámetros, fuera del día a día."""
+    ss = st.session_state
+    archivos = st.file_uploader(
+        "Reportes de distribución (Neogística)",
+        type=["xlsx"],
+        accept_multiple_files=True,
+        key="plan_uploader",
+        help="Actualizan stock mínimo, nivel, reorden y empaque por tienda × SKU. Quedan "
+        "guardados: no hace falta volver a subirlos.",
+    )
+    try:
+        if archivos:
+            ss.niveles_clave = registrar_planificacion([(a.getvalue(), a.name) for a in archivos])
+        info = resumen_planificacion(
+            maestro_planificacion(ss.get("niveles_clave", "")),
+            ss.get("dia_reposicion") or hoy_lima(),
         )
-        if ss.get("sin_login"):
-            st.caption(":material/lock_open: Modo demo (datos de ejemplo)")
-        elif st.button("Cerrar sesión", width="stretch", icon=":material/logout:", type="tertiary"):
-            cerrar_sesion()
+        if info.get("claves"):
+            st.caption(
+                f"Planificación vigente: {info['claves']:,} tienda × SKU · último reporte del "
+                f"{_ddmm(info['ultimo_reporte'])} (hace {info['dias']} días)"
+            )
+    except Exception as exc:
+        st.error(f"No se pudo leer el reporte de distribución: {exc}")
+
+
+def panel_corrida() -> None:
+    """Nueva corrida, arriba de Inicio: marca, semana, día de reposición y «Ejecutar»."""
+    ss = st.session_state
+    with st.container(key="card_corrida"):
+        html(
+            '<div class="run-head"><b>Nueva corrida</b>'
+            "<span>Los datos salen de BigQuery: stock, venta, tránsito y bloqueos.</span></div>"
+        )
+        c_marca, c_sem, c_dia, c_btn = st.columns(
+            [2.3, 1.1, 1.1, 1.3], gap="small", vertical_alignment="bottom"
+        )
+        with c_marca:
+            if ss.fuente == "bigquery":
+                _selector_marcas()
+            else:
+                st.text_input("Marca", "Datos de ejemplo", disabled=True, key="sb_marca_demo")
+        with c_sem:
+            if "sb_semana" not in ss:
+                ss.sb_semana = ss.fecha_corte
+            st.date_input(
+                "Semana (lunes)",
+                key="sb_semana",
+                format="DD/MM/YYYY",
+                on_change=_semana_a_lunes,
+                help="Venta de las 12 semanas previas (se ajusta al lunes); el stock es el "
+                "último corte disponible.",
+            )
+            ss.fecha_corte = ss.sb_semana
+        with c_dia:
+            if "sb_dia" not in ss:
+                ss.sb_dia = ss.get("dia_reposicion") or hoy_lima().date()
+            st.date_input(
+                "Día de reposición",
+                key="sb_dia",
+                format="DD/MM/YYYY",
+                help="Sólo reciben las tiendas que reponen ese día (rutas de despacho).",
+            )
+            ss.dia_reposicion = ss.sb_dia
+        with c_btn:
+            ejecutar = st.button(
+                "Ejecutar corrida",
+                type="primary",
+                width="stretch",
+                icon=":material/play_arrow:",
+                disabled=not puede("ejecutar"),
+                key="btn_ejecutar",
+            )
+        if estado := estado_stock(cargas_actuales()):  # ¿ya llegó el cierre de ayer?
+            html(
+                f'<div class="run-estado run-{estado[0]}">'
+                f"{icon('check-circle' if estado[0] == 'ok' else 'alert', 15)}"
+                f"<span>{escape(estado[1])}</span></div>"
+            )
+    if ejecutar:
+        try:
+            with st.spinner("Ejecutando la corrida…"):
+                ejecutar_corrida()
+        except Exception as exc:  # errores de datos/credenciales visibles al usuario
+            st.error(f"No se pudo ejecutar la corrida.\n\n{explicar_error(exc)}")
 
 
 def _ddmm(fecha) -> str:

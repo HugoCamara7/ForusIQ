@@ -53,6 +53,9 @@ class StoreFalso:
     def leer(self, path):
         return self.archivos.get(path)
 
+    def borrar(self, path, sha, mensaje):
+        del self.archivos[path]
+
 
 def lima(h, m=0):
     return datetime(2026, 10, 5, h, m, tzinfo=C.LIMA)
@@ -95,6 +98,31 @@ def test_listado_del_mas_reciente_al_mas_antiguo_y_definitiva_primero():
         ("05", True),
         ("03", False),
     ]
+
+
+def test_vencidas_son_las_de_semanas_anteriores():
+    nombres = [
+        C.nombre_diario("2026-09-28"),  # lunes de la semana pasada
+        C.nombre_diario("2026-10-04", True),  # domingo de la semana pasada
+        "2026-10-04_0630_ERROR.txt",
+        C.nombre_diario("2026-10-05"),  # lunes de esta semana
+        C.nombre_diario("2026-10-07"),
+        "LEEME.md",
+    ]
+    archivos = [{"name": n} for n in nombres]
+    hoy = "2026-10-07"  # miércoles
+    assert [a["name"] for a in C.vencidas(archivos, hoy)] == nombres[:3]
+    assert [a["name"] for a in C.vencidas(archivos, hoy, semanas=2)] == []
+
+
+def test_limpiar_borra_la_semana_anterior_aunque_este_en_otro_mes():
+    S = _script()
+    store = StoreFalso()
+    for f in ("2026-09-27", "2026-09-30", "2026-10-02", "2026-10-05", "2026-10-06"):
+        store.guardar(C.ruta_diaria(f), b"x", "")
+    # la semana del 05/10 empezó en octubre; la del 28/09 cruza septiembre y octubre
+    assert S.limpiar(store, "2026-10-06") == 3
+    assert sorted(p.rsplit("/", 1)[1][:10] for p in store.archivos) == ["2026-10-05", "2026-10-06"]
 
 
 # ------------------------------------------------------------------ decisión

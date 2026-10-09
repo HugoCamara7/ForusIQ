@@ -49,9 +49,20 @@ def decidir(aviso_carga: str | None, ahora, forzar: bool = False) -> str:
     return PRELIMINAR if forzar or minuto >= MINUTO_ULTIMO_INTENTO else ESPERAR
 
 
-def lunes_de(fecha) -> pd.Timestamp:
-    d = pd.Timestamp(fecha).normalize()
-    return d - pd.Timedelta(days=d.weekday())
+lunes_de = C.lunes_de
+
+
+def limpiar(store, hoy) -> int:
+    """Borra del repositorio de datos las corridas (y errores) de semanas anteriores: sólo
+    se guarda la semana en curso. Devuelve cuántos archivos borró."""
+    hoy = pd.Timestamp(hoy).normalize()
+    archivos = []
+    for i in range(C.MESES_A_LIMPIAR):
+        archivos += store.listar(C.carpeta_del_mes(hoy - pd.DateOffset(months=i)))
+    viejos = C.vencidas(archivos, hoy)
+    for a in viejos:
+        store.borrar(a["path"], a["sha"], f"forusight: borra {a['name']} (semana anterior)")
+    return len(viejos)
 
 
 def correr(ahora, store, fuente: str = "bigquery", forzar: bool = False) -> dict:
@@ -131,6 +142,10 @@ def main() -> int:
         except Exception:
             print("Tampoco se pudo guardar el detalle del error.")
         return 1
+    try:
+        r["borradas de semanas anteriores"] = limpiar(store, ahora.date())
+    except Exception as exc:  # no limpiar no invalida la corrida de hoy
+        r["limpieza"] = f"falló ({type(exc).__name__})"
     print(" · ".join(f"{k}: {v}" for k, v in r.items()))
     return 0
 

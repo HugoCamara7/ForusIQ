@@ -69,6 +69,21 @@ def brand_strip() -> None:
         html(f'<div class="login-brands">{"".join(chips)}</div>')
 
 
+def logos_marcas(marcas: list[str]) -> str:
+    """Logos de las marcas elegidas (en fichas blancas); la que no tiene logo va como texto."""
+    por_nombre = {n.upper().replace(" ", ""): a for n, a in BRAND_LOGOS}
+    fichas = []
+    for m in marcas:
+        archivo = por_nombre.get(str(m).upper().replace(" ", ""))
+        src = image_data_uri(ASSETS / "brands" / archivo) if archivo else ""
+        fichas.append(
+            f'<span class="sb-marca"><img src="{src}" alt="{escape(str(m))}"></span>'
+            if src
+            else f'<span class="sb-marca sb-marca-txt">{escape(str(m))}</span>'
+        )
+    return f'<div class="sb-marcas">{"".join(fichas)}</div>'
+
+
 def login_styles() -> None:
     html(f"""
     <style>
@@ -161,47 +176,89 @@ def app_styles() -> None:
     .block-container, [data-testid="stMainBlockContainer"] {{
         max-width:1320px; padding-top:26px; padding-bottom:56px; }}
 
-    section[data-testid="stSidebar"] {{ background:#F3F6FB; border-right:1px solid #DDE6F2; }}
-    section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p {{ color:#172554; }}
-    /* navegación como tarjetas */
-    [data-testid="stSidebarNav"] a {{
-        border-radius:12px; padding:9px 12px; margin:2px 0; border:1px solid transparent;
-        transition:background .15s, border-color .15s, box-shadow .15s;
-    }}
-    [data-testid="stSidebarNav"] a:hover {{ background:#FFFFFF; border-color:var(--line);
-        box-shadow:0 4px 12px rgba(15,23,42,.06); }}
-    [data-testid="stSidebarNav"] a[aria-current="page"] {{
-        background:linear-gradient(120deg,#EEF3FF,#FFFFFF); border-color:#C9DAFF;
-        box-shadow:0 6px 18px rgba(35,103,255,.13); }}
-    [data-testid="stSidebarNav"] a span {{ font-weight:800; color:#33415A; }}
-    [data-testid="stSidebarNav"] a[aria-current="page"] span {{ color:#0B1B46; font-weight:900; }}
+    /* ---- barra lateral oscura (como Catálogo Control Center) */
+    section[data-testid="stSidebar"] {{ background:linear-gradient(180deg,#0E1A3A 0%,#13234D 100%);
+        border-right:none; }}
+    section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{ color:#C7D2E8; }}
+    [data-testid="stSidebarHeader"] {{ padding:26px 20px 8px; }}
+    [data-testid="stSidebarHeader"] img[data-testid="stLogo"] {{ height:40px; max-width:200px; }}
+    [data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarHeader"] button svg {{
+        color:#C7D2E8; fill:#C7D2E8; }}
+    .sb-card {{ display:flex; align-items:center; gap:12px; padding:13px 14px; margin:4px 0 10px;
+        background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+        border-radius:16px; }}
+    .sb-avatar {{ flex:0 0 auto; width:46px; height:46px; border-radius:13px; display:grid;
+        place-items:center; font-size:16px; font-weight:900; color:#FFF;
+        background:linear-gradient(135deg,{BRAND_BLUE},#1D4ED8); }}
+    .sb-card span:last-child {{ min-width:0; line-height:1.3; }}
+    .sb-card small {{ display:block; font-size:10.5px; font-weight:900; letter-spacing:.12em;
+        text-transform:uppercase; color:#A5B4FC; }}
+    .sb-card b {{ display:block; font-size:15px; font-weight:900; color:#FFFFFF; }}
+    .sb-card em {{ display:block; font-style:normal; font-size:12px; color:#94A3C4;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+    .sb-sec {{ font-size:12px; font-weight:900; letter-spacing:.12em; text-transform:uppercase;
+        color:#8EA0C6; padding:26px 4px 12px; margin:0; }}
+    [data-testid="stMarkdownContainer"]:has(> .sb-sec) {{ margin-bottom:0 !important; }}
+    .st-key-sb_salir button {{ background:transparent; border:1.5px solid #F87171;
+        border-radius:12px; min-height:40px; }}
+    .st-key-sb_salir button p {{ color:#FCA5A5 !important; font-weight:800; }}
+    .st-key-sb_salir button:hover {{ background:rgba(248,113,113,.12); border-color:#FCA5A5; }}
+    section[data-testid="stSidebar"] [data-testid="stPageLink"] a {{ border-radius:14px;
+        padding:12px 16px; margin:1px 0; transition:background .15s; }}
+    section[data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {{
+        background:rgba(255,255,255,.08); }}
+    section[data-testid="stSidebar"] [data-testid="stPageLink"] a p,
+    section[data-testid="stSidebar"] [data-testid="stPageLink"] a span {{ color:#D6DEEF !important;
+        font-size:15px; font-weight:800; }}
+    section[data-testid="stSidebar"] div[class*="st-key-sb_nav_"][class*="_on"] a {{
+        background:linear-gradient(135deg,#4F46E5,{BRAND_BLUE});
+        box-shadow:0 10px 24px rgba(79,70,229,.38); }}
+    section[data-testid="stSidebar"] div[class*="st-key-sb_nav_"][class*="_on"] a p,
+    section[data-testid="stSidebar"] div[class*="st-key-sb_nav_"][class*="_on"] a span {{
+        color:#FFFFFF !important; }}
+    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap:.35rem; }}
+    .sb-marcas {{ display:flex; flex-wrap:wrap; gap:8px; }}
+    .sb-marca {{ display:grid; place-items:center; height:40px; padding:6px 12px;
+        border-radius:10px; background:#FFFFFF; }}
+    .sb-marca img {{ max-height:26px; max-width:120px; object-fit:contain; }}
+    .sb-marca-txt {{ font-size:12px; font-weight:900; color:#0B1B46; }}
+    .st-key-sb_releer button {{ background:transparent; border:none; justify-content:flex-start;
+        padding-left:14px; }}
+    .st-key-sb_releer button p {{ color:#D6DEEF !important; font-size:15px; font-weight:800; }}
+    .st-key-sb_releer button:hover {{ background:rgba(255,255,255,.08); }}
 
-    .sb-brand {{ display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px;
-        background:#FFFFFF; border:1px solid var(--line); border-radius:14px;
-        box-shadow:0 6px 16px rgba(15,23,42,.05); }}
-    .sb-logo {{ flex:0 0 auto; width:64px; height:34px; display:grid; place-items:center; }}
-    .sb-logo img {{ max-width:64px; max-height:34px; object-fit:contain; }}
-    .sb-txt {{ min-width:0; line-height:1.25; }}
-    .sb-txt b {{ display:block; font-size:13.5px; font-weight:900; color:#0B1B46; }}
-    .sb-txt span {{ display:block; font-size:11.5px; color:var(--text-muted); font-weight:650; }}
-    .sb-sec {{ font-size:10.5px; font-weight:900; letter-spacing:.13em; text-transform:uppercase;
-        color:#93A3BC; margin:16px 4px 6px; }}
-    [data-testid="stSidebarHeader"] {{ padding:22px 20px 6px; }}
-    [data-testid="stSidebarHeader"] img[data-testid="stLogo"] {{ height:40px; max-width:190px; }}
-    [data-testid="stSidebarNavItems"] {{ padding-top:6px; }}
-    [data-testid="stSidebarNavSeparator"] {{ margin:8px 12px; }}
-    .sb-run {{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:6px 0 10px; }}
-    .sb-run div {{ background:#FFFFFF; border:1px solid var(--line); border-radius:11px;
-        padding:7px 8px; }}
-    .sb-run span {{ display:block; font-size:9.5px; font-weight:900; letter-spacing:.08em;
-        text-transform:uppercase; color:#93A3BC; }}
-    .sb-run b {{ display:block; font-size:12.5px; font-weight:900; color:#0B1B46; white-space:nowrap;
-        overflow:hidden; text-overflow:ellipsis; }}
-    .sb-user {{ display:flex; align-items:center; gap:9px; font-size:11.5px; color:#64748B;
-        padding:9px 11px; margin:14px 0 2px; border-radius:12px; background:#EDF1F8;
-        line-height:1.35; word-break:break-all; }}
-    .sb-user svg {{ flex:0 0 auto; color:{BRAND_PRIMARY}; }}
-    .sb-user b {{ color:#0B1B46; }}
+    /* ---- Nueva corrida (arriba de Inicio) */
+    .st-key-card_corrida {{ padding:18px 20px 14px !important; margin-bottom:18px;
+        border-top:4px solid {BRAND_BLUE} !important; }}
+    .run-head {{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px;
+        margin-bottom:2px; }}
+    .run-head b {{ font-size:18px; font-weight:950; color:#0B1B46; }}
+    .run-head span {{ font-size:12.5px; color:var(--text-muted); font-weight:650; }}
+    .st-key-btn_ejecutar button {{ min-height:44px; border-radius:12px; font-size:15px;
+        background:linear-gradient(135deg,{BRAND_PRIMARY},{BRAND_BLUE}); border:none; }}
+    .st-key-btn_ejecutar button p {{ color:#FFFFFF; font-weight:900; }}
+    div[class*="st-key-card_"] [data-testid="stDateInputField"],
+    div[class*="st-key-card_"] [data-testid="stTextInputRootElement"],
+    div[class*="st-key-card_"] [data-testid="stMultiSelect"] [data-baseweb="select"] > div {{
+        background:#F3F6FB !important; border:1px solid #DCE4F2 !important;
+        border-radius:12px !important; }}
+    div[class*="st-key-card_"] [data-testid="stDateInputField"] input,
+    div[class*="st-key-card_"] [data-testid="stTextInputRootElement"] input {{
+        background:transparent !important; }}
+    .st-key-card_corrida label p {{ font-weight:800; color:#33415A; }}
+    .dl-fila {{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:6px 0; }}
+    .dl-fila b {{ font-size:15px; font-weight:900; color:#0B1B46; }}
+    .dl-fila > span:last-child {{ flex-basis:100%; font-size:12px; color:var(--text-muted); }}
+    .dl-tag {{ padding:2px 10px; border-radius:999px; font-size:11px; font-weight:900;
+        letter-spacing:.06em; text-transform:uppercase; }}
+    .dl-hoy {{ background:#E7F7EE; color:#0B7A3B; }}
+    .dl-pre {{ background:#FFFBEB; color:#92400E; }}
+    .st-key-card_descargas .stDownloadButton button {{ min-height:42px; font-size:14px; }}
+    .run-estado {{ display:inline-flex; align-items:center; gap:8px; margin-top:4px;
+        padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:750; }}
+    .run-ok {{ background:#E7F7EE; color:#0B7A3B; }}
+    .run-warn {{ background:#FFFBEB; color:#92400E; }}
 
     .hero {{ position:relative; overflow:hidden; border-radius:22px; padding:26px 30px;
         background:linear-gradient(125deg,#101B70 0%,{BRAND_PRIMARY} 42%,{BRAND_BLUE} 100%);
@@ -242,7 +299,6 @@ def app_styles() -> None:
     div[class*="st-key-card_"] {{ background:#FFFFFF; border:1px solid var(--line);
         border-radius:18px; padding:16px 18px 20px; box-shadow:0 10px 26px rgba(15,23,42,.05); }}
     div[class*="st-key-card_"] [data-testid="stMarkdownContainer"] {{ margin-bottom:0 !important; }}
-    section[data-testid="stSidebar"] button[kind="primary"] p {{ color:#FFFFFF; font-weight:900; }}
 
     .kpis {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px;
         margin-bottom:16px; }}
@@ -336,6 +392,7 @@ def app_styles() -> None:
     .stButton button, button[data-testid^="stBaseButton"] {{ border-radius:12px; font-weight:850; }}
     .stDownloadButton button {{ border-radius:14px; min-height:52px; font-weight:950; font-size:15px;
         background:linear-gradient(135deg,#0B7A3B,#16A34A); border:none; color:#FFF; }}
+    .stDownloadButton button p {{ color:#FFFFFF; font-weight:900; font-size:15px; }}
     .st-key-btn_aprobar button, .st-key-aprobada button {{ border-radius:14px; min-height:52px;
         font-weight:950; font-size:15px; border:none; color:#FFF;
         background:linear-gradient(135deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
