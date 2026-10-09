@@ -3,7 +3,6 @@
 import pandas as pd
 import streamlit as st
 from app.components.archivo import boton_archivo
-from app.components.corridas_guardadas import panel as panel_corridas
 from app.components.estado import entradas_de_la_corrida, panel_corrida, revision_carga
 from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, velocimetro
 
@@ -29,7 +28,6 @@ if res is None:
         "Empieza aquí",
         "Elige la marca y las fechas arriba y presiona «Ejecutar corrida».",
     )
-    panel_corridas()
     st.stop()
 
 r = res.resumen
@@ -166,5 +164,3 @@ with c2, st.container(key="card_disponibilidad"):
             f"Después del envío: {despues:.1%} · {activos:,} SKU activos · meta ≥ 93 %",
         )
     )
-
-panel_corridas()

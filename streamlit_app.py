@@ -42,6 +42,7 @@ inicializar()
 # Inicio (generar, aprobar y descargar) y las páginas de configuración, todas en el menú.
 paginas = [
     st.Page("app/vistas/1_Dashboard.py", title="Inicio", icon=":material/home:", default=True),
+    st.Page("app/vistas/10_Descargas.py", title="Descargas", icon=":material/download:"),
     st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
     st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),

@@ -247,6 +247,14 @@ def app_styles() -> None:
     div[class*="st-key-card_"] [data-testid="stTextInputRootElement"] input {{
         background:transparent !important; }}
     .st-key-card_corrida label p {{ font-weight:800; color:#33415A; }}
+    .dl-fila {{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; padding:6px 0; }}
+    .dl-fila b {{ font-size:15px; font-weight:900; color:#0B1B46; }}
+    .dl-fila > span:last-child {{ flex-basis:100%; font-size:12px; color:var(--text-muted); }}
+    .dl-tag {{ padding:2px 10px; border-radius:999px; font-size:11px; font-weight:900;
+        letter-spacing:.06em; text-transform:uppercase; }}
+    .dl-hoy {{ background:#E7F7EE; color:#0B7A3B; }}
+    .dl-pre {{ background:#FFFBEB; color:#92400E; }}
+    .st-key-card_descargas .stDownloadButton button {{ min-height:42px; font-size:14px; }}
     .run-estado {{ display:inline-flex; align-items:center; gap:8px; margin-top:4px;
         padding:6px 12px; border-radius:999px; font-size:12.5px; font-weight:750; }}
     .run-ok {{ background:#E7F7EE; color:#0B7A3B; }}
