@@ -30,6 +30,15 @@ def catalogo_tiendas() -> pd.DataFrame:
     return pd.read_csv(CONFIG / "tiendas_forus.csv", dtype=str)
 
 
+def tiendas_cerradas() -> set[str]:
+    """Códigos de tiendas que ya cerraron (config/tiendas_cerradas.csv): la corrida nunca les
+    envía aunque BigQuery todavía traiga su stock o su venta."""
+    ruta = CONFIG / "tiendas_cerradas.csv"
+    if not ruta.exists():
+        return set()
+    return set(pd.read_csv(ruta, dtype=str)["codigo_tienda"].str.strip().str.lstrip("0"))
+
+
 @lru_cache(maxsize=1)
 def _matriz_archivo() -> dict[str, list[str]]:
     raw = yaml.safe_load((CONFIG / "cadenas.yaml").read_text(encoding="utf-8")) or {}

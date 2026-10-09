@@ -152,3 +152,11 @@ def test_guardar_el_cuadro_sin_cambios_no_toca_otras_semanas():
     otra = _exc(("2026-10-15", "Larcomar", RU.SIN_DESPACHO))
     tabla = RU.tabla_semana(BASE, otra, JUE)
     assert RU.aplicar_semana(BASE, otra, JUE, tabla, "ana").equals(otra)
+
+
+def test_tienda_cerrada_no_aparece_ni_recibe():
+    """RKF SAN BORJA (39) cerró: fuera del catálogo y excluida de la corrida."""
+    from forusight.data import cadenas as CAD
+
+    assert "39" in CAD.tiendas_cerradas()
+    assert "RKF SAN BORJA" not in set(RU.tiendas_por_mall(BASE)["nombre_tienda"])
