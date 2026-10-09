@@ -850,6 +850,7 @@ def test_azaleia_llenado_inicial_1_por_talla_core():
     _marca_nueva(fake)
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
     fake.datos["maestro_cadena"] = pd.DataFrame({"cod_modelo": ["OTRO1"], "cadena": ["HP"]})
+    fake.datos["stock_foto"] = fake.datos["stock_foto"].assign(tienda_cod="380")  # su bodega
     fake.datos["maestro_tiendas"] = pd.concat(
         [
             fake.datos["maestro_tiendas"],
@@ -864,7 +865,9 @@ def test_azaleia_llenado_inicial_1_por_talla_core():
         ]
     )
     inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
-    d = ejecutar(inp, params(), CORTE, run_id="R").detalle
+    # por defecto Forusight sólo repone: sin pedir el llenado no envía nada
+    assert ejecutar(inp, params(), CORTE, run_id="R").detalle["cantidad"].sum() == 0
+    d = ejecutar(inp, params(llenado_inicial={"activo": True}), CORTE, run_id="R").detalle
     env = d.loc[d["cantidad"] > 0]
     assert set(env["tienda_id"]) == {"501", "502"}
     assert env["cantidad"].eq(1).all() and env["motivo_codigo"].eq("ENVIO_LLENADO").all()
@@ -875,11 +878,48 @@ def test_azaleia_llenado_inicial_1_por_talla_core():
     assert curvas.nunique() == 1
 
 
-def test_llenado_inicial_apagado_no_introduce():
+def test_llenado_inicial_apagado_por_defecto_no_introduce():
     fake = _FakeBQ()
     _marca_nueva(fake)
     inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
         CORTE, marcas=["HUSH PUPPIES"]
     )
-    d = ejecutar(inp, params(llenado_inicial={"activo": False}), CORTE, run_id="R").detalle
+    d = ejecutar(inp, params(), CORTE, run_id="R").detalle  # apagado por defecto
     assert d["cantidad"].sum() == 0
+
+
+def test_azaleia_sale_de_la_bodega_380():
+    """AZALEIA → bodega 380: su stock de CD sale de la 380 (no de la 320), la 380 no es
+    tienda y el archivo pone 380 como Código Centro Origen."""
+    from forusight.export.archivo import construir_tabla
+
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    fake.datos["maestro_cadena"] = pd.DataFrame({"cod_modelo": ["OTRO1"], "cadena": ["HP"]})
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
+        [foto.assign(stock_tienda=99.0, stock_bodega=0.0), foto.assign(tienda_cod="380")]
+    )  # la 320 tiene otro stock: no debe usarse
+    fake.datos["maestro_tiendas"] = pd.concat(
+        [
+            fake.datos["maestro_tiendas"],
+            pd.DataFrame(
+                {
+                    "tienda_cod": ["501"],
+                    "tienda_nombre": ["AZALEIA JOCKEY"],
+                    "centro_comercial": ["JOCKEY"],
+                    "zona": ["LIMA"],
+                }
+            ),
+        ]
+    )
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    assert inp.stock_cd["fisico"].eq(3 + 5).all()  # el de la 380, no los 99 de la 320
+    assert not {"320", "380"} & set(inp.dim_tienda["tienda_id"])
+    p = params(llenado_inicial={"activo": True})
+    r = ejecutar(inp, p, CORTE, run_id="R")
+    env = r.detalle.loc[r.detalle["cantidad"] > 0]
+    assert len(env) and env["motivo_texto"].notna().all()
+    t = construir_tabla(r.detalle, inp.ventas, inp.dim_producto, inp.dim_tienda, p, CORTE, "320")
+    assert set(t["Código Centro Origen"]) == {"380"}

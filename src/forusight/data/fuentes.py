@@ -1054,14 +1054,22 @@ def construir_entradas(
     tiendas_m: pd.DataFrame | None = None,
     cadena_m: pd.DataFrame | None = None,
     marcas_por_cadena: dict | None = None,
+    cd_por_marca: dict | None = None,
 ):
     """DataFrames crudos de las consultas → EngineInputs (contratos canónicos)."""
     from forusight.engine.pipeline import EngineInputs
 
     cd = codigo_tienda(cd_id)
-    no_reciben = excluidas | {cd}
     dim, notas = a_dim_producto(arti)
     diag.notas += notas
+    # Bodega de origen de cada SKU: la de su marca (cd_por_marca, p. ej. AZALEIA → 380) o cd_id.
+    por_marca = {str(m).strip().upper(): codigo_tienda(c) for m, c in (cd_por_marca or {}).items()}
+    marca_u = (
+        texto(dim["marca"]).str.upper() if "marca" in dim else pd.Series(pd.NA, index=dim.index)
+    )
+    dim["cd_origen"] = marca_u.map(por_marca).fillna(cd).astype(str)
+    cds = {cd} | set(por_marca.values())  # ninguna bodega recibe como tienda
+    no_reciben = excluidas | cds
     skus = set(dim["sku"])
     corte = pd.Timestamp(fecha_corte).normalize()
     lunes = [corte - pd.Timedelta(weeks=k) for k in range(semanas, 0, -1)]
@@ -1074,8 +1082,8 @@ def construir_entradas(
     f["sku"] = sku_canonico(f["id_producto"])
     f["tienda_id"] = f["tienda_cod"].map(codigo_tienda)
     f = f.loc[f["sku"].isin(skus) & f["tienda_id"].ne("")]
-    en_cd = f["tienda_id"].eq(cd)
-    tiendas_f = f.loc[~en_cd & ~f["tienda_id"].isin(excluidas)]
+    en_cd = f["tienda_id"].eq(f["sku"].map(dict(zip(dim["sku"], dim["cd_origen"], strict=True))))
+    tiendas_f = f.loc[~f["tienda_id"].isin(cds) & ~f["tienda_id"].isin(excluidas)]
     if "transito_bi" not in tiendas_f:
         tiendas_f = tiendas_f.assign(transito_bi=0.0)
     st = tiendas_f.groupby(["tienda_id", "sku"], as_index=False).agg(
@@ -1132,7 +1140,8 @@ def construir_entradas(
             stock_cd["cd_stock_disponible"] = g["disponible"].clip(lower=0)
         if stock_cd.empty:
             diag.notas.append(
-                f"La foto de stock no trae filas de la bodega {cd} para estas marcas."
+                "La foto de stock no trae filas de la bodega "
+                f"{', '.join(sorted(set(dim['cd_origen'])))} para estas marcas."
             )
 
     # --- dimensión tienda: maestro de tiendas si está; si no, la foto de stock

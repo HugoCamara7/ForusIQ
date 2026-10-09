@@ -340,6 +340,14 @@ class FuentesRepository(BigQueryRepository):
         df.attrs["columna_marca"] = mapa["marca"]
         return df
 
+    def _bodegas(self) -> set[str]:
+        """CD principal y bodegas por marca (p. ej. 380 de AZALEIA): ninguna es tienda."""
+        from forusight.data import fuentes as F
+
+        return {F.codigo_tienda(self.settings.cd_id)} | {
+            F.codigo_tienda(c) for c in (self.settings.cd_por_marca or {}).values()
+        }
+
     def cargar_entradas(
         self,
         fecha_corte: pd.Timestamp,
@@ -452,6 +460,7 @@ class FuentesRepository(BigQueryRepository):
             tiendas_m=maestros.get("tiendas"),
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
+            cd_por_marca=self.settings.cd_por_marca,
         )
         if not entradas.dim_tienda["activa"].any():
             from forusight.data.cadenas import marcas_por_cadena
@@ -511,7 +520,7 @@ class FuentesRepository(BigQueryRepository):
                 entradas.venta_diaria = F.a_venta_diaria(
                     vd,
                     set(entradas.dim_producto["sku"]),
-                    excl | {F.codigo_tienda(self.settings.cd_id)},
+                    excl | self._bodegas(),
                 )
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer la venta diaria: {explicar_error(exc)}")
@@ -569,9 +578,7 @@ class FuentesRepository(BigQueryRepository):
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
             return None
-        pedidos = F.a_pedidos(
-            crudo, set(entradas.dim_producto["sku"]), excl | {F.codigo_tienda(self.settings.cd_id)}
-        )
+        pedidos = F.a_pedidos(crudo, set(entradas.dim_producto["sku"]), excl | self._bodegas())
         if "clasificacion" not in m_h:
             diag.notas.append(
                 "Tránsito: la cabecera de pedidos no tiene clasificación mapeada; se cuentan "

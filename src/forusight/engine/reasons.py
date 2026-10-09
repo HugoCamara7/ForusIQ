@@ -112,6 +112,8 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
     """Texto legible para una fila (dict con las columnas de detalle)."""
     c = r["motivo_codigo"]
     q = int(r["cantidad"])
+    if isinstance(r.get("cd_origen"), str) and r["cd_origen"]:
+        cd_id = r["cd_origen"]  # bodega de la marca (p. ej. AZALEIA: 380)
     base = (
         f"stock {_n(r['stock_disponible'])} + tránsito {_n(r['stock_transito'])}, "
         f"objetivo {int(r['stock_objetivo'])} ({_n(r['cobertura_semanas'])} sem de cobertura, "

@@ -68,7 +68,7 @@ exhibicion:                     # PENDIENTE (i)
   tallas_minimas_sin_core: 3    # curva mínima si el modelo no fabrica tallas core
 
 llenado_inicial:                # marca nueva (AZALEIA): tiendas de su cadena sin stock ni venta
-  activo: true
+  activo: false                 # Forusight es reposición: el llenado se pide en «Nueva corrida»
   unidades_por_talla_core: 1    # primer envío: 1 par por talla core de cada modelo-color con stock en el CD
 
 tope_tienda:                    # PENDIENTE (i)

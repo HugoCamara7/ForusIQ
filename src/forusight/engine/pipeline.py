@@ -264,6 +264,10 @@ def ejecutar(
             base.tiendas.loc[base.tiendas["recibe_hoy"].fillna(True).astype(bool), "tienda_id"]
         )
         det = det.loc[det["tienda_id"].isin(hoy)]
+    if "cd_origen" in inp.dim_producto:  # bodega de cada SKU (AZALEIA: 380) para el texto
+        det["cd_origen"] = det["sku"].map(
+            inp.dim_producto.drop_duplicates("sku").set_index("sku")["cd_origen"]
+        )
     det["motivo_texto"] = generar_textos(det, params, cd_id)
     det["run_id"] = run_id
     det = det.rename(

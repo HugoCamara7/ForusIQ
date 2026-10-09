@@ -374,7 +374,10 @@ def _correr_motor(
     ).hexdigest()[:8]
     run_id = f"{fecha_corte.replace('-', '')}-{firma}"
     corte = diag.get("corte_venta") or fecha_corte  # venta atrasada: su última semana completa
-    res = ejecutar(inputs, params, corte, run_id=run_id, cd_id=ajustes().cd_id)
+    # Bodega(s) de la corrida: AZALEIA sale de la 380 (cd_por_marca); el resto, del CD 320.
+    dp = inputs.dim_producto
+    cd_txt = " y ".join(sorted(set(dp["cd_origen"]))) if "cd_origen" in dp else ajustes().cd_id
+    res = ejecutar(inputs, params, corte, run_id=run_id, cd_id=cd_txt or ajustes().cd_id)
     res.resumen["stock_al"] = diag.get("fecha_foto")  # el Excel dice de qué cierre es el stock
     return res, diag
 
@@ -772,10 +775,15 @@ def ejecutar_corrida(avance=None) -> EngineResult:
     if ss.fuente == "bigquery" and ss.get("marcas") is not None and not ss.marcas:
         raise ValueError("Elige al menos una marca en Inicio (p. ej. HUSH PUPPIES).")
     avance(1)
+    params = ss.params
+    if ss.get("llenado_inicial"):  # pedido en «Nueva corrida»: sólo esta corrida
+        params = params.model_copy(
+            update={"llenado_inicial": params.llenado_inicial.model_copy(update={"activo": True})}
+        )
     res, diag = correr_motor(
         ss.fuente,
         pd.Timestamp(ss.fecha_corte).date().isoformat(),
-        ss.params.model_dump_json(),
+        params.model_dump_json(),
         cd[0],
         cd[1],
         marcas,
@@ -1021,6 +1029,14 @@ def panel_corrida() -> None:
                 disabled=not puede("ejecutar"),
                 key="btn_ejecutar",
             )
+        ss.llenado_inicial = st.toggle(
+            "Llenado inicial de marca nueva",
+            value=bool(ss.get("llenado_inicial", False)),
+            key="sb_llenado",
+            help="Apagado = sólo reposición (lo normal). Encendido = además, las tiendas de una "
+            "marca nueva sin stock ni venta (p. ej. AZALEIA) reciben 1 por talla core de cada "
+            "modelo-color con stock en su bodega. Vale sólo para esta corrida.",
+        )
         if estado := estado_stock(cargas_actuales()):  # ¿ya llegó el cierre de ayer?
             html(
                 f'<div class="run-estado run-{estado[0]}">'
