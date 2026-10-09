@@ -18,7 +18,11 @@ from forusight.engine.demand import estimar_demanda
 from forusight.engine.reasons import asignar_codigos, generar_textos
 from forusight.engine.similarity import tiendas_similares
 from forusight.engine.size_curve import curva_tallas
-from forusight.engine.target import calcular_necesidad, calcular_objetivo_mc
+from forusight.engine.target import (
+    aplicar_llenado_inicial,
+    calcular_necesidad,
+    calcular_objetivo_mc,
+)
 from forusight.engine.universe import construir_base
 
 COLUMNAS_SALIDA = [
@@ -235,6 +239,7 @@ def ejecutar(
             how="left",
         )
     sku = calcular_necesidad(sku, mc, params)
+    sku = aplicar_llenado_inicial(sku, base.tiendas, params)  # marca nueva: primer envío
     sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params)
 
     disp = dict(zip(base.cd["sku"], base.cd["disponible"], strict=True))

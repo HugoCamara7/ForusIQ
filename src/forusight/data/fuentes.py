@@ -1180,6 +1180,7 @@ def construir_entradas(
                 np.clip(venta_t.rank(pct=True).to_numpy(), 0.05, 1.0) if len(ids) else []
             ),
             "activa": [t in reciente or t in con_stock or t in marca_nueva for t in ids],
+            "llenado_inicial": [t in marca_nueva for t in ids],
             "max_unidades_corrida": np.nan,
         }
     )

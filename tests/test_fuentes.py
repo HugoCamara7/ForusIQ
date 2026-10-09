@@ -841,3 +841,45 @@ def test_azaleia_reciben_sus_tiendas_del_maestro():
     inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
     activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
     assert set(activas["tienda_id"]) == {"501", "502"} and set(activas["cadena"]) == {"AZALEIA"}
+
+
+def test_azaleia_llenado_inicial_1_por_talla_core():
+    """Tiendas Azaleia nuevas (sin stock ni venta) y modelos que el maestro modelo→cadena aún
+    no tiene: cada modelo-color con stock en el CD entra con 1 por talla core."""
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    fake.datos["maestro_cadena"] = pd.DataFrame({"cod_modelo": ["OTRO1"], "cadena": ["HP"]})
+    fake.datos["maestro_tiendas"] = pd.concat(
+        [
+            fake.datos["maestro_tiendas"],
+            pd.DataFrame(
+                {
+                    "tienda_cod": ["501", "502"],
+                    "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA"],
+                    "centro_comercial": ["JOCKEY", "MEGA PLAZA"],
+                    "zona": ["LIMA", "LIMA"],
+                }
+            ),
+        ]
+    )
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    d = ejecutar(inp, params(), CORTE, run_id="R").detalle
+    env = d.loc[d["cantidad"] > 0]
+    assert set(env["tienda_id"]) == {"501", "502"}
+    assert env["cantidad"].eq(1).all() and env["motivo_codigo"].eq("ENVIO_LLENADO").all()
+    assert env["es_core"].all()  # sólo tallas core
+    assert env["motivo_texto"].str.contains("llenado inicial de una marca nueva").all()
+    # el mismo modelo-color en las dos tiendas: misma curva
+    curvas = env.groupby("tienda_id")["sku"].apply(frozenset)
+    assert curvas.nunique() == 1
+
+
+def test_llenado_inicial_apagado_no_introduce():
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
+        CORTE, marcas=["HUSH PUPPIES"]
+    )
+    d = ejecutar(inp, params(llenado_inicial={"activo": False}), CORTE, run_id="R").detalle
+    assert d["cantidad"].sum() == 0
