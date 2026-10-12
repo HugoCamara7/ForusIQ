@@ -291,3 +291,29 @@ def test_antes_de_ejecutar_se_ve_si_el_stock_trae_el_cierre_de_ayer(monkeypatch)
     assert falta[0] == "warn" and "05/10" in falta[1] and "06/10" in falta[1]
     assert E.estado_stock(None) is None  # demo: no se muestra
     assert E.estado_stock({})[0] == "warn"  # la consulta falló
+
+
+def test_dia_sin_despacho_no_falla_ni_guarda(sintetico, monkeypatch):
+    """Sábado/domingo o feriado: ninguna tienda repone y la tabla queda vacía. Antes el Excel
+    fallaba con KeyError 'Código Centro' y la corrida terminaba en error."""
+    import app.components.archivo as A
+
+    real = A.tabla_archivo
+    monkeypatch.setattr(A, "tabla_archivo", lambda *a, **k: real(*a, **k).iloc[0:0])
+    S = _script()
+    store = StoreFalso()
+    r = S.correr(lima(6, 31), store, "synthetic")
+    assert r["estado"] == "hoy no sale el camión a ninguna tienda" and not store.archivos
+
+
+def test_excel_sin_filas_no_falla():
+    from forusight.data.synthetic import ConfigSintetica, generar
+    from forusight.engine.pipeline import ejecutar
+    from forusight.export.archivo import a_excel_forusight, construir_tabla
+    from tests.builders import params
+
+    inp, corte = generar(ConfigSintetica(seed=11))
+    vacio = ejecutar(inp, params(), corte, run_id="R").detalle.iloc[0:0]
+    t = construir_tabla(vacio, inp.ventas, inp.dim_producto, inp.dim_tienda, params(), corte)
+    assert t.empty and "Código Centro" in t
+    assert a_excel_forusight(t, corte)  # el archivo se arma igual
