@@ -444,6 +444,19 @@ class FuentesRepository(BigQueryRepository):
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer el maestro de {fuente}: {explicar_error(exc)}")
 
+        # Todas las tiendas con venta reciente (cualquier marca): nombre y cadena de las
+        # tiendas nuevas (p. ej. AZALEIA) que todavía no están en el maestro.
+        tiendas_v = None
+        if "tienda_nombre" in m_v or "cadena" in m_v:
+            try:
+                tiendas_v = q(
+                    "tiendas_venta",
+                    F.sql_tiendas_venta(tablas["ventas"], m_v),
+                    {"desde_tiendas": foto - dt.timedelta(days=60)},
+                )
+            except Exception as exc:
+                diag.notas.append(f"No se pudo leer las tiendas de la venta: {explicar_error(exc)}")
+
         from forusight.data.cadenas import tiendas_cerradas
 
         excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
@@ -462,6 +475,7 @@ class FuentesRepository(BigQueryRepository):
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
             cd_por_marca=self.settings.cd_por_marca,
+            tiendas_v=tiendas_v,
         )
         if not entradas.dim_tienda["activa"].any():
             from forusight.data.cadenas import marcas_por_cadena
@@ -482,8 +496,8 @@ class FuentesRepository(BigQueryRepository):
                 raise ValueError(
                     f"Ninguna tienda puede recibir {nombres}: las tiendas con stock o venta de la "
                     f"marca ({', '.join(sin_id[:15])}{'…' if len(sin_id) > 15 else ''}) no están "
-                    "en el maestro de tiendas de BigQuery ni en el catálogo, y su nombre en el "
-                    "stock no empieza con una cadena conocida. Agrégalas al maestro (p. ej. "
+                    "en el maestro de tiendas de BigQuery ni en el catálogo, y su nombre en la "
+                    "venta no empieza con una cadena conocida. Agrégalas al maestro (p. ej. "
                     "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
                 )
             raise ValueError(

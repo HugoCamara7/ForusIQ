@@ -265,6 +265,9 @@ def _datos_falsos():
         "ventas": ventas,
         "maestro_tiendas": tiendas,
         "maestro_cadena": cadena,
+        "tiendas_venta": pd.DataFrame(
+            {"tienda_cod": ["008", "012"], "desc_local": ["HP JOCKEY", "HP CHICLAYO"]}
+        ).rename(columns={"desc_local": "tienda_nombre"}),
         "venta_diaria": pd.DataFrame(
             {
                 "fecha": [(CORTE + pd.Timedelta(days=d)).date() for d in (1, 2)],
@@ -310,6 +313,7 @@ def test_flujo_completo_bigquery_maestros_y_motor():
         "ventas",
         "maestro_tiendas",
         "maestro_cadena",
+        "tiendas_venta",
         "venta_diaria",
     ]
     assert inp.venta_diaria["unidades"].sum() == 25 and set(inp.venta_diaria["tienda_id"]) == {"8"}
@@ -887,31 +891,48 @@ def test_azaleia_reciben_sus_tiendas_del_maestro():
     assert set(activas["tienda_id"]) == {"501", "502"} and set(activas["cadena"]) == {"AZALEIA"}
 
 
-def test_azaleia_tiendas_de_la_foto_sin_maestro_reponen():
-    """Tiendas AZALEIA que ya tienen stock pero aún no están en el maestro ni en el catálogo:
-    su nombre en la foto de stock («AZALEIA JOCKEY») basta para identificarlas y reponer.
+def test_azaleia_tiendas_de_la_venta_sin_maestro_reponen():
+    """Tiendas AZALEIA que ya venden pero aún no están en el maestro ni en el catálogo: se
+    leen todas las tiendas de la venta (cualquier marca) con su nombre y cadena, y reponen.
     Antes: «Ninguna tienda puede recibir AZALEIA»."""
     fake = _FakeBQ()
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
     foto = fake.datos["stock_foto"]
     fake.datos["stock_foto"] = pd.concat(
         [
-            foto.loc[foto["tienda_cod"].eq("008")].assign(
-                tienda_cod="501", tienda_nombre="AZALEIA JOCKEY"
-            ),
-            foto.loc[foto["tienda_cod"].eq("008")].assign(
-                tienda_cod="777", tienda_nombre="ECOMMERCE"
-            ),
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="501", tienda_nombre="1-501"),
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="777", tienda_nombre="1-777"),
             foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
         ]
     )
     fake.datos["ventas"] = fake.datos["ventas"].assign(tienda_cod="501")
+    fake.datos["tiendas_venta"] = pd.DataFrame(
+        {
+            "tienda_cod": ["501", "502", "777"],
+            "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA", "ECOMMERCE"],
+            "cadena": ["AZALEIA", None, "WEB"],
+        }
+    )
     inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
     dt = inp.dim_tienda.set_index("tienda_id")
     assert dt.loc["501", "activa"] and dt.loc["501", "cadena"] == "AZALEIA"
-    assert dt.loc["501", "origen_tienda"] == "foto de stock"
+    assert dt.loc["501", "nombre"] == "AZALEIA JOCKEY"
+    assert dt.loc["501", "origen_tienda"] == "venta / stock"
     assert not dt.loc["777", "activa"]  # sin cadena conocida: no recibe
     ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
+
+
+def test_azaleia_sin_stock_ni_venta_reciben_sus_tiendas_de_la_venta():
+    """Marca nueva: las tiendas de su cadena salen del listado de tiendas de la venta."""
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    fake.datos["tiendas_venta"] = pd.DataFrame(
+        {"tienda_cod": ["501"], "tienda_nombre": ["AZALEIA JOCKEY"], "cadena": ["AZALEIA"]}
+    )
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
+    assert set(activas["tienda_id"]) == {"501"} and activas["llenado_inicial"].all()
 
 
 def test_tiendas_con_stock_sin_identificar_es_mensaje_claro():
