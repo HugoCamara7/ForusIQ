@@ -167,6 +167,18 @@ provincia; con la ventana fija de 15 días se contaban pedidos ya recibidos. En 
 cuánto del tránsito son pedidos creados después del cierre del stock: cuentan para no enviar
 dos veces.
 
+**Pedidos de la madrugada (Neogística)**: desde las 8:00, la corrida del día no cuenta como
+tránsito los pedidos creados hoy antes de las 7:00 (hora de creación `fecreg_ph`, en hora de
+Lima): el archivo de Forusight los reemplaza y siempre se puede cargar. Lo creado después de
+las 7:00 sí cuenta (no enviar dos veces). Antes de las 8:00 no se excluye nada. Si la
+cabecera no trae la hora, Inicio lo avisa y no se excluye nada
+(`recepcion.excluir_pedidos_madrugada`, `hora_corte_pedidos`, `hora_inicio_exclusion`).
+
+En el Excel, Stock Trán. Int. = **Tránsito en CD** (aprobado, picking) + **Tránsito
+despachado** (documentado, en transporte, prerecepcionado). El tránsito de stock_bi ya no se
+muestra: es lo que sale de la tienda (el 12/10 no coincidía con el tránsito real en ninguna
+fila).
+
 ## Configuración de secretos
 
 Las credenciales **nunca** van en git: `.streamlit/secrets.toml` y `*.json` están en

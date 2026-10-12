@@ -96,12 +96,38 @@ if (
         "(1 por talla core) activa «Llenado inicial de marca nueva» arriba y vuelve a ejecutar.",
     )
 
-tr_nuevo = ((diag.get("transito_pedidos") or {}).get("creado_post_corte")) or 0
-if tr_nuevo:
+tr = diag.get("transito_pedidos") or {}
+if tr:
+    mad = tr.get("madrugada") or {}
+    corte = mad.get("hora_corte", 7)
+    partes = [
+        f"En el CD (aprobado, picking): {tr.get('en_cd', 0):,} u",
+        f"despachado (documentado, en transporte, prerecepcionado): {tr.get('despachado', 0):,} u",
+    ]
+    if tr.get("creado_post_corte"):
+        partes.append(
+            f"incluye {tr['creado_post_corte']:,} u de pedidos creados después del cierre del "
+            "stock (cuentan para no enviar dos veces)"
+        )
+    if not mad.get("con_hora"):
+        partes.append(
+            "la cabecera de pedidos no trae la hora de creación: no se pueden separar los "
+            f"pedidos de Neogística de antes de las {corte}:00"
+        )
+    elif mad.get("excluida"):
+        partes.append(
+            f"no cuentan {mad.get('unidades', 0):,} u de pedidos creados hoy antes de las "
+            f"{corte}:00 (Neogística)"
+        )
+    elif mad.get("unidades"):
+        partes.append(
+            f"{mad['unidades']:,} u son pedidos de hoy antes de las {corte}:00: todavía cuentan "
+            "(la corrida se hizo antes de las 8:00)"
+        )
     issue_box(
-        "info",
-        f"{tr_nuevo:,} u del tránsito son pedidos creados después del cierre del stock",
-        "Por ejemplo, un pedido aprobado hoy. Cuentan como tránsito para no enviar dos veces.",
+        "info" if mad.get("con_hora") else "warn",
+        f"Tránsito de pedidos: {tr.get('unidades', 0):,} u hacia {tr.get('tiendas', 0)} tiendas",
+        " · ".join(partes) + ".",
     )
 
 sin_plan = diag.get("tiendas_sin_planificacion") or []

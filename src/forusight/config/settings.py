@@ -268,6 +268,13 @@ class RecepcionParams(_Section):
     percentil_plazo: Literal[0.5, 0.9, 0.95] = 0.95
     margen_plazo_dias: int = Field(1, ge=0, le=15)
     min_pedidos_plazo: int = Field(5, ge=1, le=500)
+    #: Corrida del día desde las ``hora_inicio_exclusion``: los pedidos creados hoy antes de
+    #: las ``hora_corte_pedidos`` (los de Neogística, de la madrugada) no cuentan como tránsito,
+    #: así el archivo de Forusight los reemplaza y siempre se puede cargar. Los creados
+    #: después (p. ej. el propio archivo ya cargado) sí cuentan, para no enviar dos veces.
+    excluir_pedidos_madrugada: bool = True
+    hora_corte_pedidos: int = Field(7, ge=0, le=23)
+    hora_inicio_exclusion: int = Field(8, ge=0, le=23)
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: Recepcionado (4) no es tránsito. El stock_bi de fecha F es el cierre de F: lo

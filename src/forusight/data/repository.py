@@ -574,7 +574,7 @@ class FuentesRepository(BigQueryRepository):
                     m_a,
                     con_marcas,
                 ),
-                {"fecha_foto": foto},
+                {"fecha_foto": foto, "hoy": C.hoy_lima().date()},
             )
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
@@ -584,6 +584,11 @@ class FuentesRepository(BigQueryRepository):
             diag.notas.append(
                 "Tránsito: la cabecera de pedidos no tiene clasificación mapeada; se cuentan "
                 "todas las clasificaciones."
+            )
+        if "fecha_hora" not in m_h:
+            diag.notas.append(
+                "Tránsito: la cabecera de pedidos no tiene fecha y hora de registro mapeada "
+                "(fecreg); no se pueden separar los pedidos de la madrugada."
             )
         diag.filas["pedidos_tienda_sku"] = len(pedidos)
         entradas.plazos_entrega = self._plazos(q, tablas["pedidos"], m_h, foto, diag)
@@ -735,16 +740,35 @@ class FuentesRepository(BigQueryRepository):
             abierto = abierto & ~lineas["recepcionado"]
             desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
             lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
+            # Desde las 8:00, lo creado hoy antes de las 7:00 (Neogística) no cuenta.
+            fh = pd.to_datetime(
+                lineas["fecha_hora_pedido"]
+                if "fecha_hora_pedido" in lineas
+                else pd.Series(pd.NaT, index=lineas.index),
+                errors="coerce",
+            )
+            ahora = C.ahora_lima()
+            con_hora = bool(fh.notna().any() and (fh.dt.hour + fh.dt.minute > 0).any())
+            madrugada = (
+                (fh.dt.date == ahora.date())
+                & (fh.dt.hour < recepcion.hora_corte_pedidos)
+                & con_hora
+                & recepcion.excluir_pedidos_madrugada
+                & (ahora.hour >= recepcion.hora_inicio_exclusion)
+            ).fillna(False)
+            abierto = abierto & ~madrugada
             lineas["cuenta_transito"] = abierto & clase_ok
             lineas["motivo"] = np.select(
                 [
                     lineas["recepcionado"],
+                    madrugada,
                     ~clase_ok,
                     despachado & (dias > lineas["plazo_tienda"]),
                     abierto,
                 ],
                 [
                     "Ya recepcionado",
+                    f"Creado hoy antes de las {recepcion.hora_corte_pedidos}:00 (Neogística)",
                     "Clasificación que no cuenta",
                     "Despachado hace más que el plazo de la tienda: ya llegó",
                     "Cuenta como tránsito",

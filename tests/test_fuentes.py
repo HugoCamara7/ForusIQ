@@ -577,6 +577,7 @@ def test_sql_pedidos_une_cabecera_y_detalle():
         "clasificacion": "clasificacion_ph",
         "fecha": "fecped_ph",
         "fecha_recepcion": "fecrec_ph",
+        "fecha_hora": "fecreg_ph",
     }
     m_d = {
         "nro_pedido": "nroped_pd",
@@ -589,7 +590,9 @@ def test_sql_pedidos_une_cabecera_y_detalle():
     assert "NULLIF(SAFE_CAST(d.`candes_pd` AS FLOAT64), 0)" in sql  # despachada o pedida
     assert "@desde_pedidos" not in sql  # todo el historial de pedidos
     assert "SAFE_CAST(h.`fecrec_ph` AS DATE) > @fecha_foto" in sql
-    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8\n" in sql + "\n"
+    assert "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9\n" in sql + "\n"
+    # minutos desde la medianoche (hora de Lima) de los pedidos creados hoy
+    assert "= @hoy" in sql and "'America/Lima'" in sql and "AS minuto_creacion_hoy" in sql
     assert "DATE_DIFF(@fecha_foto, SAFE_CAST(h.`fecped_ph` AS DATE), DAY)" in sql
 
 
@@ -987,3 +990,46 @@ def test_transito_creado_despues_del_corte():
         }
     )
     assert TR.transito_post_corte(SimpleNamespace(pedidos=p), params()) == 4
+
+
+def test_desde_las_8_no_cuentan_los_pedidos_de_hoy_antes_de_las_7():
+    """Neogística crea sus pedidos en la madrugada: la corrida de las 8:00 en adelante no los
+    cuenta como tránsito (los reemplaza el archivo de Forusight). Lo creado después de las
+    7:00 (p. ej. el propio archivo ya cargado) sí cuenta, para no enviar dos veces."""
+    from dataclasses import dataclass, replace
+
+    from forusight.data import transito as TR
+
+    @dataclass
+    class Inp:
+        pedidos: pd.DataFrame
+        stock_tienda: pd.DataFrame
+        plazos_entrega: pd.DataFrame | None = None
+
+    ped = pd.DataFrame(
+        {
+            "tienda_id": ["8", "8", "8", "8"],
+            "sku": ["1", "2", "3", "4"],
+            "estado": [1, 1, 6, 1],
+            "clasificacion": [1, 1, 1, 1],
+            "recepcionado": [False] * 4,
+            "dias_pedido": [-1, -1, 1, 3],
+            # 06:10 hoy, 09:30 hoy, ayer, ayer
+            "minuto_creacion_hoy": [370, 570, np.nan, np.nan],
+            "unidades": [4.0, 2.0, 3.0, 1.0],
+        }
+    )
+    st = pd.DataFrame({"tienda_id": ["8"], "sku": ["1"], "stock_disponible": [1.0]})
+    inp = Inp(ped, st)
+    p = params()
+    antes = TR.aplicar_pedidos(inp, p, excluir_madrugada=False).stock_tienda
+    despues = TR.aplicar_pedidos(inp, p, excluir_madrugada=True).stock_tienda
+    assert antes["stock_transito"].sum() == 10
+    d = despues.set_index("sku")
+    assert d["stock_transito"].sum() == 6 and d.loc["1", "stock_transito"] == 0
+    assert d["transito_en_cd"].sum() == 3 and d["transito_despachado"].sum() == 3
+    res = TR.resumen_madrugada(inp, p)
+    assert res == {"con_hora": True, "unidades": 4, "hora_corte": 7}
+    # sin hora en la cabecera (todo 00:00) no se excluye nada
+    sin_hora = replace(inp, pedidos=ped.assign(minuto_creacion_hoy=0))
+    assert TR.aplicar_pedidos(sin_hora, p, True).stock_tienda["stock_transito"].sum() == 10
