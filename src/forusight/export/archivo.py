@@ -78,7 +78,8 @@ COLUMNAS: list[Col] = [
     _num("Stock en CD", ancho=10, siempre=True),
     _num("Stock Físico [un]", "#,##0.0", "#C4A687", siempre=True),
     _num("Stock Trán. Int. [un]", "#,##0.0", "#C4A687"),
-    _num("Tránsito stock_bi [un]", "#,##0.0", "#C4A687"),
+    _num("Tránsito en CD [un]", "#,##0.0", "#C4A687"),
+    _num("Tránsito despachado [un]", "#,##0.0", "#C4A687"),
     _num("Posición Stock [un]", "#,##0.0", "#C4A687", siempre=True),
     Col("Cantidad Pedida Final [un]", "#C2C567", "#,##0", 10, True, rojo=True, siempre=True),
     _num("Unidad Empaque Distribución", ancho=15),
@@ -261,14 +262,17 @@ def construir_tabla(
     out["Stock Físico [un]"] = fisico
     if d["stock_transito"].gt(0).any():  # la fuente de stock actual no trae tránsito
         out["Stock Trán. Int. [un]"] = d["stock_transito"]
-    if stock_tienda is not None and "stock_transito_bi" in stock_tienda:
-        bi = stock_tienda.groupby(["tienda_id", "sku"])["stock_transito_bi"].sum()
-        tr_bi = pd.MultiIndex.from_frame(d[["tienda_id", "sku"]].astype(str)).map(
-            bi.rename(index=str).to_dict().get
-        )
-        tr_bi = pd.Series(tr_bi, index=d.index, dtype=float).fillna(0.0)
-        if tr_bi.ne(0).any():
-            out["Tránsito stock_bi [un]"] = tr_bi
+    # Detalle del tránsito de pedidos: en el CD (aprobado, picking) + despachado = Trán. Int.
+    for col, nombre in (
+        ("transito_en_cd", "Tránsito en CD [un]"),
+        ("transito_despachado", "Tránsito despachado [un]"),
+    ):
+        if stock_tienda is not None and col in stock_tienda and d["stock_transito"].gt(0).any():
+            serie = stock_tienda.groupby(["tienda_id", "sku"])[col].sum()
+            v = pd.MultiIndex.from_frame(d[["tienda_id", "sku"]].astype(str)).map(
+                serie.rename(index=str).to_dict().get
+            )
+            out[nombre] = pd.Series(v, index=d.index, dtype=float).fillna(0.0)
     out["Posición Stock [un]"] = posicion
     out["Cantidad Pedida Final [un]"] = d["cantidad"]
     out["Unidad Empaque Distribución"] = (

@@ -149,13 +149,35 @@ con dato real (no se inventan costos, clases de demanda, backorder…) y filas c
 «Aprobar y descargar» aprueba la propuesta y descarga el archivo; la aprobación no se guarda.
 Al cargar el archivo en el sistema se crean los pedidos, y la próxima corrida los ve como
 tránsito en las tablas de pedidos (`pedidos_header_table` + `pedidos_detail_table`):
-estados Aprobado, en Picking y Documentado (todo el historial) y en Transporte o
-Prerecepcionado de los últimos 15 días; clasificaciones Reposición, Llenado de canal y Traspaso
+estados Aprobado y en Picking (todo el historial) y Documentado, en Transporte o
+Prerecepcionado dentro del plazo de entrega de la tienda; clasificaciones Reposición, Llenado de canal y Traspaso
 tiendas. Recepcionado, con fecha de recepción `fecrec_ph`, línea en estado 4 o 6/7 más antiguo
 se toman como ya recibidos. El stock_bi de fecha F es el cierre de ese día: el stock físico es
 ese stock menos la venta neta posterior a F y más lo recepcionado después de F (con el corte de
 ayer no cambia; un lunes, con el corte del sábado, descuenta y suma el domingo). El CD se
 reparte con el disponible del stock.
+
+**Plazo de entrega por tienda** (sin reportes externos): con los pedidos recibidos de los
+últimos 120 días se mide, por tienda, cuántos días pasan entre el pedido y su recepción
+(Conexión → «Medir plazos de entrega»). Aprobado y en Picking (aún en el CD) cuentan como
+tránsito con todo el historial; Documentado, en Transporte y Prerecepcionado (ya despachados)
+sólo hasta el percentil 95 de su tienda + 1 día (sin datos: 7 días). Más antiguo, ya llegó y
+quedó sin cerrar. En los reportes del 01–12/10 los pedidos llegaban en 1 día a Lima y en 2–5 a
+provincia; con la ventana fija de 15 días se contaban pedidos ya recibidos. En Inicio se informa
+cuánto del tránsito son pedidos creados después del cierre del stock: cuentan para no enviar
+dos veces.
+
+**Pedidos de la madrugada (Neogística)**: desde las 8:00, la corrida del día no cuenta como
+tránsito los pedidos creados hoy antes de las 7:00 (hora de creación `fecreg_ph`, en hora de
+Lima): el archivo de Forusight los reemplaza y siempre se puede cargar. Lo creado después de
+las 7:00 sí cuenta (no enviar dos veces). Antes de las 8:00 no se excluye nada. Si la
+cabecera no trae la hora, Inicio lo avisa y no se excluye nada
+(`recepcion.excluir_pedidos_madrugada`, `hora_corte_pedidos`, `hora_inicio_exclusion`).
+
+En el Excel, Stock Trán. Int. = **Tránsito en CD** (aprobado, picking) + **Tránsito
+despachado** (documentado, en transporte, prerecepcionado). El tránsito de stock_bi ya no se
+muestra: es lo que sale de la tienda (el 12/10 no coincidía con el tránsito real en ninguna
+fila).
 
 ## Configuración de secretos
 
@@ -240,6 +262,20 @@ necesidad por tienda×SKU coincide en 79% de las filas de HUSH PUPPIES, 86% de C
 61% de VANS; lo que no coincide son sobre todo cargas manuales ("Carga Pedidos").
 
 Supuestos que conviene validar están marcados como `PENDIENTE` en `params.yaml`.
+
+### Sin depender de Neogística
+
+La corrida **no necesita ningún archivo de Neogística**. El stock mínimo (SMT), la unidad de
+empaque y la categoría por tienda × SKU salen del maestro de planificación guardado
+(`config/planificacion_claves.csv.gz`, actualizado con los reportes del 01 al 12/10/2026), que
+**no vence** (`nivel_neo.dias_maximos: 0`): vale el último dato conocido de cada clave. Nivel y
+punto de reorden se calculan con la venta de BigQuery.
+
+Por qué alcanza (6 reportes del 01–12/10/2026): el SMT no sale de una fórmula de la venta (la
+mejor regla con venta/stock acierta 68 %; "siempre 1", 76 %), pero es muy estable: cambia en el
+3,5 % de las claves entre reportes (sobre todo los lunes) y el último SMT conocido acierta el
+94,5 % una semana después. Claves nuevas: moda del SKU en otras tiendas (73 %). Subir un
+reporte en Parámetros → «Planificación (opcional)» sólo refresca ese maestro.
 
 ## Relevamiento del esquema fuente
 

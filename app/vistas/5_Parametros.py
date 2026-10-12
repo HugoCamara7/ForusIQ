@@ -79,7 +79,7 @@ def _aplicar_yaml(clave: str) -> None:
 # Conexión), el formulario se vuelve a crear con los valores vigentes en vez de conservar los
 # viejos (que «Aplicar a la sesión» volvería a imponer).
 VER = huella_params()
-tab_form, tab_yaml, tab_plan = st.tabs(["Formulario", "YAML avanzado", "Planificación Neogística"])
+tab_form, tab_yaml, tab_plan = st.tabs(["Formulario", "YAML avanzado", "Planificación (opcional)"])
 with tab_form, st.form("form_params"):
     nuevos = {}
     for seccion in EngineParams.model_fields:
@@ -108,8 +108,9 @@ with tab_yaml:
 
 with tab_plan:
     st.caption(
-        "Stock mínimo, nivel, punto de reorden y empaque por tienda × SKU salen de los reportes "
-        "de distribución de Neogística. Sube el más reciente de cada ruta cuando cambie: queda "
-        "guardado y lo usan la pantalla y la corrida de las 6:30."
+        "Opcional: la corrida no necesita ningún archivo de Neogística. Usa el maestro de "
+        "planificación guardado (stock mínimo, empaque y categoría por tienda × SKU), que no "
+        "vence, y calcula nivel y punto de reorden con la venta de BigQuery. Si alguna vez "
+        "subes un reporte de distribución, sólo actualiza ese maestro."
     )
     carga_planificacion()

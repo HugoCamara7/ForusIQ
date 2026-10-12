@@ -95,7 +95,8 @@ def test_columnas_son_del_reporte_y_en_su_orden(corrida):
         "Motivo Forusight",
         "Venta desde ruta anterior [un]",
         "Venta después del corte [un]",
-        "Tránsito stock_bi [un]",
+        "Tránsito en CD [un]",
+        "Tránsito despachado [un]",
     }
     nombres = [n for n in nombres if n not in propias]
     assert set(nombres) <= set(NEOGISTICA), set(nombres) - set(NEOGISTICA)
@@ -280,24 +281,32 @@ def test_github_store_dos_guardados_seguidos_no_chocan():
         s.guardar("rutas/excepciones.csv", b"d", "4")
 
 
-def test_transito_de_stock_bi_va_aparte_y_no_cambia_la_posicion(corrida):
-    """Dos tránsitos para comparar: el de pedidos (Stock Trán. Int., el que usa la posición) y
-    el de stock_bi (Tránsito stock_bi), sólo informativo."""
+def test_transito_se_ve_en_cd_y_despachado_y_suma_el_total(corrida):
+    """El tránsito de pedidos (Stock Trán. Int.) se abre en lo que sigue en el CD y lo ya
+    despachado; el de stock_bi (salida de la tienda) no se muestra."""
     inp, corte, p, r = corrida
-    base = _tabla(corrida)
-    assert "Tránsito stock_bi [un]" not in base  # sin dato no se muestra
-    det = r.detalle
-    fila = det.loc[det["stock_tienda"] > 0].iloc[0]
+    det = r.detalle.copy()
+    i = det.index[det["stock_tienda"] > 0][0]
+    det.loc[i, "stock_transito"] = 5
     st = pd.DataFrame(
-        {"tienda_id": [fila["tienda_id"]], "sku": [fila["sku"]], "stock_transito_bi": [7.0]}
+        {
+            "tienda_id": [det.loc[i, "tienda_id"]],
+            "sku": [det.loc[i, "sku"]],
+            "transito_en_cd": [2.0],
+            "transito_despachado": [3.0],
+            "stock_transito_bi": [7.0],
+        }
     )
     t = construir_tabla(
         det, inp.ventas, inp.dim_producto, inp.dim_tienda, p, corte, stock_tienda=st
     )
-    assert t["Tránsito stock_bi [un]"].sum() == 7
-    pd.testing.assert_series_equal(t["Posición Stock [un]"], base["Posición Stock [un]"])
+    assert "Tránsito stock_bi [un]" not in t
+    assert t["Tránsito en CD [un]"].sum() == 2 and t["Tránsito despachado [un]"].sum() == 3
+    fila = t.loc[t["Tránsito en CD [un]"] > 0].iloc[0]
+    assert fila["Stock Trán. Int. [un]"] == 5 and fila["Tránsito despachado [un]"] == 3
     cols = list(t.columns)
-    assert cols.index("Tránsito stock_bi [un]") < cols.index("Posición Stock [un]")
+    assert cols.index("Stock Trán. Int. [un]") < cols.index("Tránsito en CD [un]")
+    assert cols.index("Tránsito despachado [un]") < cols.index("Posición Stock [un]")
 
 
 def test_excel_dice_de_que_cierre_es_el_stock(corrida):

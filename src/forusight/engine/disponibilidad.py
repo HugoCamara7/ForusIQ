@@ -100,12 +100,17 @@ def kpis(detalle: pd.DataFrame) -> dict:
 
     * disponibilidad simple = SKU disponibles / SKU activos (quiebre = 1 − disponibilidad);
     * disponibilidad ponderada = misma cuenta ponderando cada SKU por su venta de 12 semanas;
+    * disponibilidad con tránsito = además cuenta la talla que ya va en camino;
     * WOS (semanas de cobertura) = (stock + tránsito [+ envío]) / demanda semanal.
-    Un SKU sin stock que el CD tampoco tiene no cuenta como quiebre (no se puede reponer).
+    SKU activo = talla de un modelo que la tienda maneja, con stock o con stock objetivo
+    (planificada): una talla que no se planifica para la tienda (objetivo 0) no se repone y
+    no cuenta como quiebre. Un SKU sin stock que el CD tampoco tiene tampoco cuenta.
     """
     d = detalle.copy()
     manejados = por_modelo(d)[KEY]
     d = d.merge(manejados, on=KEY)
+    if "stock_objetivo" in d:  # sólo tallas planificadas (o con stock)
+        d = d.loc[(d["stock_tienda"].fillna(0) > 0) | (d["stock_objetivo"].fillna(0) > 0)]
     if d.empty:
         return {"activos": 0}
     stock = d["stock_tienda"].fillna(0).to_numpy(dtype=float)
@@ -122,6 +127,7 @@ def kpis(detalle: pd.DataFrame) -> dict:
         "activos": int(len(d)),
         "simple_antes": float(ok_a.mean()),
         "simple_despues": float(ok_d.mean()),
+        "con_transito_antes": float(((stock + trans > 0) | sin_cd).mean()),
         "ponderada_antes": float(np.average(ok_a, weights=w)),
         "ponderada_despues": float(np.average(ok_d, weights=w)),
         "wos_antes": float((stock + trans).sum() / dem_t) if dem_t > 0 else float("nan"),

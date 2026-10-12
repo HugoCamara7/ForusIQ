@@ -169,64 +169,12 @@ if st.button("Revisar venta"):
         st.error(explicar_error(exc))
 
 st.divider()
-st.subheader("Comparar stock del CD con el reporte")
-st.caption(
-    "stock_bi trae para el CD 320 stock_tiendas, stock_bodega, las reservas (pedidos, retail, "
-    "wholesale, multicanal, e-commerce) y el disponible. Sube el reporte del día en la barra "
-    "lateral y compara qué opción coincide con su «Stock en CD»."
-)
-if st.button("Comparar stock del CD", disabled=not st.session_state.get("reporte")):
-    ss = st.session_state
-    from app.components.estado import _leer_reporte
-
-    from forusight.data import reporte as R
-
-    try:
-        rep, _ = _leer_reporte(ss.reporte[0])
-        marcas = tuple(ss.get("marcas_reporte") or ss.get("marcas") or ()) or None
-        rep = R.filtrar_marcas(rep, list(marcas) if marcas else None)
-        entradas_bq, _ = cargar_entradas(
-            "bigquery", pd.Timestamp(ss.fecha_corte).date().isoformat(), None, "", marcas
-        )
-        ss.comparacion_cd = R.comparar_stock_cd(entradas_bq.stock_cd, rep)
-    except Exception as exc:
-        st.error(explicar_error(exc))
-
-if st.session_state.get("comparacion_cd"):
-    ss = st.session_state
-    resumen, detalle = ss.comparacion_cd
-    st.dataframe(
-        resumen,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "opcion": "Stock CD de BigQuery",
-            "sku_iguales": st.column_config.ProgressColumn(
-                "SKU iguales al reporte", format="percent", min_value=0, max_value=1
-            ),
-            "unidades_bigquery": "Unidades BigQuery",
-            "unidades_reporte": "Unidades reporte",
-            "sku_con_mas_stock": "SKU con más stock",
-            "sku_con_menos_stock": "SKU con menos stock",
-        },
-    )
-    mejor = resumen.iloc[0]["opcion"] if len(resumen) else None
-    st.caption(f"Hoy se reparte: «{ss.params.stock_cd.componentes}».")
-    if (
-        mejor
-        and mejor != ss.params.stock_cd.componentes
-        and st.button(f"Usar «{mejor}» como stock del CD", type="primary")
-    ):
-        ss.params.stock_cd.componentes = mejor
-        st.success(f"Listo: el CD se reparte con «{mejor}». Guárdalo en Parámetros.")
-    with st.expander("Detalle por SKU"):
-        st.dataframe(detalle, hide_index=True, width="stretch")
-
-st.divider()
 st.subheader("Revisar tránsito")
 st.caption(
     "Muestra cada línea de pedido hacia la tienda (todo el historial), si "
-    "cuenta como tránsito con las reglas de Parámetros → recepcion, y cuántas veces aparece "
+    "cuenta como tránsito con las reglas de Parámetros → recepcion y por qué (motivo; un "
+    "pedido despachado deja de contar al pasar el plazo de entrega de la tienda), y cuántas "
+    "veces aparece "
     "en las tablas (repetida = copia de staging, cuenta una sola vez). Abajo, los locales "
     "destino de los últimos 3 días: así se ve si una tienda llega con otro código."
 )
@@ -254,46 +202,57 @@ if rev:
         c1.metric("Tránsito que cuenta", f"{int(cuenta['unidades'].sum()):,} u")
         c2.metric("Pedidos que cuentan", f"{cuenta['nro_pedido'].nunique():,}")
         c3.metric("Líneas repetidas", f"{int(lineas['repetida'].sum()):,}")
+        if "motivo" in lineas:
+            st.dataframe(
+                lineas.groupby("motivo", as_index=False)
+                .agg(lineas=("unidades", "size"), unidades=("unidades", "sum"))
+                .sort_values("unidades", ascending=False),
+                hide_index=True,
+                width="stretch",
+            )
         st.dataframe(lineas, hide_index=True, width="stretch")
     if len(locales):
         st.markdown("**Locales destino de los últimos 3 días**")
         st.dataframe(locales, hide_index=True, width="stretch")
 
-st.markdown("**Comparar el tránsito con el reporte de Neogística**")
+st.markdown("**Plazo de entrega de cada tienda**")
 st.caption(
-    "Sube el reporte de distribución del día: se leen los pedidos de todas sus tiendas y se "
-    "compara, tienda × SKU, con su Stock Trán. Int. + Prov. La tabla dice, por estado y "
-    "clasificación, cuántas unidades caen donde Neogística tiene tránsito. Úsalo el mismo día "
-    "del reporte: los pedidos creados después del reporte no pueden estar en él."
+    "Días entre la fecha del pedido y su fecha de recepción, con los pedidos recibidos en los "
+    "últimos 120 días (reposición, llenado y traspasos). Un pedido ya despachado (documentado, "
+    "en transporte, prerecepcionado) cuenta como tránsito sólo hasta «Plazo tránsito» días: "
+    "más antiguo, ya llegó y quedó sin cerrar. Sale de nuestros pedidos, sin reportes externos."
 )
-rep_tr = st.file_uploader("Reporte de Neogística", type=["xlsx"], key="rep_transito")
-if rep_tr is not None and st.button("Comparar tránsito", key="comparar_transito"):
-    from forusight.data import fuentes as F
-    from forusight.data import reporte as R
-
+if st.button("Medir plazos de entrega", key="medir_plazos"):
     try:
-        rep_df, fecha_rep = R.leer_reporte(rep_tr.getvalue())
-        tiendas_rep = sorted(set(rep_df[R.CENTRO].map(F.codigo_tienda)) - {""})
-        lineas_rep, _ = repo.revisar_transito(
-            tiendas_rep,
-            st.session_state.params.recepcion,
-            fecha_rep.date() if fecha_rep is not None else None,
+        st.session_state.plazos_entrega = repo.plazos_entrega(
+            pd.Timestamp.today().date(), st.session_state.params.recepcion
         )
-        st.session_state.comparacion_transito = F.comparar_transito(lineas_rep, rep_df)
     except Exception as exc:
         st.error(explicar_error(exc))
-comp = st.session_state.get("comparacion_transito")
-if comp:
-    resumen_c, tabla_c = comp
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Tránsito Neogística", f"{resumen_c['transito_neogistica']:,.0f} u")
-    k2.metric("Tránsito Forusight", f"{resumen_c['transito_forusight']:,.0f} u")
-    k3.metric("Tienda × SKU iguales", f"{resumen_c['filas_iguales']:.1%}")
-    st.caption(
-        f"Forusight tiene más en {resumen_c['filas_forusight_mas']:,} filas y menos en "
-        f"{resumen_c['filas_forusight_menos']:,}."
-    )
-    st.dataframe(tabla_c, hide_index=True, width="stretch")
+plz = st.session_state.get("plazos_entrega")
+if plz is not None:
+    if plz.empty:
+        st.warning(
+            "No hay pedidos con fecha de recepción en los últimos 120 días: revisa el mapeo de "
+            "`fecha` y `fecha_recepcion` de la cabecera de pedidos."
+        )
+    else:
+        vista = plz.rename(
+            columns={
+                "tienda_id": "Tienda",
+                "pedidos": "Pedidos recibidos",
+                "dias_p50": "Días (mediana)",
+                "dias_p90": "Días (90 %)",
+                "dias_p95": "Días (95 %)",
+                "dias_max": "Días (máx.)",
+                "plazo_transito": "Plazo tránsito",
+            }
+        )
+        st.dataframe(vista, hide_index=True, width="stretch")
+        st.caption(
+            f"Tiendas con menos de {st.session_state.params.recepcion.min_pedidos_plazo} pedidos "
+            f"recibidos usan {st.session_state.params.recepcion.dias_transito_recientes} días."
+        )
 
 st.divider()
 st.subheader("Explorar tablas: pedidos, despachos, ingresos y ARTI")
