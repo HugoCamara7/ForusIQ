@@ -288,10 +288,15 @@ def construir_tabla(
     # sólo columnas con dato real (las operativas siempre)
     siempre = {c.nombre for c in COLUMNAS if c.siempre}
     semanas_txt = [s.strftime("%Y-%m-%d") for s in semanas]
-    cols = [c for c in out.columns if c in siempre or c in semanas_txt or out[c].notna().any()]
-    out = out[cols].sort_values(
-        ["Código Centro", "Código Modelo", "Talla"], kind="mergesort", key=lambda s: s.astype(str)
-    )
+    orden = ["Código Centro", "Código Modelo", "Talla"]
+    # las de orden siempre: un día sin despacho (fin de semana, feriado) deja la tabla vacía y,
+    # sin ellas, el sort fallaba (KeyError 'Código Centro')
+    cols = [
+        c
+        for c in out.columns
+        if c in siempre or c in orden or c in semanas_txt or out[c].notna().any()
+    ]
+    out = out[cols].sort_values(orden, kind="mergesort", key=lambda s: s.astype(str))
     return out.reset_index(drop=True)
 
 
