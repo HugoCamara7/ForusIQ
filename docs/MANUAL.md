@@ -27,7 +27,7 @@ del stock), así que se usa **el primer archivo del día**.
 
 | Dato | Fuente | Nota |
 |---|---|---|
-| Stock de tiendas y del CD | `stock_bi` (último corte) | El corte de fecha F es el cierre del día F. |
+| Stock de tiendas y del CD | `stock_bi` (último corte) | Stock con fecha de corte 12/10 = stock al cierre del 12/10. |
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
 | Producto | ARTI | SKU, modelo, color, talla, marca, clase, género. |
@@ -41,11 +41,13 @@ del stock), así que se usa **el primer archivo del día**.
 
 ### 3.1 Stock físico de la tienda
 ```
-Stock Físico = stock_bi (cierre del día F)
-             − venta neta posterior a F (hasta ayer)
-             + recepcionado posterior a F
+Stock Físico = stock_bi (stock al cierre del día de corte)
+             − venta posterior al día de corte (hasta ayer)
+             + lo recibido después del día de corte
 ```
-Con el corte de ayer no cambia nada. Un lunes, con el corte del sábado, se ajusta el domingo.
+La **fecha de corte** es el día cuyo cierre trae stock_bi: el lunes 13/10 llega el stock con fecha
+de corte 12/10, que es el stock al cierre del domingo 12/10. Con el corte de ayer no cambia nada;
+un lunes con el corte del sábado, se ajusta lo del domingo.
 
 ### 3.2 Tránsito y posición
 ```
@@ -77,12 +79,19 @@ y el último valor conocido acierta el 94,5 % una semana después.
 
 ### 3.5 Nivel máximo y punto de reorden
 ```
-d             = Pronóstico × (Leadtime + Período Revisión) ÷ 7
-Nivel Máximo  = máx( Stock Mínimo ; ⌈ d + 0,84 × √d ⌉ )
-Punto Reorden = Nivel Máximo − 1
+1. Demanda hasta el próximo envío = Pronóstico × (Leadtime + Período Revisión) ÷ 7
+2. Seguridad     = 0,84 × raíz cuadrada(Demanda hasta el próximo envío)
+3. Nivel Máximo  = el mayor entre Stock Mínimo y (Demanda + Seguridad) redondeado hacia arriba
+4. Punto Reorden = Nivel Máximo − 1
 ```
-Ejemplo: Pronóstico 1 par/semana, Leadtime 3, Revisión 2,33 → d = 0,76 →
-⌈0,76 + 0,73⌉ = 2 → Nivel 2, Reorden 1.
+Se divide entre 7 para pasar de unidades por semana a unidades por día; el 0,84 da ≈ 80 % de
+seguridad por si la tienda vende más de lo esperado.
+
+Ejemplo: Pronóstico 1 par/semana, Leadtime 3 días, Revisión 2,33 días.
+1. Demanda = 1 × (3 + 2,33) ÷ 7 = 0,76 pares.
+2. Seguridad = 0,84 × raíz(0,76) = 0,73.
+3. 0,76 + 0,73 = 1,49 → redondeado hacia arriba = 2; Stock Mínimo 1 → **Nivel Máximo 2**.
+4. **Punto Reorden 1**: si la tienda tiene 1 par o menos (stock + tránsito), se envía hasta 2.
 
 Una talla sin stock, tránsito ni venta, o de un modelo sin venta reciente en la tienda, no se
 evalúa (nivel 0), igual que en el reporte.

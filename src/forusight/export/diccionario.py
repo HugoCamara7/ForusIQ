@@ -155,7 +155,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         VENTA,
         "Venta posterior al cierre del stock: todavía no está descontada del Stock Físico.",
         "SUMA(venta diaria neta, notas de crédito en negativo) con fecha > fecha_corte del stock "
-        "y antes de hoy (el corte de fecha F es el cierre del día F).",
+        "y antes de hoy (la fecha de corte es el día cuyo cierre trae stock_bi).",
         "ft_pe_venta_retail + stock_bi · fecha_corte",
         "No está en el reporte: el reporte ya la trae descontada de su Stock Físico.",
     ),
@@ -213,11 +213,12 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Nivel Máximo [un]": (
         NIVELES,
         "Stock que la talla debe tener para cubrir hasta la próxima ruta.",
-        "Nivel Máximo = máx(Stock Mínimo Total; ⌈d + 0,84·√d⌉), con d = Pronóstico × (Leadtime "
-        "+ Período Revisión) ÷ 7 (misma estructura del reporte de distribución; 0,84 ≈ 80 % de "
-        "nivel de servicio). Ej.: Pronóstico 1 par/sem, Leadtime 3 y Revisión 2,33 → d = 0,76 → "
-        "⌈0,76 + 0,73⌉ = 2. Talla sin stock, tránsito ni venta, o modelo sin venta reciente en "
-        "la tienda: 0 (no se evalúa, como en el reporte).",
+        "1) Demanda hasta el próximo envío = Pronóstico × (Leadtime + Período Revisión) ÷ 7. "
+        "2) Seguridad = 0,84 × raíz cuadrada de esa demanda (≈ 80 % de servicio). 3) Nivel "
+        "Máximo = el mayor entre Stock Mínimo Total y (Demanda + Seguridad) redondeado hacia "
+        "arriba. Ej.: Pronóstico 1 par/sem, Leadtime 3 y Revisión 2,33 → Demanda 0,76; "
+        "Seguridad 0,73; 1,49 → 2. Talla sin stock, tránsito ni venta, o modelo sin venta "
+        "reciente en la tienda: 0 (no se evalúa, como en el reporte).",
         "Motor Forusight + maestro de planificación",
         "Debe coincidir; si no, mirar Stock Mínimo Total y Pronóstico.",
     ),
@@ -252,9 +253,10 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         STOCK,
         "Stock de la tienda hoy: el del corte de stock, menos lo vendido y más lo recepcionado "
         "después del corte.",
-        "stock_tiendas del último fecha_corte de este año (el corte de fecha F es el cierre del "
-        "día F) − venta neta con fecha > F + recepcionado con fecha de recepción > F (con el "
-        "corte de ayer no cambia; un lunes, con el corte del sábado, ajusta el domingo).",
+        "stock_tiendas del último fecha_corte (el stock al cierre de ese día; el lunes 13/10 "
+        "llega el del 12/10) − venta neta posterior a la fecha de corte + lo recibido después "
+        "de la fecha de corte (con el corte de ayer no cambia; un lunes con el corte del sábado, "
+        "ajusta el domingo).",
         "stock_bi · stock_tiendas",
         "Debe coincidir con el «Stock Físico» del reporte (12/10: 100 % igual).",
     ),
