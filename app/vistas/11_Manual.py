@@ -8,6 +8,7 @@ from app.components.ui import hero
 from forusight.export.archivo import diccionario_excel
 
 MANUAL = Path(__file__).resolve().parents[2] / "docs" / "MANUAL.md"
+WORD = MANUAL.with_name("Manual_Forusight.docx")
 
 hero(
     "Manual",
@@ -16,15 +17,16 @@ hero(
 )
 texto = MANUAL.read_text(encoding="utf-8") if MANUAL.exists() else "Manual no encontrado."
 c1, c2 = st.columns(2)
-c1.download_button(
-    "Descargar manual",
-    texto.encode("utf-8"),
-    file_name="Manual_Forusight.md",
-    mime="text/markdown",
-    icon=":material/description:",
-    width="stretch",
-    key="dl_manual",
-)
+if WORD.exists():
+    c1.download_button(
+        "Descargar manual (Word)",
+        WORD.read_bytes(),
+        file_name="Manual_Forusight.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        icon=":material/description:",
+        width="stretch",
+        key="dl_manual",
+    )
 c2.download_button(
     "Descargar diccionario de columnas",
     data=diccionario_excel,
