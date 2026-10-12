@@ -237,10 +237,29 @@ def aplicar_manuales(base: pd.DataFrame | None, manuales: pd.DataFrame | None) -
     )
 
 
+def orden_temporada(nombre) -> int | None:
+    """«VERANO 2026» → 4053, «INVIERNO 2027» → 4054: INVIERNO 2026 < VERANO 2026 < INVIERNO
+    2027 (el verano de un año va de fin de ese año a inicio del siguiente). None si no es
+    VERANO/INVIERNO con año."""
+    import re
+
+    m = re.fullmatch(r"(VERANO|INVIERNO)\s+(\d{4})", str(nombre or "").strip().upper())
+    if not m:
+        return None
+    return int(m.group(2)) * 2 + (1 if m.group(1) == "VERANO" else 0)
+
+
 def fuera_de_surtido(
-    tienda: pd.Series, modelo_color: pd.Series, temporada: pd.Series | None, bloq, temporadas
+    tienda: pd.Series,
+    modelo_color: pd.Series,
+    temporada: pd.Series | None,
+    bloq,
+    temporadas,
+    desde: str | None = None,
 ) -> tuple[pd.Series, pd.Series]:
-    """(bloqueado, fuera_de_temporada) por fila. ``temporadas`` vacío = todas."""
+    """(bloqueado, fuera_de_temporada) por fila. Se reponen las temporadas de ``temporadas``
+    y, con ``desde``, toda VERANO/INVIERNO de esa en adelante. Sin ninguna de las dos = todas.
+    Sin temporada conocida: se repone."""
     mc = modelo_color.astype("string").str.upper()
     clave = tienda.astype(str) + "|" + mc
     if bloq is not None and len(bloq):
@@ -249,9 +268,14 @@ def fuera_de_surtido(
     else:
         bloqueado = pd.Series(False, index=tienda.index)
     activas = {str(t).strip().upper() for t in temporadas or [] if str(t).strip()}
-    if activas and temporada is not None:
+    minimo = orden_temporada(desde) if desde else None
+    if (activas or minimo is not None) and temporada is not None:
         t = temporada.astype("string").str.strip().str.upper()
-        fuera = t.notna() & ~t.isin(activas)
+        ok = t.isin(activas)
+        if minimo is not None:
+            orden = t.map(lambda x: orden_temporada(x) if pd.notna(x) else None)
+            ok |= pd.to_numeric(orden, errors="coerce").ge(minimo).fillna(False)
+        fuera = t.notna() & ~ok
     else:
         fuera = pd.Series(False, index=tienda.index)
     return bloqueado.fillna(False).astype(bool), fuera.fillna(False).astype(bool)

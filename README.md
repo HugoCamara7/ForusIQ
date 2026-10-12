@@ -165,7 +165,7 @@ reparte con el disponible del stock.
 últimos 120 días se mide, por tienda, cuántos días pasan entre el pedido y su recepción
 (Conexión → «Medir plazos de entrega»). Aprobado y en Picking (aún en el CD) cuentan como
 tránsito con todo el historial; Documentado, en Transporte y Prerecepcionado (ya despachados)
-sólo hasta el percentil 95 de su tienda + 1 día (sin datos: 7 días). Más antiguo, ya llegó y
+sólo hasta el percentil 95 de su tienda + 1 día, con un mínimo de 7 días. Más antiguo, ya llegó y
 quedó sin cerrar. En los reportes del 01–12/10 los pedidos llegaban en 1 día a Lima y en 2–5 a
 provincia; con la ventana fija de 15 días se contaban pedidos ya recibidos. En Inicio se informa
 cuánto del tránsito son pedidos creados después del cierre del stock: cuentan para no enviar

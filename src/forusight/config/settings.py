@@ -267,6 +267,9 @@ class RecepcionParams(_Section):
     ventana_por_tienda: bool = True
     percentil_plazo: Literal[0.5, 0.9, 0.95] = 0.95
     margen_plazo_dias: int = Field(1, ge=0, le=15)
+    #: Piso del plazo de cada tienda: un pedido despachado cuenta como tránsito al menos estos
+    #: días (12/10: con plazos medidos de 1–2 días se perdían 84 u de tránsito real en provincia).
+    plazo_minimo_dias: int = Field(7, ge=1, le=30)
     min_pedidos_plazo: int = Field(5, ge=1, le=500)
     #: Sólo pedidos creados hasta el día del cierre del stock (fecha de stock_bi): el
     #: tránsito queda en la misma foto que el stock, como el reporte de distribución. Los
@@ -309,11 +312,12 @@ class ReferenciaParams(_Section):
 class SurtidoParams(_Section):
     """Qué se puede reponer: temporadas comerciales activas y modelos bloqueados por tienda."""
 
-    #: Sólo se reponen estas temporadas comerciales (vacío = todas). La temporada sale del
-    #: maestro de temporadas (reportes de Neogística y de bloqueos), no de ARTI.
-    temporadas_reponer: list[str] = Field(
-        default_factory=lambda: ["INVIERNO 2026", "VERANO 2026", "ESCOLAR 2026", "INVIERNO 2027"]
-    )
+    #: Se reponen las temporadas VERANO/INVIERNO desde ``temporada_desde`` en adelante
+    #: (VERANO 2026, INVIERNO 2027, VERANO 2027…) y además las de ``temporadas_reponer``
+    #: (p. ej. ESCOLAR 2026). La temporada sale del maestro de temporadas, no de ARTI. Un
+    #: modelo-color sin temporada conocida (modelo nuevo) se repone.
+    temporada_desde: str = "VERANO 2026"
+    temporadas_reponer: list[str] = Field(default_factory=lambda: ["ESCOLAR 2026", "FUTURA"])
     #: Usar la temporada de ARTI cuando el modelo-color no está en el maestro de temporadas
     #: (ARTI no trae la temporada comercial: apagado).
     temporadas_en_bigquery: bool = False

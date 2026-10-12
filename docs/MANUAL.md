@@ -118,7 +118,7 @@ Lo enviado **nunca supera** el Stock en CD.
 ### 3.8 Filtros finales
 - Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**).
 - Un modelo-color **bloqueado** para la tienda no se envía (página **Bloqueos**).
-- Sólo se reponen las **temporadas comerciales** activas (Parámetros → surtido).
+- Sólo se reponen **VERANO 2026 en adelante** (VERANO 2026, INVIERNO 2027, VERANO 2027…) y **ESCOLAR 2026**; INVIERNO 2026 y anteriores no. Un modelo nuevo sin temporada conocida se repone (Parámetros → surtido).
 
 ---
 
@@ -133,7 +133,7 @@ Lo enviado **nunca supera** el Stock en CD.
 
 Reglas:
 - **Plazo de entrega de la tienda:** percentil 95 de los días entre pedido y recepción de sus
-  propios pedidos de los últimos 120 días, + 1 día. Sin datos: 7 días. Se ve en **Conexión →
+  propios pedidos de los últimos 120 días, + 1 día, con un mínimo de 7 días (sin datos: 7). Se ve en **Conexión →
   Medir plazos de entrega**. Un pedido despachado más antiguo que el plazo ya llegó y quedó sin
   cerrar.
 - **Misma foto que el stock:** sólo cuentan los pedidos creados **hasta el día del cierre del
@@ -225,6 +225,8 @@ Recuadros de aviso:
 | `recepcion.estados_transito` | [1, 2] | Cuentan con todo el historial. |
 | `recepcion.estados_transito_recientes` | [3, 6, 7] | Cuentan dentro del plazo de la tienda. |
 | `recepcion.percentil_plazo` / `margen_plazo_dias` | 0,95 / 1 | Plazo = p95 + 1 día. |
+| `recepcion.plazo_minimo_dias` | 7 | Un pedido despachado cuenta al menos 7 días. |
+| `surtido.temporada_desde` / `temporadas_reponer` | VERANO 2026 / ESCOLAR 2026 | Temporadas que se reponen. |
 | `recepcion.dias_transito_recientes` | 7 | Plazo si la tienda no tiene datos. |
 | `recepcion.solo_hasta_cierre_stock` | true | Tránsito en la misma foto que el stock. |
 | `stock_cd.componentes` | disponible | Qué parte del CD se reparte. |

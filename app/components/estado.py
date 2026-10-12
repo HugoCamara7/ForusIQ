@@ -699,7 +699,10 @@ def _correr_reporte(
     inp, diag = _entradas_reporte(contenido, marcas)
     # El tránsito es el que trae el reporte (Stock Trán. Int. + Prov.).
     base, n_bloq = R.aplicar_surtido(
-        inp.reporte, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
+        inp.reporte,
+        bloqueos_de(bloq_clave),
+        params.surtido.temporadas_reponer,
+        params.surtido.temporada_desde,
     )
     diag = {**diag, "bloqueadas": n_bloq}
     dist = R.distribuir(

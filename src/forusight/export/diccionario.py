@@ -80,8 +80,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Prenda": (PRODUCTO, "Tipo de prenda.", "Tal cual.", "ARTI (si la columna existe)", REP),
     "Temporada comercial": (
         PRODUCTO,
-        "Temporada comercial del modelo-color (p. ej. VERANO 2026). Sólo se reponen INVIERNO "
-        "2026 y VERANO 2026 (Parámetros → surtido); lo demás no aparece en el archivo.",
+        "Temporada comercial del modelo-color (p. ej. VERANO 2026). Se repone VERANO 2026 en "
+        "adelante (INVIERNO 2027, VERANO 2027…) y ESCOLAR 2026; INVIERNO 2026 y anteriores no "
+        "(Parámetros → surtido). Un modelo nuevo sin temporada conocida se repone.",
         "Maestro de temporadas guardado en Forusight (aprendido de reportes anteriores y del "
         "reporte de bloqueos; ARTI no trae la temporada comercial).",
         "config/temporadas.csv.gz",
@@ -284,7 +285,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         STOCK,
         "Parte del tránsito que ya salió del CD y va camino a la tienda.",
         "Pedidos documentados, en transporte o prerecepcionados dentro del plazo de entrega de "
-        "la tienda (percentil 95 de sus recepciones + 1 día); más antiguos ya llegaron.",
+        "la tienda (percentil 95 de sus recepciones + 1 día, mínimo 7 días); más antiguos ya "
+        "llegaron.",
         "pedidos_header_table + pedidos_detail_table",
         "No está en el reporte (detalle propio de Forusight).",
     ),

@@ -117,6 +117,7 @@ recepcion:                      # tránsito = pedidos del sistema hacia la tiend
   ventana_por_tienda: true               # plazo = días pedido → recepción de la propia tienda (120 días)
   percentil_plazo: 0.95
   margen_plazo_dias: 1
+  plazo_minimo_dias: 7                   # piso del plazo: un pedido despachado cuenta al menos 7 días
   min_pedidos_plazo: 5
   solo_hasta_cierre_stock: true          # sólo pedidos creados hasta el día del cierre del stock (misma foto que el stock)
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
@@ -138,8 +139,10 @@ reposicion_venta:               # reponer lo vendido desde la ruta anterior del 
   descontar_venta_post_corte: true  # resta la venta neta posterior al corte de stock_bi (fecha F = cierre de F) hasta ayer
 
 surtido:                        # qué se puede reponer
-  # colecciones vigentes; las anteriores (VERANO 2025, ESCOLAR 2025…) no se reponen (vacío = todas)
-  temporadas_reponer: ["INVIERNO 2026", "VERANO 2026", "ESCOLAR 2026", "INVIERNO 2027"]
+  # VERANO/INVIERNO desde esta temporada en adelante (VERANO 2026, INVIERNO 2027, VERANO 2027…);
+  # INVIERNO 2026 y anteriores no se reponen. Sin temporada conocida (modelo nuevo): se repone.
+  temporada_desde: "VERANO 2026"
+  temporadas_reponer: ["ESCOLAR 2026", "FUTURA"]   # además de las anteriores
   temporadas_en_bigquery: false # usar ARTI si el modelo-color no está en el maestro de temporadas
 
 referencia:                     # niveles del último reporte de distribución de cada tienda
