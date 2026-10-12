@@ -505,7 +505,6 @@ CAMPOS_CABECERA = (
     "clasificacion",
     "fecha",
     "fecha_recepcion",
-    "fecha_hora",
 )
 CAMPOS_DETALLE = (
     "nro_pedido",
@@ -578,15 +577,6 @@ def sql_pedidos(
             else "0"
         )
         + " AS dias_pedido",
-        # Minutos desde la medianoche (hora de Lima) si el pedido se creó hoy; NULL si no.
-        (
-            f"IF(DATE({_datetime_lima(h('fecha_hora'))}) = @hoy, "
-            f"EXTRACT(HOUR FROM {_datetime_lima(h('fecha_hora'))}) * 60 + "
-            f"EXTRACT(MINUTE FROM {_datetime_lima(h('fecha_hora'))}), NULL)"
-            if "fecha_hora" in m_h
-            else "CAST(NULL AS INT64)"
-        )
-        + " AS minuto_creacion_hoy",
         f"SUM({cant}) AS unidades",
     ]
     # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
@@ -598,18 +588,7 @@ def sql_pedidos(
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
         f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9"
-    )
-
-
-def _datetime_lima(col: str) -> str:
-    """Fecha-hora local de Lima de una columna de cualquier tipo: un TIMESTAMP (texto con zona,
-    «…+00») se pasa a la hora de Lima; DATETIME o texto sin zona se toma tal cual."""
-    s = f"CAST({col} AS STRING)"
-    return (
-        f"(CASE WHEN REGEXP_CONTAINS({s}, r'(\\+\\d\\d(:\\d\\d)?|Z| UTC)$') "
-        f"THEN DATETIME(SAFE_CAST({s} AS TIMESTAMP), 'America/Lima') "
-        f"ELSE SAFE_CAST({s} AS DATETIME) END)"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7, 8"
     )
 
 
@@ -634,11 +613,6 @@ def sql_revisar_transito(
         f"CAST({d('estado_linea')} AS STRING) AS estado_linea",
         f"SAFE_CAST({h('fecha')} AS DATE) AS fecha_pedido",
         f"SAFE_CAST({h('fecha_recepcion')} AS DATE) AS fecha_recepcion",
-        (
-            f"{_datetime_lima(h('fecha_hora'))} AS fecha_hora_pedido"
-            if "fecha_hora" in m_h
-            else "CAST(NULL AS DATETIME) AS fecha_hora_pedido"
-        ),
         f"CAST({d('id_linea')} AS STRING) AS id_linea",
         f"{sku_sql(d('id_producto'))} AS id_producto",
         f"SAFE_CAST({d('cantidad')} AS FLOAT64) AS cantidad_pedida",
@@ -725,7 +699,6 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
         "recibido_post_corte",
         "recepcionado",
         "dias_pedido",
-        "minuto_creacion_hoy",
         "unidades",
     ]
     if df is None or df.empty:
@@ -746,11 +719,6 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
                 pd.to_numeric(df["dias_pedido"], errors="coerce").fillna(0)
                 if "dias_pedido" in df
                 else 0
-            ),
-            "minuto_creacion_hoy": (
-                pd.to_numeric(df["minuto_creacion_hoy"], errors="coerce")
-                if "minuto_creacion_hoy" in df
-                else np.nan
             ),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }

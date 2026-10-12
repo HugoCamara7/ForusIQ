@@ -257,8 +257,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Pedidos del sistema hacia la tienda (reposición, llenado de canal y traspasos): "
         "aprobados o en picking (todo el historial) y documentados, en transporte o "
         "prerecepcionados dentro del plazo de entrega de la tienda. Recepcionado o más antiguo "
-        "se toma como ya recibido. Desde las 8:00, no cuentan los pedidos creados hoy antes de "
-        "las 7:00 (Neogística). No incluye el tránsito de stock_bi: es lo que SALE de la tienda.",
+        "se toma como ya recibido. Sólo pedidos creados hasta el día del cierre del stock (misma "
+        "foto que el stock). No incluye el tránsito de stock_bi: es lo que SALE de la tienda.",
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),

@@ -118,9 +118,7 @@ recepcion:                      # tránsito = pedidos del sistema hacia la tiend
   percentil_plazo: 0.95
   margen_plazo_dias: 1
   min_pedidos_plazo: 5
-  excluir_pedidos_madrugada: true        # desde las 8:00, los pedidos creados hoy antes de las 7:00 (Neogística) no cuentan
-  hora_corte_pedidos: 7
-  hora_inicio_exclusion: 8
+  solo_hasta_cierre_stock: true          # sólo pedidos creados hasta el día del cierre del stock (misma foto que el stock)
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
   sumar_recepcion_post_corte: true    # recepcionado después del corte de stock_bi: se suma al stock físico
 
