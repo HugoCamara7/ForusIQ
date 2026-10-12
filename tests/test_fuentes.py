@@ -887,6 +887,48 @@ def test_azaleia_reciben_sus_tiendas_del_maestro():
     assert set(activas["tienda_id"]) == {"501", "502"} and set(activas["cadena"]) == {"AZALEIA"}
 
 
+def test_azaleia_tiendas_de_la_foto_sin_maestro_reponen():
+    """Tiendas AZALEIA que ya tienen stock pero aún no están en el maestro ni en el catálogo:
+    su nombre en la foto de stock («AZALEIA JOCKEY») basta para identificarlas y reponer.
+    Antes: «Ninguna tienda puede recibir AZALEIA»."""
+    fake = _FakeBQ()
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
+        [
+            foto.loc[foto["tienda_cod"].eq("008")].assign(
+                tienda_cod="501", tienda_nombre="AZALEIA JOCKEY"
+            ),
+            foto.loc[foto["tienda_cod"].eq("008")].assign(
+                tienda_cod="777", tienda_nombre="ECOMMERCE"
+            ),
+            foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
+        ]
+    )
+    fake.datos["ventas"] = fake.datos["ventas"].assign(tienda_cod="501")
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    dt = inp.dim_tienda.set_index("tienda_id")
+    assert dt.loc["501", "activa"] and dt.loc["501", "cadena"] == "AZALEIA"
+    assert dt.loc["501", "origen_tienda"] == "foto de stock"
+    assert not dt.loc["777", "activa"]  # sin cadena conocida: no recibe
+    ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
+
+
+def test_tiendas_con_stock_sin_identificar_es_mensaje_claro():
+    fake = _FakeBQ()
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
+        [
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="501", tienda_nombre="1-501"),
+            foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
+        ]
+    )
+    fake.datos["ventas"] = fake.datos["ventas"].iloc[0:0]
+    with pytest.raises(ValueError, match="501"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+
+
 def test_azaleia_llenado_inicial_1_por_talla_core():
     """Tiendas Azaleia nuevas (sin stock ni venta) y modelos que el maestro modelo→cadena aún
     no tiene: cada modelo-color con stock en el CD entra con 1 por talla core."""

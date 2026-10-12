@@ -1178,13 +1178,23 @@ def construir_entradas(
         ]
     )
     con_stock = set(st.loc[st["stock_disponible"] > 0, "tienda_id"])
+    # Tiendas de la foto cuyo nombre empieza con una cadena conocida (AZALEIA JOCKEY): las
+    # nuevas aún pueden faltar en el maestro y en el catálogo, pero ya figuran en el stock.
+    foto_t = pd.DataFrame(
+        {"tienda_cod": nombres.index.astype(str), "tienda_nombre": nombres.astype(str).to_numpy()}
+    )
+    foto_t = foto_t.loc[CAD.prefijo(foto_t["tienda_nombre"]).isin(set(matriz)).to_numpy()]
     # Marca nueva (p. ej. AZALEIA): ninguna tienda tiene stock ni venta reciente. Reciben las
     # tiendas de las cadenas que venden la marca (marcas_por_cadena), para poder introducirla.
     marca_nueva: set[str] = set()
     if not reciente and not con_stock:
         marcas_run = set(texto(dim["marca"]).dropna().str.upper()) if "marca" in dim else set()
         cadenas_marca = {c for c, ms in matriz.items() if ms & marcas_run}
-        marca_nueva = tiendas_de_cadenas(cadenas_marca, tiendas_m) - no_reciben
+        conocidas = [t for t in (tiendas_m, foto_t) if t is not None and len(t)]
+        marca_nueva = (
+            tiendas_de_cadenas(cadenas_marca, pd.concat(conocidas) if conocidas else None)
+            - no_reciben
+        )
         ids = sorted(set(ids) | marca_nueva)
         venta_t = venta_t.reindex(ids, fill_value=0)
         if marca_nueva:
@@ -1216,6 +1226,8 @@ def construir_entradas(
     if tiendas_m is not None and len(tiendas_m):
         fuentes_t.append(("maestro", tiendas_m))
     fuentes_t.append(("catálogo Forus", cat))
+    if len(foto_t):
+        fuentes_t.append(("foto de stock", foto_t))
     dim_t["origen_tienda"] = pd.NA
     for c in ("centro_comercial", "zona", "cadena"):
         dim_t[c] = pd.NA

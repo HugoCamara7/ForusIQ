@@ -473,6 +473,19 @@ class FuentesRepository(BigQueryRepository):
                 if ms & pedidas
             )
             nombres = ", ".join(sorted(pedidas)) or "la marca"
+            sin_id = [
+                str(t["tienda_id"])
+                for t in diag.tiendas
+                if pd.isna(t.get("origen_tienda")) and str(t.get("tienda_id", ""))
+            ]
+            if sin_id:
+                raise ValueError(
+                    f"Ninguna tienda puede recibir {nombres}: las tiendas con stock o venta de la "
+                    f"marca ({', '.join(sin_id[:15])}{'…' if len(sin_id) > 15 else ''}) no están "
+                    "en el maestro de tiendas de BigQuery ni en el catálogo, y su nombre en el "
+                    "stock no empieza con una cadena conocida. Agrégalas al maestro (p. ej. "
+                    "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
+                )
             raise ValueError(
                 f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta de la "
                 + (
