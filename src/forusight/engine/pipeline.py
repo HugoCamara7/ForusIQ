@@ -303,6 +303,7 @@ def ejecutar(
         "fill_rate": float(np.round(det["cantidad"].sum() / max(det["necesidad"].sum(), 1), 4)),
         "disponibilidad_retail": disp_retail.get("simple_antes"),
         "disponibilidad_retail_despues": disp_retail.get("simple_despues"),
+        "disponibilidad_retail_transito": disp_retail.get("con_transito_antes"),
         "sku_activos_retail": disp_retail.get("activos", 0),
     }
     return EngineResult(

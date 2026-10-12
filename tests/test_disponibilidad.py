@@ -53,3 +53,20 @@ def test_kpis_del_piloto_simple_ponderada_y_wos():
     assert round(k["simple_antes"], 3) == round(11 / 12, 3) and k["simple_despues"] == 1.0
     assert k["simple_antes"] < D.MINIMO and k["simple_despues"] == D.META
     assert k["wos_antes"] == 11 / 6 and k["wos_despues"] == 2.0
+
+
+def test_kpis_no_cuentan_tallas_no_planificadas_y_dan_la_cifra_con_transito():
+    """Talla sin stock ni stock objetivo: no se repone, no es quiebre. Talla en camino: cuenta
+    en la disponibilidad con tránsito."""
+    filas = _modelo("T1", quebradas=2, en_cd=True, cantidad=0)
+    for f in filas:
+        f["demanda_semanal"] = 0.5
+        f["stock_transito"] = 0
+        f["stock_objetivo"] = 1
+    quebradas = [f for f in filas if f["stock_tienda"] == 0]
+    quebradas[0]["stock_objetivo"] = 0  # la tienda no la planifica
+    quebradas[1]["stock_transito"] = 1  # ya va en camino
+    k = D.kpis(pd.DataFrame(filas))
+    assert k["activos"] == 11
+    assert round(k["simple_antes"], 3) == round(10 / 11, 3)
+    assert k["con_transito_antes"] == 1.0

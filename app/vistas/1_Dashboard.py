@@ -178,6 +178,11 @@ with c2, st.container(key="card_disponibilidad"):
         velocimetro(
             hoy,
             "Disponibilidad del retail",
-            f"Después del envío: {despues:.1%} · {activos:,} SKU activos · meta ≥ 93 %",
+            (
+                f"Con tránsito: {r['disponibilidad_retail_transito']:.1%} · "
+                if r.get("disponibilidad_retail_transito") is not None
+                else ""
+            )
+            + f"Después del envío: {despues:.1%} · {activos:,} tallas activas · meta ≥ 93 %",
         )
     )
