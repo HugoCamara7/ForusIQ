@@ -959,12 +959,12 @@ def carga_planificacion() -> None:
     lo usan la pantalla y la corrida de las 6:30). Vive en Parámetros, fuera del día a día."""
     ss = st.session_state
     archivos = st.file_uploader(
-        "Reportes de distribución (Neogística)",
+        "Reportes de distribución (opcional)",
         type=["xlsx"],
         accept_multiple_files=True,
         key="plan_uploader",
-        help="Actualizan stock mínimo, nivel, reorden y empaque por tienda × SKU. Quedan "
-        "guardados: no hace falta volver a subirlos.",
+        help="Opcional. Actualizan stock mínimo y empaque por tienda × SKU del maestro "
+        "guardado. Sin subir nada, la corrida usa el último dato conocido.",
     )
     try:
         if archivos:

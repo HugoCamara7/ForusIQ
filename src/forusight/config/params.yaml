@@ -146,7 +146,7 @@ nivel_neo:                      # nivel y punto de reorden con la estructura del
   activo: true                  # pronóstico = k × venta 4 semanas × curva nacional; nivel = max(SMT, ceil(d + z·√d)); reorden = nivel − 1
   z: 0.84
   nivel_reporte_como_piso: false  # no: la fórmula se pasa en tallas de alta rotación
-  dias_maximos: 60              # antigüedad máxima del maestro de planificación (SMT por tienda × SKU)
+  dias_maximos: 0               # antigüedad máxima del maestro de planificación (SMT por tienda × SKU); 0 = sin límite (no depende de Neogística)
   dias_nivel_reporte: 3         # clave de un reporte de <= 3 días: su nivel y reorden tal cual (89,7 % el 30/09)
   banda_reporte: false          # con la fórmula, reorden = nivel − 1
   universo: listada_reciente    # talla con stock/tránsito/venta y modelo con venta reciente, o talla de un reporte reciente

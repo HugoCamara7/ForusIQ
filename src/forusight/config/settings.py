@@ -350,8 +350,10 @@ class NivelNeoParams(_Section):
     z: float = Field(0.84, ge=0, le=3)
     #: La clave de un reporte reciente no baja del nivel que tenía en ese reporte.
     nivel_reporte_como_piso: bool = False
-    #: Antigüedad máxima del maestro de planificación (SMT/nivel por tienda × SKU).
-    dias_maximos: int = Field(60, ge=1, le=365)
+    #: Antigüedad máxima del maestro de planificación (SMT/nivel por tienda × SKU). 0 = sin
+    #: límite: el último SMT, UE y categoría conocidos de cada clave siguen valiendo, así la
+    #: corrida no depende de que llegue un reporte nuevo de Neogística.
+    dias_maximos: int = Field(0, ge=0, le=3650)
     #: Qué tienda × talla se evalúa: "venta" (stock/tránsito/venta de la talla y venta reciente
     #: del modelo en la tienda), "listada_reciente" (+ tallas de un reporte reciente si el modelo
     #: vendió) o "listada" (+ toda talla de un reporte reciente).

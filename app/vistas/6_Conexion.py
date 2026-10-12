@@ -259,9 +259,9 @@ if rev:
         st.markdown("**Locales destino de los últimos 3 días**")
         st.dataframe(locales, hide_index=True, width="stretch")
 
-st.markdown("**Comparar el tránsito con el reporte de Neogística**")
+st.markdown("**Comparar el tránsito con el reporte de Neogística (opcional)**")
 st.caption(
-    "Sube el reporte de distribución del día: se leen los pedidos de todas sus tiendas y se "
+    "Sólo diagnóstico, la corrida no lo usa. Sube el reporte de distribución del día: se leen los pedidos de todas sus tiendas y se "
     "compara, tienda × SKU, con su Stock Trán. Int. + Prov. La tabla dice, por estado y "
     "clasificación, cuántas unidades caen donde Neogística tiene tránsito. Úsalo el mismo día "
     "del reporte: los pedidos creados después del reporte no pueden estar en él."

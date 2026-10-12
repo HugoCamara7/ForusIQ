@@ -81,16 +81,6 @@ with cabecera:
         eyebrow="Aprobada" if aprobada else "Propuesta",
         meta=meta,
     )
-plan = diag.get("planificacion") or {}
-if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_reporte:
-    issue_box(
-        "warn",
-        f"El último reporte de Neogística cargado es del {_fecha(plan['ultimo_reporte'])} "
-        f"(hace {plan['dias']} días)",
-        "Para reponer al mismo ritmo que Neogística, sube el reporte de distribución de hoy en "
-        "Parámetros → «Planificación Neogística» y vuelve a ejecutar la corrida.",
-    )
-
 tiendas_res = getattr(res, "tiendas", None)
 if (
     tiendas_res is not None
@@ -109,18 +99,17 @@ if (
 sin_plan = diag.get("tiendas_sin_planificacion") or []
 if sin_plan:
     issue_box(
-        "warn",
-        f"{len(sin_plan)} tienda(s) sin datos de planificación: {', '.join(sin_plan)}",
-        "Su stock mínimo, nivel y punto de reorden se estiman con los de otras tiendas y pueden "
-        "salir altos. Sube un reporte de Neogística que incluya esas tiendas en Parámetros → "
-        "«Planificación Neogística».",
+        "info",
+        f"{len(sin_plan)} tienda(s) sin stock mínimo propio: {', '.join(sin_plan)}",
+        "Su stock mínimo se estima con el del mismo SKU en otras tiendas y el nivel sale de su "
+        "propia venta. Para fijarlo, asígnales una tienda espejo en config/tiendas_espejo.csv.",
     )
 
 con_espejo = diag.get("tiendas_con_espejo") or []
 if con_espejo:
     issue_box(
         "info",
-        f"{len(con_espejo)} tienda(s) que Neogística no planifica, con tienda espejo: "
+        f"{len(con_espejo)} tienda(s) sin stock mínimo propio, con tienda espejo: "
         f"{', '.join(con_espejo)}",
         "Toman el stock mínimo, la unidad de empaque y la categoría de su espejo; el pronóstico "
         "sale de su propia venta. Se cambia en config/tiendas_espejo.csv.",

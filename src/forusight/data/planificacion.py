@@ -208,9 +208,11 @@ def desde_bytes(contenido: bytes) -> Maestro:
 
 
 def vigente(m: Maestro, dia, dias_maximos: int) -> Maestro:
-    """Sólo claves y k con antigüedad <= dias_maximos respecto del día de la corrida."""
+    """Sólo claves con antigüedad <= dias_maximos respecto del día de la corrida (0 = sin
+    límite: vale el último dato conocido de cada clave). Nunca claves posteriores al día."""
     dia = pd.Timestamp(dia).normalize()
-    c = m.claves.loc[(dia - pd.to_datetime(m.claves["fecha"])).dt.days.between(0, dias_maximos)]
+    edad = (dia - pd.to_datetime(m.claves["fecha"])).dt.days
+    c = m.claves.loc[edad.between(0, dias_maximos) if dias_maximos > 0 else edad >= 0]
     return Maestro(c, m.k, dia)
 
 

@@ -241,6 +241,20 @@ necesidad por tienda×SKU coincide en 79% de las filas de HUSH PUPPIES, 86% de C
 
 Supuestos que conviene validar están marcados como `PENDIENTE` en `params.yaml`.
 
+### Sin depender de Neogística
+
+La corrida **no necesita ningún archivo de Neogística**. El stock mínimo (SMT), la unidad de
+empaque y la categoría por tienda × SKU salen del maestro de planificación guardado
+(`config/planificacion_claves.csv.gz`, actualizado con los reportes del 01 al 12/10/2026), que
+**no vence** (`nivel_neo.dias_maximos: 0`): vale el último dato conocido de cada clave. Nivel y
+punto de reorden se calculan con la venta de BigQuery.
+
+Por qué alcanza (6 reportes del 01–12/10/2026): el SMT no sale de una fórmula de la venta (la
+mejor regla con venta/stock acierta 68 %; "siempre 1", 76 %), pero es muy estable: cambia en el
+3,5 % de las claves entre reportes (sobre todo los lunes) y el último SMT conocido acierta el
+94,5 % una semana después. Claves nuevas: moda del SKU en otras tiendas (73 %). Subir un
+reporte en Parámetros → «Planificación (opcional)» sólo refresca ese maestro.
+
 ## Relevamiento del esquema fuente
 
 Ejecutar en BigQuery (consola), sobre el proyecto de Forus, y compartir el resultado:
