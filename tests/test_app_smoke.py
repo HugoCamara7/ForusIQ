@@ -11,6 +11,7 @@ PAGINAS = [
     "1_Dashboard",
     "10_Descargas",
     "8_Bloqueos",
+    "11_Manual",
     "9_Rutas",
     "5_Parametros",
 ]  # vista única + configuración

@@ -46,6 +46,7 @@ paginas = [
     st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
     st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
     st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
+    st.Page("app/vistas/11_Manual.py", title="Manual", icon=":material/menu_book:"),
 ]
 if puede("conexion"):
     paginas.append(

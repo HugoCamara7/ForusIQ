@@ -752,7 +752,7 @@ def hoja_diccionario(lb: _Libro, columnas: list[str], titulo: str) -> None:
             "Qué es",
             "Cómo se calcula",
             "Fuente (BigQuery)",
-            "Con el reporte del día",
+            "Cómo comparar con Neogística",
         ]
     ):
         ws.write(fila, j, c, enc)

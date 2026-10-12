@@ -12,6 +12,10 @@ Neogistica) hacia las tiendas. La decisión de qué distribuir es de Forus y la 
 > Forus)**, con el mismo esquema de secrets que Catálogo Control Center y Repo Control Center.
 > Ver [Información pendiente](#información-pendiente).
 
+
+**Manual de uso:** [docs/MANUAL.md](docs/MANUAL.md) (también en la app, página **Manual**, con el
+diccionario de columnas descargable). Prompt para la presentación en Canva:
+[docs/PROMPT_CANVA.md](docs/PROMPT_CANVA.md).
 ---
 
 ## Arquitectura
