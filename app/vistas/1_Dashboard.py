@@ -101,9 +101,7 @@ if tr_nuevo:
     issue_box(
         "info",
         f"{tr_nuevo:,} u del tránsito son pedidos creados después del cierre del stock",
-        "Por ejemplo, el pedido de Neogística de hoy ya cargado en el sistema. Cuentan como "
-        "tránsito para no enviar dos veces; por eso Forusight puede sugerir menos que el "
-        "reporte de Neogística en esas tiendas.",
+        "Por ejemplo, un pedido aprobado hoy. Cuentan como tránsito para no enviar dos veces.",
     )
 
 sin_plan = diag.get("tiendas_sin_planificacion") or []

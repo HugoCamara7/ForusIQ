@@ -149,22 +149,23 @@ con dato real (no se inventan costos, clases de demanda, backorder…) y filas c
 «Aprobar y descargar» aprueba la propuesta y descarga el archivo; la aprobación no se guarda.
 Al cargar el archivo en el sistema se crean los pedidos, y la próxima corrida los ve como
 tránsito en las tablas de pedidos (`pedidos_header_table` + `pedidos_detail_table`):
-estados Aprobado, en Picking y Documentado (todo el historial) y en Transporte o
-Prerecepcionado de los últimos 15 días; clasificaciones Reposición, Llenado de canal y Traspaso
+estados Aprobado y en Picking (todo el historial) y Documentado, en Transporte o
+Prerecepcionado dentro del plazo de entrega de la tienda; clasificaciones Reposición, Llenado de canal y Traspaso
 tiendas. Recepcionado, con fecha de recepción `fecrec_ph`, línea en estado 4 o 6/7 más antiguo
 se toman como ya recibidos. El stock_bi de fecha F es el cierre de ese día: el stock físico es
 ese stock menos la venta neta posterior a F y más lo recepcionado después de F (con el corte de
 ayer no cambia; un lunes, con el corte del sábado, descuenta y suma el domingo). El CD se
 reparte con el disponible del stock.
 
-**Calibrar el tránsito** (Conexión → «Comparar y calibrar el tránsito»): con un reporte de
-Neogística, lee los pedidos de sus tiendas, deja fuera los creados el día del reporte (el
-reporte no puede tenerlos) y prueba todas las reglas (estados que cuentan siempre, estados que
-cuentan si el pedido tiene ≤ N días, clasificaciones). Muestra la regla que más tienda × SKU
-deja igual, la tabla por estado × antigüedad y un Excel con cada diferencia y sus pedidos. La
-regla sugerida se aplica a la sesión y se guarda en Parámetros. En Inicio se informa cuánto del
-tránsito son pedidos creados después del cierre del stock (p. ej. el pedido de Neogística del
-día): cuentan para no enviar dos veces.
+**Plazo de entrega por tienda** (sin reportes externos): con los pedidos recibidos de los
+últimos 120 días se mide, por tienda, cuántos días pasan entre el pedido y su recepción
+(Conexión → «Medir plazos de entrega»). Aprobado y en Picking (aún en el CD) cuentan como
+tránsito con todo el historial; Documentado, en Transporte y Prerecepcionado (ya despachados)
+sólo hasta el percentil 95 de su tienda + 1 día (sin datos: 7 días). Más antiguo, ya llegó y
+quedó sin cerrar. En los reportes del 01–12/10 los pedidos llegaban en 1 día a Lima y en 2–5 a
+provincia; con la ventana fija de 15 días se contaban pedidos ya recibidos. En Inicio se informa
+cuánto del tránsito son pedidos creados después del cierre del stock: cuentan para no enviar
+dos veces.
 
 ## Configuración de secretos
 

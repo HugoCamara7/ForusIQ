@@ -97,6 +97,8 @@ class EngineInputs:
     #: Opcional: pedidos hacia cada tienda (tienda_id, sku, estado, clasificacion, unidades),
     #: de las tablas de pedidos; de ahí sale el tránsito (data.transito.aplicar_pedidos).
     pedidos: pd.DataFrame | None = None
+    #: Opcional: días entre pedido y recepción por tienda (fuentes.plazos_entrega).
+    plazos_entrega: pd.DataFrame | None = None
     #: Opcional: venta diaria reciente (fecha, tienda_id, sku, unidades), de BigQuery.
     venta_diaria: pd.DataFrame | None = None
     #: Opcional: venta desde la última ruta y posterior al corte, por tienda×SKU

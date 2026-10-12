@@ -628,17 +628,26 @@ def test_revisar_transito_de_una_tienda():
     fake.datos = {
         "revisar_transito": pd.DataFrame(
             {
-                "nro_pedido": ["P1", "P2", "P3", "P4"],
-                "tienda_cod": ["97"] * 4,
-                "estado": ["1", "6. en Transporte", "4", "1"],
-                "clasificacion": ["1", "1", "1", "4.-Devolucion CD"],
-                "fecha_pedido": pd.to_datetime(["2026-10-01"] * 4),
-                "fecha_recepcion": pd.to_datetime([None, None, "2026-09-20", None]),
-                "id_linea": ["1", "1", "1", "1"],
-                "id_producto": ["5"] * 4,
-                "cantidad_pedida": [2.0, 3.0, 4.0, 5.0],
-                "cantidad_despachada": [0.0, 3.0, 4.0, 0.0],
-                "filas": [1, 2, 1, 1],
+                "nro_pedido": ["P1", "P2", "P3", "P4", "P5"],
+                "tienda_cod": ["97"] * 5,
+                "estado": ["1", "6. en Transporte", "4", "1", "7"],
+                "clasificacion": ["1", "1", "1", "4.-Devolucion CD", "1"],
+                "fecha_pedido": pd.to_datetime(["2026-10-01"] * 4 + ["2026-09-25"]),
+                "fecha_recepcion": pd.to_datetime([None, None, "2026-09-20", None, None]),
+                "id_linea": ["1", "1", "1", "1", "1"],
+                "id_producto": ["5"] * 5,
+                "cantidad_pedida": [2.0, 3.0, 4.0, 5.0, 6.0],
+                "cantidad_despachada": [0.0, 3.0, 4.0, 0.0, 6.0],
+                "filas": [1, 2, 1, 1, 1],
+            }
+        ),
+        # la 97 recibe en 1 o 2 días (95 %: 2) → plazo de tránsito 2 + 1 = 3 días
+        "plazos_entrega": pd.DataFrame(
+            {
+                "tienda_cod": ["097", "097", "097"],
+                "clasificacion": ["1", "1", "4"],
+                "dias": [1, 2, 40],
+                "pedidos": [10, 8, 50],
             }
         ),
         "locales_pedidos": pd.DataFrame(
@@ -662,26 +671,16 @@ def test_revisar_transito_de_una_tienda():
     lineas, locales = repo.revisar_transito(
         "97", params().recepcion, pd.Timestamp("2026-10-02").date()
     )
-    # en transporte (6) de hace 1 día cuenta (reciente); recepcionado y devolución no
-    assert lineas["cuenta_transito"].tolist() == [True, True, False, False]
+    # en transporte (6) de hace 1 día cuenta (dentro del plazo de 3 días de la 97);
+    # prerecepcionado (7) de hace 7 días ya llegó; recepcionado y devolución no cuentan
+    assert lineas["cuenta_transito"].tolist() == [True, True, False, False, False]
     assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 5  # 2 pedidas + 3 desp.
-    assert lineas["repetida"].tolist() == [False, True, False, False]
+    assert lineas["plazo_tienda"].tolist() == [3.0] * 5
+    assert lineas["motivo"].iloc[4].startswith("Despachado hace más que el plazo")
+    assert lineas["repetida"].tolist() == [False, True, False, False, False]
     assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
-    _, sql, p = fake.consultas[0]
+    _, sql, p = next(c for c in fake.consultas if c[0] == "revisar_transito")
     assert "IN UNNEST(@tiendas)" in sql and p["tiendas"] == ["97"]
-    # comparación con el reporte: la 97 tiene tránsito 2 en el SKU 5 según Neogística
-    rep = pd.DataFrame(
-        {
-            "Código SKU": ["5", "6"],
-            "Código Centro": ["097", "97"],
-            "Stock Trán. Int. [un]": [2, 1],
-            "Stock Trán. Prov. [un]": [0, 0],
-        }
-    )
-    res, tabla = F.comparar_transito(lineas, rep)
-    assert res["transito_neogistica"] == 3 and res["transito_forusight"] == 5
-    fila = tabla.set_index(["estado_cod", "clasif_cod"]).loc[(1, 1)]
-    assert fila["unid_con_transito_neo"] == 2 and fila["estado"] == "Aprobado"
 
 
 def test_transito_de_pedidos_por_estado_y_clasificacion():
@@ -700,6 +699,51 @@ def test_transito_de_pedidos_por_estado_y_clasificacion():
     # aprobado 2 + en transporte 3 + prerecepcionado 1; fuera: recepcionado, creado,
     # devolución al CD y el propio CD
     assert tr.to_dict("records") == [{"tienda_id": "18", "sku": "5", "stock_transito": 6.0}]
+
+
+def test_plazo_de_entrega_por_tienda_y_ventana_de_transito():
+    crudo = pd.DataFrame(
+        {
+            "tienda_cod": ["8", "8", "8", "61", "61", "5", "8"],
+            "clasificacion": ["1", "1", "2", "1", "1", "1", "4"],
+            "dias": [1, 1, 2, 3, 5, 2, 30],
+            "pedidos": [18, 1, 1, 6, 4, 2, 9],
+        }
+    )
+    pl = F.plazos_entrega(crudo, [1, 2, 3]).set_index("tienda_id")
+    # Lima (8): casi todo al día siguiente; la devolución (4) no entra
+    assert pl.loc["8", "pedidos"] == 20 and pl.loc["8", "dias_p95"] == 1
+    assert pl.loc["61", "dias_p50"] == 3 and pl.loc["61", "dias_p95"] == 5
+    v = F.ventana_transito(pl.reset_index(), params().recepcion)
+    # percentil 95 + 1 día; la 5 tiene sólo 2 pedidos: usa el plazo general
+    assert v.to_dict() == {"8": 2.0, "61": 6.0}
+    ped = pd.DataFrame(
+        {
+            "tienda_id": ["8", "8", "61", "5", "5"],
+            "sku": ["1", "2", "1", "1", "2"],
+            "estado": [6, 7, 3, 6, 1],
+            "clasificacion": [1, 1, 1, 1, 1],
+            "recepcionado": [False] * 5,
+            "dias_pedido": [1, 4, 5, 8, 200],
+            "unidades": [2.0, 3.0, 1.0, 4.0, 5.0],
+        }
+    )
+    rec = params().recepcion
+    tr = F.transito_de_pedidos(
+        ped,
+        rec.estados_transito,
+        rec.clasificaciones_transito,
+        rec.estados_transito_recientes,
+        rec.dias_transito_recientes,
+        v,
+    )
+    # 8: el de 4 días ya llegó (plazo 2); 61: documentado de 5 días sigue (plazo 6);
+    # 5: sin plazo propio usa 7 días; aprobado (1) en el CD cuenta con todo el historial
+    assert tr.set_index(["tienda_id", "sku"])["stock_transito"].to_dict() == {
+        ("5", "2"): 5.0,
+        ("61", "1"): 1.0,
+        ("8", "1"): 2.0,
+    }
 
 
 def test_recepcionado_despues_del_corte_va_al_fisico():
@@ -923,3 +967,23 @@ def test_azaleia_sale_de_la_bodega_380():
     assert len(env) and env["motivo_texto"].notna().all()
     t = construir_tabla(r.detalle, inp.ventas, inp.dim_producto, inp.dim_tienda, p, CORTE, "320")
     assert set(t["Código Centro Origen"]) == {"380"}
+
+
+def test_transito_creado_despues_del_corte():
+    from types import SimpleNamespace
+
+    from forusight.data import transito as TR
+
+    p = pd.DataFrame(
+        {
+            "tienda_id": ["97", "97"],
+            "sku": ["5", "6"],
+            "estado": [1, 1],
+            "clasificacion": [1, 1],
+            "recibido_post_corte": [False, False],
+            "recepcionado": [False, False],
+            "dias_pedido": [-1, 3],
+            "unidades": [4.0, 2.0],
+        }
+    )
+    assert TR.transito_post_corte(SimpleNamespace(pedidos=p), params()) == 4

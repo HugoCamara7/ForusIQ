@@ -13,7 +13,7 @@ from dataclasses import replace
 
 import pandas as pd
 
-from forusight.data.fuentes import recepcion_de_pedidos, transito_de_pedidos
+from forusight.data.fuentes import recepcion_de_pedidos, transito_de_pedidos, ventana_transito
 
 
 def usa_pedidos(inputs, params) -> bool:
@@ -31,6 +31,7 @@ def aplicar_pedidos(inputs, params):
         rec.clasificaciones_transito,
         rec.estados_transito_recientes,
         rec.dias_transito_recientes,
+        ventana_transito(getattr(inputs, "plazos_entrega", None), rec),
     )
     st = inputs.stock_tienda.drop(columns="stock_transito", errors="ignore")
     st = st.merge(tr, on=["tienda_id", "sku"], how="outer")
@@ -65,5 +66,6 @@ def transito_post_corte(inputs, params) -> float:
         rec.clasificaciones_transito,
         rec.estados_transito_recientes,
         rec.dias_transito_recientes,
+        ventana_transito(getattr(inputs, "plazos_entrega", None), rec),
     )
     return float(tr["stock_transito"].sum()) if len(tr) else 0.0

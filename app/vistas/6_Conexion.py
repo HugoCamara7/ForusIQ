@@ -169,64 +169,12 @@ if st.button("Revisar venta"):
         st.error(explicar_error(exc))
 
 st.divider()
-st.subheader("Comparar stock del CD con el reporte")
-st.caption(
-    "stock_bi trae para el CD 320 stock_tiendas, stock_bodega, las reservas (pedidos, retail, "
-    "wholesale, multicanal, e-commerce) y el disponible. Sube el reporte del día en la barra "
-    "lateral y compara qué opción coincide con su «Stock en CD»."
-)
-if st.button("Comparar stock del CD", disabled=not st.session_state.get("reporte")):
-    ss = st.session_state
-    from app.components.estado import _leer_reporte
-
-    from forusight.data import reporte as R
-
-    try:
-        rep, _ = _leer_reporte(ss.reporte[0])
-        marcas = tuple(ss.get("marcas_reporte") or ss.get("marcas") or ()) or None
-        rep = R.filtrar_marcas(rep, list(marcas) if marcas else None)
-        entradas_bq, _ = cargar_entradas(
-            "bigquery", pd.Timestamp(ss.fecha_corte).date().isoformat(), None, "", marcas
-        )
-        ss.comparacion_cd = R.comparar_stock_cd(entradas_bq.stock_cd, rep)
-    except Exception as exc:
-        st.error(explicar_error(exc))
-
-if st.session_state.get("comparacion_cd"):
-    ss = st.session_state
-    resumen, detalle = ss.comparacion_cd
-    st.dataframe(
-        resumen,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "opcion": "Stock CD de BigQuery",
-            "sku_iguales": st.column_config.ProgressColumn(
-                "SKU iguales al reporte", format="percent", min_value=0, max_value=1
-            ),
-            "unidades_bigquery": "Unidades BigQuery",
-            "unidades_reporte": "Unidades reporte",
-            "sku_con_mas_stock": "SKU con más stock",
-            "sku_con_menos_stock": "SKU con menos stock",
-        },
-    )
-    mejor = resumen.iloc[0]["opcion"] if len(resumen) else None
-    st.caption(f"Hoy se reparte: «{ss.params.stock_cd.componentes}».")
-    if (
-        mejor
-        and mejor != ss.params.stock_cd.componentes
-        and st.button(f"Usar «{mejor}» como stock del CD", type="primary")
-    ):
-        ss.params.stock_cd.componentes = mejor
-        st.success(f"Listo: el CD se reparte con «{mejor}». Guárdalo en Parámetros.")
-    with st.expander("Detalle por SKU"):
-        st.dataframe(detalle, hide_index=True, width="stretch")
-
-st.divider()
 st.subheader("Revisar tránsito")
 st.caption(
     "Muestra cada línea de pedido hacia la tienda (todo el historial), si "
-    "cuenta como tránsito con las reglas de Parámetros → recepcion, y cuántas veces aparece "
+    "cuenta como tránsito con las reglas de Parámetros → recepcion y por qué (motivo; un "
+    "pedido despachado deja de contar al pasar el plazo de entrega de la tienda), y cuántas "
+    "veces aparece "
     "en las tablas (repetida = copia de staging, cuenta una sola vez). Abajo, los locales "
     "destino de los últimos 3 días: así se ve si una tienda llega con otro código."
 )
@@ -254,137 +202,56 @@ if rev:
         c1.metric("Tránsito que cuenta", f"{int(cuenta['unidades'].sum()):,} u")
         c2.metric("Pedidos que cuentan", f"{cuenta['nro_pedido'].nunique():,}")
         c3.metric("Líneas repetidas", f"{int(lineas['repetida'].sum()):,}")
+        if "motivo" in lineas:
+            st.dataframe(
+                lineas.groupby("motivo", as_index=False)
+                .agg(lineas=("unidades", "size"), unidades=("unidades", "sum"))
+                .sort_values("unidades", ascending=False),
+                hide_index=True,
+                width="stretch",
+            )
         st.dataframe(lineas, hide_index=True, width="stretch")
     if len(locales):
         st.markdown("**Locales destino de los últimos 3 días**")
         st.dataframe(locales, hide_index=True, width="stretch")
 
-st.markdown("**Comparar y calibrar el tránsito con un reporte de Neogística (opcional)**")
+st.markdown("**Plazo de entrega de cada tienda**")
 st.caption(
-    "Sólo diagnóstico, la corrida no lo usa. Sube un reporte de distribución: se leen los "
-    "pedidos de todas sus tiendas y se compara, tienda × SKU, con su Stock Trán. Int. + Prov. "
-    "Los pedidos creados el día del reporte o después no se comparan (el reporte no puede "
-    "tenerlos). Además se prueban todas las reglas de estados, clasificaciones y días y se "
-    "sugiere la que más cuadra: aplícala y guárdala en Parámetros."
+    "Días entre la fecha del pedido y su fecha de recepción, con los pedidos recibidos en los "
+    "últimos 120 días (reposición, llenado y traspasos). Un pedido ya despachado (documentado, "
+    "en transporte, prerecepcionado) cuenta como tránsito sólo hasta «Plazo tránsito» días: "
+    "más antiguo, ya llegó y quedó sin cerrar. Sale de nuestros pedidos, sin reportes externos."
 )
-rep_tr = st.file_uploader("Reporte de Neogística", type=["xlsx"], key="rep_transito")
-if rep_tr is not None and st.button("Comparar y calibrar tránsito", key="comparar_transito"):
-    from forusight.data import fuentes as F
-    from forusight.data import reporte as R
-
-    with st.spinner("Leyendo pedidos y probando reglas de tránsito…"):
-        try:
-            rep_df, fecha_rep = R.leer_reporte(rep_tr.getvalue())
-            if fecha_rep is None:
-                fecha_rep = R.fecha_de_nombre(rep_tr.name)
-            if fecha_rep is None:
-                raise ValueError(
-                    "No se encontró la fecha del reporte (ni en el archivo ni el nombre)."
-                )
-            tiendas_rep = sorted(set(rep_df[R.CENTRO].map(F.codigo_tienda)) - {""})
-            rec = st.session_state.params.recepcion
-            lineas_rep, _ = repo.revisar_transito(tiendas_rep, rec, fecha_rep.date())
-            regla = F.regla_de(rec)
-            st.session_state.comparacion_transito = (
-                *F.comparar_transito(lineas_rep, rep_df, fecha_rep),
-                F.calibrar_transito(lineas_rep, rep_df, fecha_rep, regla),
-                lineas_rep,
-                rep_df,
-                fecha_rep,
-            )
-        except Exception as exc:
-            st.error(explicar_error(exc))
-comp = st.session_state.get("comparacion_transito")
-if comp:
-    from forusight.config.settings import RecepcionParams
-    from forusight.data import fuentes as F
-
-    resumen_c, tabla_c, calib, lineas_c, rep_c, fecha_c = comp
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Tránsito Neogística", f"{resumen_c['transito_neogistica']:,.0f} u")
-    k2.metric("Tránsito Forusight", f"{resumen_c['transito_forusight']:,.0f} u")
-    k3.metric("Tienda × SKU iguales", f"{resumen_c['filas_iguales']:.1%}")
-    st.caption(
-        f"Reporte del {fecha_c:%d/%m/%Y}. Forusight tiene más en "
-        f"{resumen_c['filas_forusight_mas']:,} filas y menos en "
-        f"{resumen_c['filas_forusight_menos']:,}. No comparados: "
-        f"{resumen_c.get('creados_dia_reporte', 0):,.0f} u de pedidos creados el día del "
-        "reporte o después."
-    )
-
-    def _regla_txt(r: dict) -> str:
-        nom = F.ESTADOS_PEDIDO
-        siempre = ", ".join(nom.get(e, str(e)) for e in r["estados"]) or "—"
-        recientes = ", ".join(nom.get(e, str(e)) for e in r["estados_recientes"])
-        cla = ", ".join(F.CLASIFICACIONES_PEDIDO.get(c, str(c)) for c in r["clasificaciones"])
-        txt = f"Siempre: {siempre}"
-        if recientes:
-            txt += f" · si tiene ≤ {r['dias']} días: {recientes}"
-        return f"{txt} · clasificaciones: {cla}"
-
-    filas = []
-    for nombre, c in (("Regla actual", calib["actual"]), ("Regla sugerida", calib["sugerida"])):
-        filas.append(
-            {
-                "": nombre,
-                "Regla": _regla_txt(c["regla"]),
-                "Tienda × SKU iguales": f"{c['filas_iguales']:.1%}",
-                "Tránsito Forusight [u]": round(c["transito_forusight"]),
-                "Tránsito Neogística [u]": round(c["transito_neogistica"]),
-                "Unidades distintas": round(c["unidades_distintas"]),
+if st.button("Medir plazos de entrega", key="medir_plazos"):
+    try:
+        st.session_state.plazos_entrega = repo.plazos_entrega(
+            pd.Timestamp.today().date(), st.session_state.params.recepcion
+        )
+    except Exception as exc:
+        st.error(explicar_error(exc))
+plz = st.session_state.get("plazos_entrega")
+if plz is not None:
+    if plz.empty:
+        st.warning(
+            "No hay pedidos con fecha de recepción en los últimos 120 días: revisa el mapeo de "
+            "`fecha` y `fecha_recepcion` de la cabecera de pedidos."
+        )
+    else:
+        vista = plz.rename(
+            columns={
+                "tienda_id": "Tienda",
+                "pedidos": "Pedidos recibidos",
+                "dias_p50": "Días (mediana)",
+                "dias_p90": "Días (90 %)",
+                "dias_p95": "Días (95 %)",
+                "dias_max": "Días (máx.)",
+                "plazo_transito": "Plazo tránsito",
             }
         )
-    st.markdown("**Regla de tránsito que más cuadra**")
-    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
-    sug = calib["sugerida"]["regla"]
-    if sug != calib["actual"]["regla"]:
-        if st.button(
-            "Usar la regla sugerida en esta sesión",
-            icon=":material/tune:",
-            key="aplicar_regla_transito",
-            disabled=not puede("parametros"),
-        ):
-            ss_p = st.session_state.params
-            nueva = RecepcionParams.model_validate(
-                {
-                    **ss_p.recepcion.model_dump(),
-                    "estados_transito": sug["estados"],
-                    "estados_transito_recientes": sug["estados_recientes"],
-                    "dias_transito_recientes": sug["dias"],
-                    "clasificaciones_transito": sug["clasificaciones"],
-                }
-            )
-            st.session_state.params = ss_p.model_copy(update={"recepcion": nueva})
-            st.success(
-                "Regla aplicada a la sesión: vuelve a ejecutar la corrida. Para que la use la "
-                "corrida de las 6:30, guárdala en Parámetros → «Guardar en params.yaml». "
-                "Conviene confirmarla con reportes de 2 o 3 días distintos."
-            )
-    else:
-        st.success("La regla actual ya es la que más cuadra con este reporte.")
-
-    with st.expander("Por estado y clasificación"):
-        st.dataframe(tabla_c, hide_index=True, width="stretch")
-    with st.expander("Por estado y antigüedad del pedido (días desde el cierre del stock)"):
+        st.dataframe(vista, hide_index=True, width="stretch")
         st.caption(
-            "Qué parte de cada estado está donde Neogística tiene tránsito, según los días del "
-            "pedido: muestra a partir de qué antigüedad Neogística ya lo da por recibido."
-        )
-        st.dataframe(calib["por_antiguedad"], hide_index=True, width="stretch")
-    det = F.detalle_transito(
-        lineas_c, rep_c, fecha_c, F.regla_de(st.session_state.params.recepcion)
-    )
-    if len(det):
-        import io
-
-        buf = io.BytesIO()
-        det.to_excel(buf, index=False, sheet_name="Diferencias")
-        st.download_button(
-            f"Descargar las {len(det):,} tienda × SKU con diferencia (con sus pedidos)",
-            buf.getvalue(),
-            file_name=f"{fecha_c:%Y%m%d}_Diferencias_Transito.xlsx",
-            icon=":material/download:",
-            key="dl_dif_transito",
+            f"Tiendas con menos de {st.session_state.params.recepcion.min_pedidos_plazo} pedidos "
+            f"recibidos usan {st.session_state.params.recepcion.dias_transito_recientes} días."
         )
 
 st.divider()

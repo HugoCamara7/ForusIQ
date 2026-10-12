@@ -111,9 +111,13 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
 
 recepcion:                      # tránsito = pedidos del sistema hacia la tienda (tablas de pedidos)
   transito_pedidos: true
-  estados_transito: [1, 2, 3]         # Aprobado, en Picking, Documentado: todo el historial
-  estados_transito_recientes: [6, 7]  # en Transporte, Prerecepcionado: sólo pedidos recientes
-  dias_transito_recientes: 15         # más antiguo en 6/7 = ya llegó y quedó sin cerrar
+  estados_transito: [1, 2]               # Aprobado, en Picking (aún en el CD): todo el historial
+  estados_transito_recientes: [3, 6, 7]  # Documentado, en Transporte, Prerecepcionado: dentro del plazo de la tienda
+  dias_transito_recientes: 7             # plazo de la tienda sin recepciones para medir el suyo
+  ventana_por_tienda: true               # plazo = días pedido → recepción de la propia tienda (120 días)
+  percentil_plazo: 0.95
+  margen_plazo_dias: 1
+  min_pedidos_plazo: 5
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
   sumar_recepcion_post_corte: true    # recepcionado después del corte de stock_bi: se suma al stock físico
 

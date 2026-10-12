@@ -253,13 +253,21 @@ class RecepcionParams(_Section):
 
     #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
     transito_pedidos: bool = True
-    #: 1 Aprobado, 2 en Picking, 3 Documentado: todo el historial.
+    #: Todavía en el CD (1 Aprobado, 2 en Picking): cuentan con todo el historial.
     #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
-    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
-    #: Estados que cuentan sólo si el pedido es reciente: 6 en Transporte y 7 Prerecepcionado
-    #: (uno antiguo en esos estados ya llegó y quedó sin cerrar).
-    estados_transito_recientes: list[int] = Field(default_factory=lambda: [6, 7])
-    dias_transito_recientes: int = Field(15, ge=1, le=90)
+    estados_transito: list[int] = Field(default_factory=lambda: [1, 2])
+    #: Ya despachados (3 Documentado, 6 en Transporte, 7 Prerecepcionado): cuentan sólo
+    #: mientras el pedido esté dentro del plazo de entrega de su tienda; más antiguo, ya llegó
+    #: y quedó sin cerrar.
+    estados_transito_recientes: list[int] = Field(default_factory=lambda: [3, 6, 7])
+    #: Plazo para la tienda sin recepciones suficientes para medir el suyo.
+    dias_transito_recientes: int = Field(7, ge=1, le=90)
+    #: Plazo de cada tienda medido con sus propias recepciones (días entre el pedido y su
+    #: fecha de recepción, últimos 120 días): percentil + margen.
+    ventana_por_tienda: bool = True
+    percentil_plazo: Literal[0.5, 0.9, 0.95] = 0.95
+    margen_plazo_dias: int = Field(1, ge=0, le=15)
+    min_pedidos_plazo: int = Field(5, ge=1, le=500)
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: Recepcionado (4) no es tránsito. El stock_bi de fecha F es el cierre de F: lo
