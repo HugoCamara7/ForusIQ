@@ -783,22 +783,28 @@ def recepcion_de_pedidos(pedidos: pd.DataFrame, clasificaciones: list[int]) -> p
     return out.loc[out["recepcion_post_corte"] > 0, cols].reset_index(drop=True)
 
 
-def comparar_transito(lineas: pd.DataFrame, reporte: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
+def comparar_transito(
+    lineas: pd.DataFrame, reporte: pd.DataFrame, fecha_reporte=None
+) -> tuple[dict, pd.DataFrame]:
     """Compara las líneas de pedido (``revisar_transito``) con el tránsito del reporte de
     Neogística, tienda × SKU, para saber qué estados cuenta Neogística como tránsito.
 
+    Con ``fecha_reporte``, los pedidos creados ese día o después no se comparan (el reporte
+    se genera en la madrugada y no puede tenerlos; p. ej. el propio pedido de Neogística del
+    día): se informan aparte en ``creados_dia_reporte``.
+
     Devuelve (resumen, tabla por estado y clasificación): unidades de cada estado en
     tienda × SKU donde el reporte tiene tránsito y donde no."""
-    from forusight.data import reporte as R
-
-    rep = pd.DataFrame(
-        {
-            "tienda_id": reporte[R.CENTRO].map(codigo_tienda),
-            "sku": sku_canonico(reporte[R.SKU].astype("string")),
-            "transito_neo": R._num(reporte.get(R.TR_INT, 0)) + R._num(reporte.get(R.TR_PROV, 0)),
-        }
-    )
-    rep = rep.groupby(["tienda_id", "sku"], as_index=False)["transito_neo"].sum()
+    rep = _transito_reporte(reporte)
+    creados = 0.0
+    if fecha_reporte is not None and "fecha_pedido" in lineas:
+        nuevo = (
+            pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
+            >= pd.Timestamp(fecha_reporte).normalize()
+        ).fillna(False)
+        if "cuenta_transito" in lineas:
+            creados = float(lineas.loc[nuevo & lineas["cuenta_transito"], "unidades"].sum())
+        lineas = lineas.loc[~nuevo]
     li = lineas.assign(
         tienda_id=lineas["tienda_cod"].map(codigo_tienda),
         sku=sku_canonico(lineas["id_producto"].astype("string")),
@@ -842,10 +848,224 @@ def comparar_transito(lineas: pd.DataFrame, reporte: pd.DataFrame) -> tuple[dict
         "filas_iguales": float((np.isclose(a, b)).mean()) if len(idx) else 1.0,
         "filas_forusight_mas": int((b > a + 0.01).sum()),
         "filas_forusight_menos": int((b < a - 0.01).sum()),
+        "creados_dia_reporte": creados,
     }
     cols = ["estado_cod", "estado", "clasif_cod", "clasificacion", "lineas", "unidades"]
     cols += ["unid_con_transito_neo", "unid_sin_transito_neo", "% con tránsito Neo"]
     return resumen, tabla[cols].sort_values(["estado_cod", "clasif_cod"]).reset_index(drop=True)
+
+
+#: Reglas que prueba ``calibrar_transito``: estados, clasificaciones y ventana de 6/7.
+ESTADOS_CALIBRABLES = (0, 1, 2, 3, 6, 7)
+CLASIFICACIONES_CALIBRABLES = (1, 2, 3, 4)
+DIAS_CALIBRABLES = (1, 2, 3, 4, 5, 6, 7, 10, 15, 30)
+
+
+def _transito_reporte(reporte: pd.DataFrame) -> pd.DataFrame:
+    """tienda_id, sku, transito_neo (Trán. Int. + Prov.) del reporte de distribución."""
+    from forusight.data import reporte as R
+
+    rep = pd.DataFrame(
+        {
+            "tienda_id": reporte[R.CENTRO].map(codigo_tienda),
+            "sku": sku_canonico(reporte[R.SKU].astype("string")),
+            "transito_neo": R._num(reporte.get(R.TR_INT, 0)) + R._num(reporte.get(R.TR_PROV, 0)),
+        }
+    )
+    return rep.groupby(["tienda_id", "sku"], as_index=False)["transito_neo"].sum()
+
+
+def _lineas_calibrables(lineas: pd.DataFrame, fecha_reporte, fecha_foto=None) -> pd.DataFrame:
+    """Líneas de ``revisar_transito`` con códigos, antigüedad respecto del corte de stock (como
+    la corrida: ``dias_pedido``) y si el pedido existía cuando se generó el reporte."""
+    rep = pd.Timestamp(fecha_reporte).normalize()
+    foto = (
+        pd.Timestamp(fecha_foto).normalize()
+        if fecha_foto is not None
+        else rep - pd.Timedelta(days=1)
+    )
+    ped = pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
+    li = pd.DataFrame(
+        {
+            "tienda_id": lineas["tienda_cod"].map(codigo_tienda),
+            "sku": sku_canonico(lineas["id_producto"].astype("string")),
+            "estado_cod": codigo_pedido(lineas["estado"], _NOMBRES_ESTADO),
+            "clasif_cod": codigo_pedido(lineas["clasificacion"], _NOMBRES_CLASIFICACION),
+            "dias": (foto - ped).dt.days.fillna(0).clip(upper=91),
+            # creado el día del reporte o después: el reporte (de la madrugada) no puede tenerlo
+            "antes_del_reporte": (ped < rep).fillna(True),
+            "recepcionado": (
+                lineas["recepcionado"].astype(bool)
+                if "recepcionado" in lineas
+                else pd.Series(False, index=lineas.index)
+            ),
+            "unidades": pd.to_numeric(lineas["unidades"], errors="coerce").fillna(0),
+        },
+        index=lineas.index,
+    )
+    for c in ("nro_pedido", "fecha_pedido"):
+        li[c] = lineas.get(c, pd.NA)
+    return li
+
+
+def regla_de(recepcion) -> dict:
+    """Regla de tránsito (dict) desde ``params.recepcion``."""
+    return {
+        "estados": sorted(int(e) for e in recepcion.estados_transito),
+        "estados_recientes": sorted(int(e) for e in recepcion.estados_transito_recientes),
+        "dias": int(recepcion.dias_transito_recientes),
+        "clasificaciones": sorted(int(c) for c in recepcion.clasificaciones_transito),
+    }
+
+
+def cuenta_con_regla(li: pd.DataFrame, regla: dict) -> pd.Series:
+    """La línea cuenta como tránsito con ``regla`` (misma lógica que ``transito_de_pedidos``)."""
+    est = li["estado_cod"]
+    ok = est.isin(regla["estados"]).fillna(False)
+    ok |= est.isin(regla["estados_recientes"]).fillna(False) & (li["dias"] <= regla["dias"])
+    clase = li["clasif_cod"].isin(regla["clasificaciones"]).fillna(False) | li["clasif_cod"].isna()
+    return ok & clase & ~li["recepcionado"]
+
+
+def calibrar_transito(
+    lineas: pd.DataFrame,
+    reporte: pd.DataFrame,
+    fecha_reporte,
+    regla_actual: dict,
+    fecha_foto=None,
+) -> dict:
+    """Busca la regla de tránsito (estados que cuentan siempre, estados que cuentan sólo si el
+    pedido tiene <= N días, clasificaciones) que más tienda × SKU deja igual al tránsito del
+    reporte de Neogística. Sólo se comparan pedidos creados antes del día del reporte.
+
+    Devuelve {"actual": {...}, "sugerida": {...}} con la regla y su cuadre (filas iguales,
+    unidades), y "por_antiguedad": unidades por estado × días del pedido y cuántas de ellas
+    están donde el reporte tiene tránsito."""
+    li = _lineas_calibrables(lineas, fecha_reporte, fecha_foto)
+    li = li.loc[li["antes_del_reporte"] & ~li["recepcionado"]].reset_index(drop=True)
+    rep = _transito_reporte(reporte)
+    rep = rep.loc[rep["transito_neo"] > 0]
+    claves = pd.concat([li[["tienda_id", "sku"]], rep[["tienda_id", "sku"]]]).drop_duplicates()
+    claves = claves.reset_index(drop=True)
+    pos = pd.Series(range(len(claves)), index=pd.MultiIndex.from_frame(claves))
+    k_li = pos.reindex(pd.MultiIndex.from_frame(li[["tienda_id", "sku"]])).to_numpy()
+    neo = np.zeros(len(claves))
+    neo[pos.reindex(pd.MultiIndex.from_frame(rep[["tienda_id", "sku"]])).to_numpy()] = rep[
+        "transito_neo"
+    ].to_numpy()
+    u = li["unidades"].to_numpy(dtype=float)
+
+    def cuadre(regla: dict) -> dict:
+        m = cuenta_con_regla(li, regla).to_numpy()
+        fs = np.bincount(k_li[m], weights=u[m], minlength=len(claves)) if len(claves) else neo
+        dif = fs - neo
+        return {
+            "regla": regla,
+            "filas_iguales": float(np.isclose(dif, 0).mean()) if len(claves) else 1.0,
+            "transito_forusight": float(fs.sum()),
+            "transito_neogistica": float(neo.sum()),
+            "unidades_distintas": float(np.abs(dif).sum()),
+            "filas_forusight_mas": int((dif > 0.01).sum()),
+            "filas_forusight_menos": int((dif < -0.01).sum()),
+        }
+
+    def puntaje(c: dict) -> tuple:
+        return (round(c["filas_iguales"], 9), -c["unidades_distintas"])
+
+    def variantes(r: dict):
+        for e in ESTADOS_CALIBRABLES:
+            base = {**r}
+            base["estados"] = [x for x in r["estados"] if x != e]
+            base["estados_recientes"] = [x for x in r["estados_recientes"] if x != e]
+            yield base
+            yield {**base, "estados": sorted([*base["estados"], e])}
+            yield {**base, "estados_recientes": sorted([*base["estados_recientes"], e])}
+        for c in CLASIFICACIONES_CALIBRABLES:
+            cl = set(r["clasificaciones"]) ^ {c}
+            if cl:
+                yield {**r, "clasificaciones": sorted(cl)}
+
+    actual = cuadre(regla_actual)
+    mejor = actual
+    for dias in sorted({*DIAS_CALIBRABLES, regla_actual["dias"]}):
+        c = cuadre({**regla_actual, "dias": dias})
+        for _ in range(
+            6
+        ):  # descenso por coordenadas: cambia lo que más mejora hasta que nada mejora
+            cands = [cuadre(r) for r in variantes(c["regla"])]
+            top = max(cands, key=puntaje)
+            if puntaje(top) <= puntaje(c):
+                break
+            c = top
+        if puntaje(c) > puntaje(mejor):
+            mejor = c
+    if not mejor["regla"]["estados_recientes"]:  # sin estados recientes la ventana no importa
+        mejor["regla"]["dias"] = regla_actual["dias"]
+
+    li["con_transito_neo"] = neo[k_li] > 0 if len(li) else pd.Series(dtype=bool)
+    li["dias_tramo"] = pd.cut(
+        li["dias"],
+        [-np.inf, 0, 1, 2, 3, 5, 7, 15, 30, np.inf],
+        labels=["0", "1", "2", "3", "4-5", "6-7", "8-15", "16-30", "31+"],
+    )
+    ant = (
+        li.assign(u_neo=li["unidades"].where(li["con_transito_neo"], 0))
+        .groupby(["estado_cod", "dias_tramo"], observed=True)
+        .agg(
+            lineas=("unidades", "size"),
+            unidades=("unidades", "sum"),
+            unid_con_transito_neo=("u_neo", "sum"),
+        )
+        .reset_index()
+    )
+    ant["% con tránsito Neo"] = (
+        ant["unid_con_transito_neo"] / ant["unidades"].where(ant["unidades"] > 0)
+    ).round(3)
+    ant["estado"] = ant["estado_cod"].map(ESTADOS_PEDIDO)
+    return {"actual": actual, "sugerida": mejor, "por_antiguedad": ant}
+
+
+def detalle_transito(
+    lineas: pd.DataFrame, reporte: pd.DataFrame, fecha_reporte, regla: dict, fecha_foto=None
+) -> pd.DataFrame:
+    """Tienda × SKU donde el tránsito de Forusight (con ``regla``) no es el del reporte, con los
+    pedidos que lo forman: para revisar uno por uno de dónde sale la diferencia."""
+    li = _lineas_calibrables(lineas, fecha_reporte, fecha_foto)
+    li["cuenta"] = cuenta_con_regla(li, regla) & li["antes_del_reporte"]
+    rep = _transito_reporte(reporte).set_index(["tienda_id", "sku"])["transito_neo"]
+    fs = li.loc[li["cuenta"]].groupby(["tienda_id", "sku"])["unidades"].sum()
+    idx = rep.index[rep > 0].union(fs.index)
+    t = pd.DataFrame(
+        {
+            "transito_neogistica": rep.reindex(idx).fillna(0),
+            "transito_forusight": fs.reindex(idx).fillna(0),
+        }
+    )
+    t["diferencia"] = t["transito_forusight"] - t["transito_neogistica"]
+    t = t.loc[t["diferencia"].abs() > 0.01]
+
+    abiertas = li.loc[~li["recepcionado"] & li["antes_del_reporte"]]
+    abiertas = abiertas.loc[pd.MultiIndex.from_frame(abiertas[["tienda_id", "sku"]]).isin(t.index)]
+    est = abiertas["estado_cod"].map(ESTADOS_PEDIDO).astype("string").fillna("?")
+    cla = abiertas["clasif_cod"].map(CLASIFICACIONES_PEDIDO).astype("string").fillna("?")
+    fe = pd.to_datetime(abiertas["fecha_pedido"], errors="coerce").dt.strftime("%d/%m")
+    txt = (
+        abiertas["nro_pedido"].astype("string").fillna("?")
+        + " · "
+        + est
+        + " · "
+        + cla
+        + " · "
+        + fe.fillna("?")
+        + " · "
+        + abiertas["unidades"].map("{:g}".format)
+        + " u"
+        + np.where(abiertas["cuenta"], "", " (no cuenta)")
+    )
+    peds = txt.groupby([abiertas["tienda_id"], abiertas["sku"]]).agg(" | ".join)
+    t["pedidos"] = peds.reindex(t.index).fillna("")
+    t["tipo"] = np.where(t["diferencia"] > 0, "Forusight cuenta de más", "Forusight no lo ve")
+    return t.reset_index().sort_values(["tipo", "tienda_id", "sku"]).reset_index(drop=True)
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:

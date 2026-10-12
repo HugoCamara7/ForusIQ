@@ -96,6 +96,16 @@ if (
         "(1 por talla core) activa «Llenado inicial de marca nueva» arriba y vuelve a ejecutar.",
     )
 
+tr_nuevo = ((diag.get("transito_pedidos") or {}).get("creado_post_corte")) or 0
+if tr_nuevo:
+    issue_box(
+        "info",
+        f"{tr_nuevo:,} u del tránsito son pedidos creados después del cierre del stock",
+        "Por ejemplo, el pedido de Neogística de hoy ya cargado en el sistema. Cuentan como "
+        "tránsito para no enviar dos veces; por eso Forusight puede sugerir menos que el "
+        "reporte de Neogística en esas tiendas.",
+    )
+
 sin_plan = diag.get("tiendas_sin_planificacion") or []
 if sin_plan:
     issue_box(

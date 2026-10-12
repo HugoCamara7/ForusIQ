@@ -335,6 +335,7 @@ def _correr_motor(
                         inputs.stock_tienda["stock_transito"] > 0, "tienda_id"
                     ].nunique()
                 ),
+                "creado_post_corte": int(TR.transito_post_corte(inputs, params)),
             }
             if transito_pedidos
             else None

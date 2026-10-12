@@ -157,6 +157,15 @@ ese stock menos la venta neta posterior a F y más lo recepcionado después de F
 ayer no cambia; un lunes, con el corte del sábado, descuenta y suma el domingo). El CD se
 reparte con el disponible del stock.
 
+**Calibrar el tránsito** (Conexión → «Comparar y calibrar el tránsito»): con un reporte de
+Neogística, lee los pedidos de sus tiendas, deja fuera los creados el día del reporte (el
+reporte no puede tenerlos) y prueba todas las reglas (estados que cuentan siempre, estados que
+cuentan si el pedido tiene ≤ N días, clasificaciones). Muestra la regla que más tienda × SKU
+deja igual, la tabla por estado × antigüedad y un Excel con cada diferencia y sus pedidos. La
+regla sugerida se aplica a la sesión y se guarda en Parámetros. En Inicio se informa cuánto del
+tránsito son pedidos creados después del cierre del stock (p. ej. el pedido de Neogística del
+día): cuentan para no enviar dos veces.
+
 ## Configuración de secretos
 
 Las credenciales **nunca** van en git: `.streamlit/secrets.toml` y `*.json` están en

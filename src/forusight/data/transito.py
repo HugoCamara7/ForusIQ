@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pandas as pd
+
 from forusight.data.fuentes import recepcion_de_pedidos, transito_de_pedidos
 
 
@@ -44,3 +46,24 @@ def recepcion_post_corte(inputs, params):
     if not params.recepcion.sumar_recepcion_post_corte or not usa_pedidos(inputs, params):
         return None
     return recepcion_de_pedidos(inputs.pedidos, params.recepcion.clasificaciones_transito)
+
+
+def transito_post_corte(inputs, params) -> float:
+    """Unidades del tránsito que son pedidos creados después del corte de stock (normalmente,
+    hoy): p. ej. el pedido de Neogística del día ya cargado en el sistema. Cuentan como
+    tránsito para no enviar dos veces, y se informan aparte."""
+    if not usa_pedidos(inputs, params):
+        return 0.0
+    p = inputs.pedidos
+    if "dias_pedido" not in p:
+        return 0.0
+    nuevos = p.loc[pd.to_numeric(p["dias_pedido"], errors="coerce").fillna(0) < 0]
+    rec = params.recepcion
+    tr = transito_de_pedidos(
+        nuevos,
+        rec.estados_transito,
+        rec.clasificaciones_transito,
+        rec.estados_transito_recientes,
+        rec.dias_transito_recientes,
+    )
+    return float(tr["stock_transito"].sum()) if len(tr) else 0.0
