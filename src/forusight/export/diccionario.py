@@ -1,7 +1,8 @@
 """Diccionario del archivo Forusight: qué es cada columna, cómo se calcula y de dónde sale.
 
 Una sola fuente para la hoja «Diccionario» del archivo y para el Excel del diccionario.
-Cada entrada: (sección, qué es, cómo se calcula, fuente en BigQuery, con el reporte del día).
+Cada entrada: (sección, qué es, cómo se calcula, fuente en BigQuery, cómo compararla con la
+misma columna del reporte de distribución de Neogística).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ COLORES = {
     MOTIVO: ("#475569", "#EEF1F5", "#334155"),
 }
 
-REP = "Copiada del reporte"
+REP = "Igual nombre y significado en el reporte de Neogística: debe coincidir."
 
 DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Código SKU": (
@@ -81,9 +82,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         PRODUCTO,
         "Temporada comercial del modelo-color (p. ej. VERANO 2026). Sólo se reponen INVIERNO "
         "2026 y VERANO 2026 (Parámetros → surtido); lo demás no aparece en el archivo.",
-        "Maestro de temporadas: reportes de Neogística y reporte de bloqueos (ARTI no "
-        "trae la temporada comercial).",
-        "config/temporadas.csv.gz + reportes subidos",
+        "Maestro de temporadas guardado en Forusight (aprendido de reportes anteriores y del "
+        "reporte de bloqueos; ARTI no trae la temporada comercial).",
+        "config/temporadas.csv.gz",
         REP,
     ),
     "Código Centro": (
@@ -121,7 +122,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Revision de stock = reponer lo vendido y anticipar. Carga Pedidos (modelos nuevos) no "
         "se genera: entra por carga manual.",
         "Regla de Forusight",
-        "Copiado; sólo se dejan las filas (o la parte) de Revision de stock",
+        "Compara sólo las filas «Revision de stock» del reporte: las «Carga Pedidos» son cargas "
+        "manuales que Forusight no genera.",
     ),
     "Semanas (columnas con fecha)": (
         VENTA,
@@ -147,7 +149,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "de hoy. Ej.: vendió 10 el 24 y 15 el 25 y la ruta es el 26 → 25. Sin ruta: los "
         "últimos días del período de revisión.",
         "ft_pe_venta_retail (venta diaria de los últimos 14 días) + config/rutas_mall.csv",
-        "No aplica (el reporte no trae venta diaria)",
+        "No está en el reporte (propia de Forusight).",
     ),
     "Venta después del corte [un]": (
         VENTA,
@@ -155,7 +157,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "SUMA(venta diaria neta, notas de crédito en negativo) con fecha > fecha_corte del stock "
         "y antes de hoy (el corte de fecha F es el cierre del día F).",
         "ft_pe_venta_retail + stock_bi · fecha_corte",
-        "No aplica",
+        "No está en el reporte: el reporte ya la trae descontada de su Stock Físico.",
     ),
     "Recepción después del corte [un]": (
         STOCK,
@@ -163,29 +165,31 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "SUMA(unidades de pedidos recepcionados con fecha de recepción > fecha_corte del "
         "stock), reposición, llenado de canal y traspasos.",
         "pedidos_header_table + pedidos_detail_table · fecrec",
-        "No aplica",
+        "No está en el reporte: ya viene sumada en su Stock Físico.",
     ),
     "VTA 2 SEM": (
         VENTA,
         "Venta de las 2 últimas semanas.",
         "Fórmula viva: última semana cerrada + Demanda Periodo Actual.",
         "Calculada en el Excel",
-        "Fórmula viva en el Excel",
+        "No está en el reporte.",
     ),
     "Pronóstico Demanda [un/semana]": (
         NIVELES,
         "Demanda semanal esperada de la talla en la tienda.",
-        "k × venta de las 4 últimas semanas cerradas del modelo-color en la tienda × participación "
-        "de la talla (venta nacional de 12 semanas, entre las tallas que la tienda vendió en 12 "
-        "semanas). k = factor del planificador por marca × clase × prenda × género, tomado del "
-        "último reporte de distribución (base 0,325 calzado/accesorios, 0,35 vestuario).",
-        "Motor Forusight sobre ft_pe_venta_retail + stock_bi",
-        REP,
+        "Pronóstico = k × venta de las 4 últimas semanas cerradas del modelo-color en la tienda "
+        "× participación de la talla. Participación = venta nacional de 12 semanas del SKU ÷ "
+        "la de las tallas del modelo-color que la tienda vendió en 12 semanas (talla sin venta "
+        "en 12 semanas: 0). k = factor por marca × clase × prenda × género del maestro de "
+        "planificación guardado (si falta: 0,325 calzado y accesorios, 0,35 vestuario).",
+        "Motor Forusight sobre ft_pe_venta_retail",
+        "Debe coincidir; si no, revisar la venta de 4 semanas del modelo-color y el k.",
     ),
     "Leadtime [días]": (
         NIVELES,
         "Días que tarda el envío del CD a la tienda.",
-        "Por tienda; si no está, 3 días.",
+        "Por tienda; si no está, 3 días. Se usa en la cobertura del nivel máximo (no en el "
+        "tránsito: el plazo real de entrega se mide con las recepciones).",
         "config/calendario_tiendas.csv",
         REP,
     ),
@@ -200,46 +204,49 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Punto Reorden [un]": (
         NIVELES,
         "Posición a la que la talla vuelve a pedir (como el reporte de distribución).",
-        "Nivel Máximo − 1; si la tienda × SKU está en un reporte de distribución de hasta 3 días, "
-        "el punto de reorden de ese reporte. Se pide sólo si Posición ≤ Punto Reorden.",
+        "Punto Reorden = Nivel Máximo − 1. Se pide sólo si Posición ≤ Punto Reorden. "
+        "(Si el maestro guardado trae esa tienda × SKU de un reporte de hasta 3 días, usa su "
+        "punto de reorden.)",
         "Motor Forusight + maestro de planificación",
-        REP,
+        "Debe coincidir cuando coincide el Nivel Máximo.",
     ),
     "Nivel Máximo [un]": (
         NIVELES,
         "Stock que la talla debe tener para cubrir hasta la próxima ruta.",
-        "máx(Stock Mínimo Total; redondeo hacia arriba(d + 0,84·√d)), con d = Pronóstico × "
-        "(Leadtime + Período Revisión) ÷ 7 (la misma fórmula del reporte de distribución). Si "
-        "la tienda × SKU está en un reporte de hasta 3 días, el nivel de ese reporte. Talla sin "
-        "stock, tránsito ni venta, o modelo sin venta reciente en la tienda: 0 (no se evalúa, "
-        "como en el reporte).",
+        "Nivel Máximo = máx(Stock Mínimo Total; ⌈d + 0,84·√d⌉), con d = Pronóstico × (Leadtime "
+        "+ Período Revisión) ÷ 7 (misma estructura del reporte de distribución; 0,84 ≈ 80 % de "
+        "nivel de servicio). Ej.: Pronóstico 1 par/sem, Leadtime 3 y Revisión 2,33 → d = 0,76 → "
+        "⌈0,76 + 0,73⌉ = 2. Talla sin stock, tránsito ni venta, o modelo sin venta reciente en "
+        "la tienda: 0 (no se evalúa, como en el reporte).",
         "Motor Forusight + maestro de planificación",
-        REP,
+        "Debe coincidir; si no, mirar Stock Mínimo Total y Pronóstico.",
     ),
     "Stock Mínimo Total": (
         NIVELES,
         "Piso del nivel máximo que fija el planificador por tienda × SKU.",
-        "Del último reporte de distribución que traía la tienda × SKU (maestro de "
-        "planificación); si no está: el más frecuente del SKU en otras tiendas, luego de la "
-        "marca × prenda × talla, luego de la marca × prenda; si nada, 1.",
-        "Maestro de planificación (reportes de Neogística)",
-        REP,
+        "Último valor conocido de la tienda × SKU en el maestro de planificación guardado "
+        "(no vence: cambia en ~3,5 % de las claves entre reportes y el último valor acierta el "
+        "94,5 % una semana después). Si la clave no está: el más frecuente del SKU en otras "
+        "tiendas, luego de la marca × prenda × talla, luego de la marca × prenda; si nada, 1. "
+        "Una tienda sin claves propias toma las de su tienda espejo.",
+        "config/planificacion_claves.csv.gz (maestro guardado)",
+        "Puede diferir en las claves que el planificador cambió después del 12/10/2026.",
     ),
     "Código Centro Origen": (
         STOCK,
         "Centro de distribución que envía.",
-        "Siempre 320.",
-        "Secrets · cd_id",
+        "320 (CD Forus); AZALEIA sale de la bodega 380.",
+        "Secrets · cd_id + Parámetros → cd_por_marca",
         REP,
     ),
     "Stock en CD": (
         STOCK,
         "Stock del CD 320 que se puede repartir para ese SKU.",
-        "stock_bi · disponible del CD 320 (ya sin reservas de pedidos, retail, wholesale, "
-        "multicanal y e-commerce) − envíos aprobados en los últimos 3 días que aún no llegan. "
-        "La suma enviada a todas las tiendas nunca supera este valor.",
+        "stock_bi · disponible del CD (ya sin reservas de pedidos, retail, wholesale, "
+        "multicanal y e-commerce), tal cual. La suma enviada a todas las tiendas nunca supera "
+        "este valor.",
         "stock_bi · disponible (codigo_tienda = 320, último fecha_corte de este año)",
-        "Copiado; se le restan los envíos aprobados aún no recibidos",
+        "Debe coincidir con el «Stock en CD» del reporte (12/10: 100 % igual).",
     ),
     "Stock Físico [un]": (
         STOCK,
@@ -249,7 +256,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "día F) − venta neta con fecha > F + recepcionado con fecha de recepción > F (con el "
         "corte de ayer no cambia; un lunes, con el corte del sábado, ajusta el domingo).",
         "stock_bi · stock_tiendas",
-        REP,
+        "Debe coincidir con el «Stock Físico» del reporte (12/10: 100 % igual).",
     ),
     "Stock Trán. Int. [un]": (
         STOCK,
@@ -257,10 +264,11 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Pedidos del sistema hacia la tienda (reposición, llenado de canal y traspasos): "
         "aprobados o en picking (todo el historial) y documentados, en transporte o "
         "prerecepcionados dentro del plazo de entrega de la tienda. Recepcionado o más antiguo "
-        "se toma como ya recibido. Desde las 8:00, no cuentan los pedidos creados hoy antes de "
-        "las 7:00 (Neogística). No incluye el tránsito de stock_bi: es lo que SALE de la tienda.",
+        "se toma como ya recibido. Sólo pedidos creados hasta el día del cierre del stock (misma "
+        "foto que el stock). No incluye el tránsito de stock_bi: es lo que SALE de la tienda.",
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
-        "Copiado + envíos aprobados aún no recibidos",
+        "Comparar con «Stock Trán. Int.» + «Stock Trán. Prov.» del reporte. El reporte se genera "
+        "en la madrugada, así que tampoco trae los pedidos de ese día.",
     ),
     "Tránsito en CD [un]": (
         STOCK,
@@ -268,7 +276,7 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Pedidos hacia la tienda aprobados o en picking (todo el historial). Tránsito en CD + "
         "Tránsito despachado = Stock Trán. Int.",
         "pedidos_header_table + pedidos_detail_table",
-        "—",
+        "No está en el reporte (detalle propio de Forusight).",
     ),
     "Tránsito despachado [un]": (
         STOCK,
@@ -276,15 +284,15 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Pedidos documentados, en transporte o prerecepcionados dentro del plazo de entrega de "
         "la tienda (percentil 95 de sus recepciones + 1 día); más antiguos ya llegaron.",
         "pedidos_header_table + pedidos_detail_table",
-        "—",
+        "No está en el reporte (detalle propio de Forusight).",
     ),
     "Posición Stock [un]": (
         STOCK,
         "Lo que la tienda tiene y lo que ya viene en camino.",
-        "Stock Físico + Stock Trán. Int. (como el reporte; la venta después del corte sólo se "
-        "resta si se activa en Parámetros).",
+        "Posición = Stock Físico + Stock Trán. Int.",
         "Calculada",
-        "Físico + Trán. Int. + Trán. Prov. − Comprometido − Backorder",
+        "Reporte: Físico + Trán. Int. + Trán. Prov. − Comprometido − Backorder (los dos últimos "
+        "casi siempre 0).",
     ),
     "Cantidad Pedida Final [un]": (
         RESULTADO,
@@ -297,14 +305,15 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "reciben las tiendas cuyo mall tiene ruta ese día. 0 si el modelo-color está bloqueado "
         "para la tienda (reporte de bloqueos) o su temporada comercial no se repone.",
         "Motor Forusight",
-        "Misma regla del reporte (punto de reorden → nivel máximo); se recalcula",
+        "Misma regla del reporte (punto de reorden → nivel máximo). Para comparar, filtrar las "
+        "mismas tiendas de la ruta del día y sólo «Revision de stock».",
     ),
     "Unidad Empaque Distribución": (
         RESULTADO,
         "Múltiplo de envío (empaque).",
-        "La unidad de empaque del último reporte de distribución de Neogística (6, 12 o 24 en "
-        "accesorios); si no está, 1. Se envían empaques completos.",
-        "Maestro de planificación",
+        "Unidad de empaque del maestro de planificación guardado (6, 12 o 24 en accesorios); "
+        "si no está, la más frecuente del SKU; si nada, 1. Se envían empaques completos.",
+        "config/planificacion_claves.csv.gz",
         REP,
     ),
     "Alcance Posición Stock Actual [semanas]": (
@@ -312,14 +321,14 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Semanas que dura el stock actual.",
         "Posición ÷ Pronóstico.",
         "Calculada",
-        "Posición ÷ Pronóstico",
+        "Debe coincidir si coinciden Posición y Pronóstico.",
     ),
     "Alcance Posición Stock Final [semanas]": (
         NIVELES,
         "Semanas que dura el stock después del envío.",
         "(Posición + Cantidad Pedida Final) ÷ Pronóstico.",
         "Calculada",
-        "(Posición + Cantidad) ÷ Pronóstico",
+        "Debe coincidir si coinciden Posición, Pronóstico y Cantidad.",
     ),
     "Motivo Forusight": (
         MOTIVO,
@@ -327,7 +336,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "Regla que decidió la fila: reposición de la venta desde la ruta anterior, quiebre, "
         "curva rota, reposición al nivel máximo, o por qué no se envía.",
         "Motor Forusight",
-        "Motor Forusight",
+        "El reporte trae «Motivo Pendiente Reposición» (Sin Reposición Pendiente, Stock CD, "
+        "Almacenamiento): sólo explica lo que no alcanzó a enviar.",
     ),
 }
 

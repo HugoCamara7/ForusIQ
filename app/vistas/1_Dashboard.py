@@ -98,34 +98,20 @@ if (
 
 tr = diag.get("transito_pedidos") or {}
 if tr:
-    mad = tr.get("madrugada") or {}
-    corte = mad.get("hora_corte", 7)
     partes = [
         f"En el CD (aprobado, picking): {tr.get('en_cd', 0):,} u",
         f"despachado (documentado, en transporte, prerecepcionado): {tr.get('despachado', 0):,} u",
+        "sólo pedidos creados hasta el día del cierre del stock (misma foto que el stock)",
     ]
-    if tr.get("creado_post_corte"):
+    post = tr.get("post_cierre") or {}
+    if post.get("unidades"):
         partes.append(
-            f"incluye {tr['creado_post_corte']:,} u de pedidos creados después del cierre del "
-            "stock (cuentan para no enviar dos veces)"
-        )
-    if not mad.get("con_hora"):
-        partes.append(
-            "la cabecera de pedidos no trae la hora de creación: no se pueden separar los "
-            f"pedidos de Neogística de antes de las {corte}:00"
-        )
-    elif mad.get("excluida"):
-        partes.append(
-            f"no cuentan {mad.get('unidades', 0):,} u de pedidos creados hoy antes de las "
-            f"{corte}:00 (Neogística)"
-        )
-    elif mad.get("unidades"):
-        partes.append(
-            f"{mad['unidades']:,} u son pedidos de hoy antes de las {corte}:00: todavía cuentan "
-            "(la corrida se hizo antes de las 8:00)"
+            f"no cuentan {post['unidades']:,} u de pedidos creados después del cierre"
+            if post.get("excluidos")
+            else f"incluye {post['unidades']:,} u de pedidos creados después del cierre"
         )
     issue_box(
-        "info" if mad.get("con_hora") else "warn",
+        "info",
         f"Tránsito de pedidos: {tr.get('unidades', 0):,} u hacia {tr.get('tiendas', 0)} tiendas",
         " · ".join(partes) + ".",
     )

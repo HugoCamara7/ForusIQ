@@ -7,9 +7,10 @@ de ser tránsito cuando supera el plazo de entrega de su tienda, medido con sus 
 recepciones (``fuentes.plazos_entrega``). Reemplaza al ``stock_transito`` de la foto de stock,
 que viene en 0: ``stock_bi.transito`` es la salida de la tienda origen, no lo que llega.
 
-Se separa en tránsito **en el CD** (aprobado, en picking) y **despachado** (documentado, en
-transporte, prerecepcionado). Desde las 8:00, la corrida del día no cuenta los pedidos creados
-hoy antes de las 7:00 (los de Neogística): ``excluir_madrugada``.
+Sólo cuentan los pedidos creados hasta el día del cierre del stock (``solo_hasta_cierre_stock``):
+el tránsito queda en la misma foto que el stock, como el reporte de distribución. Se separa en
+tránsito **en el CD** (aprobado, en picking) y **despachado** (documentado, en transporte,
+prerecepcionado).
 """
 
 from __future__ import annotations
@@ -28,28 +29,11 @@ def usa_pedidos(inputs, params) -> bool:
     return bool(params.recepcion.transito_pedidos) and getattr(inputs, "pedidos", None) is not None
 
 
-def con_hora(pedidos: pd.DataFrame) -> bool:
-    """La cabecera trae la hora de creación: algún pedido de hoy tiene hora distinta de 00:00
-    (si todas son 00:00 la columna es sólo fecha y no se puede separar la madrugada)."""
-    if pedidos is None or "minuto_creacion_hoy" not in pedidos:
-        return False
-    m = pd.to_numeric(pedidos["minuto_creacion_hoy"], errors="coerce")
-    return bool((m > 0).any())
-
-
-def madrugada(pedidos: pd.DataFrame, params) -> pd.Series:
-    """Filas creadas hoy antes de ``hora_corte_pedidos`` (False si no hay hora)."""
-    if not con_hora(pedidos):
-        return pd.Series(False, index=pedidos.index if pedidos is not None else None)
-    m = pd.to_numeric(pedidos["minuto_creacion_hoy"], errors="coerce")
-    return (m < params.recepcion.hora_corte_pedidos * 60).fillna(False)
-
-
-def pedidos_vigentes(inputs, params, excluir_madrugada: bool = False) -> pd.DataFrame:
-    p = inputs.pedidos
-    if excluir_madrugada and params.recepcion.excluir_pedidos_madrugada:
-        p = p.loc[~madrugada(p, params)]
-    return p
+def post_cierre(pedidos: pd.DataFrame) -> pd.Series:
+    """Pedidos creados después del día del cierre del stock (``dias_pedido`` < 0)."""
+    if "dias_pedido" not in pedidos:
+        return pd.Series(False, index=pedidos.index)
+    return pd.to_numeric(pedidos["dias_pedido"], errors="coerce").fillna(0) < 0
 
 
 def _transito(pedidos: pd.DataFrame, inputs, params, estados, recientes) -> pd.DataFrame:
@@ -64,13 +48,21 @@ def _transito(pedidos: pd.DataFrame, inputs, params, estados, recientes) -> pd.D
     )
 
 
-def aplicar_pedidos(inputs, params, excluir_madrugada: bool = False):
+def _total(pedidos: pd.DataFrame, inputs, params) -> float:
+    rec = params.recepcion
+    tr = _transito(pedidos, inputs, params, rec.estados_transito, rec.estados_transito_recientes)
+    return float(tr["stock_transito"].sum()) if len(tr) else 0.0
+
+
+def aplicar_pedidos(inputs, params):
     """``stock_tienda.stock_transito`` = pedidos abiertos hacia la tienda (tiendas × SKU sin
     stock pero con pedido en camino se agregan con stock 0), con su detalle
     ``transito_en_cd`` (aprobado, en picking) y ``transito_despachado`` (documentado, en
     transporte, prerecepcionado, dentro del plazo de la tienda)."""
     rec = params.recepcion
-    p = pedidos_vigentes(inputs, params, excluir_madrugada)
+    p = inputs.pedidos
+    if rec.solo_hasta_cierre_stock:
+        p = p.loc[~post_cierre(p)]
     tr = _transito(p, inputs, params, rec.estados_transito, rec.estados_transito_recientes)
     en_cd = _transito(p, inputs, params, rec.estados_transito, [])
     desp = _transito(p, inputs, params, [], rec.estados_transito_recientes)
@@ -87,19 +79,15 @@ def aplicar_pedidos(inputs, params, excluir_madrugada: bool = False):
     return replace(inputs, stock_tienda=st)
 
 
-def resumen_madrugada(inputs, params) -> dict:
-    """Pedidos creados hoy antes de la hora de corte: unidades que contarían como tránsito
-    y si la cabecera trae la hora para separarlos."""
+def transito_post_cierre(inputs, params) -> dict:
+    """Pedidos creados después del cierre del stock (normalmente, hoy): unidades que serían
+    tránsito y si se dejaron fuera (``solo_hasta_cierre_stock``)."""
     if not usa_pedidos(inputs, params):
-        return {"con_hora": False, "unidades": 0}
+        return {"unidades": 0, "excluidos": False}
     p = inputs.pedidos
-    rec = params.recepcion
-    m = madrugada(p, params)
-    u = _transito(p.loc[m], inputs, params, rec.estados_transito, rec.estados_transito_recientes)
     return {
-        "con_hora": con_hora(p),
-        "unidades": int(u["stock_transito"].sum()) if len(u) else 0,
-        "hora_corte": rec.hora_corte_pedidos,
+        "unidades": int(_total(p.loc[post_cierre(p)], inputs, params)),
+        "excluidos": bool(params.recepcion.solo_hasta_cierre_stock),
     }
 
 
@@ -109,17 +97,3 @@ def recepcion_post_corte(inputs, params):
     if not params.recepcion.sumar_recepcion_post_corte or not usa_pedidos(inputs, params):
         return None
     return recepcion_de_pedidos(inputs.pedidos, params.recepcion.clasificaciones_transito)
-
-
-def transito_post_corte(inputs, params, excluir_madrugada: bool = False) -> float:
-    """Unidades del tránsito que son pedidos creados después del corte de stock (normalmente,
-    hoy): cuentan como tránsito para no enviar dos veces, y se informan aparte."""
-    if not usa_pedidos(inputs, params):
-        return 0.0
-    p = pedidos_vigentes(inputs, params, excluir_madrugada)
-    if "dias_pedido" not in p:
-        return 0.0
-    nuevos = p.loc[pd.to_numeric(p["dias_pedido"], errors="coerce").fillna(0) < 0]
-    rec = params.recepcion
-    tr = _transito(nuevos, inputs, params, rec.estados_transito, rec.estados_transito_recientes)
-    return float(tr["stock_transito"].sum()) if len(tr) else 0.0

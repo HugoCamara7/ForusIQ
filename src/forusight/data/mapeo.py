@@ -183,8 +183,6 @@ ALIAS_PEDIDOS: dict[str, list[str]] = {
     "fecha": ["fecha_pedido", "fecped", "fec_pedido", "fecha_creacion", "fecha", "fecmov"],
     # Recepcionado después del corte de stock (cierre de ayer): todavía no está en el stock.
     "fecha_recepcion": ["fecrec", "fecha_recepcion", "fec_recepcion", "fecha_recibido"],
-    # Fecha y hora de creación (registro) del pedido: separa los de la madrugada de hoy.
-    "fecha_hora": ["fecreg", "fecha_registro", "fecha_hora", "fecha_creacion_hora"],
 }
 
 #: Detalle de pedidos (`pedidos_detail_table`): pedido × producto × cantidad.

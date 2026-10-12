@@ -12,6 +12,10 @@ Neogistica) hacia las tiendas. La decisión de qué distribuir es de Forus y la 
 > Forus)**, con el mismo esquema de secrets que Catálogo Control Center y Repo Control Center.
 > Ver [Información pendiente](#información-pendiente).
 
+
+**Manual de uso:** [docs/MANUAL.md](docs/MANUAL.md) (también en la app, página **Manual**, con el
+diccionario de columnas descargable). Prompt para la presentación en Canva:
+[docs/PROMPT_CANVA.md](docs/PROMPT_CANVA.md).
 ---
 
 ## Arquitectura
@@ -167,12 +171,10 @@ provincia; con la ventana fija de 15 días se contaban pedidos ya recibidos. En 
 cuánto del tránsito son pedidos creados después del cierre del stock: cuentan para no enviar
 dos veces.
 
-**Pedidos de la madrugada (Neogística)**: desde las 8:00, la corrida del día no cuenta como
-tránsito los pedidos creados hoy antes de las 7:00 (hora de creación `fecreg_ph`, en hora de
-Lima): el archivo de Forusight los reemplaza y siempre se puede cargar. Lo creado después de
-las 7:00 sí cuenta (no enviar dos veces). Antes de las 8:00 no se excluye nada. Si la
-cabecera no trae la hora, Inicio lo avisa y no se excluye nada
-(`recepcion.excluir_pedidos_madrugada`, `hora_corte_pedidos`, `hora_inicio_exclusion`).
+**Tránsito en la misma foto que el stock**: sólo cuentan los pedidos creados hasta el día del
+cierre del stock (fecha de stock_bi), como el reporte de distribución; los creados después (p.
+ej. los de hoy, también los de Neogística de la madrugada) no restan al envío. Inicio informa
+cuántas unidades quedaron fuera (`recepcion.solo_hasta_cierre_stock`).
 
 En el Excel, Stock Trán. Int. = **Tránsito en CD** (aprobado, picking) + **Tránsito
 despachado** (documentado, en transporte, prerecepcionado). El tránsito de stock_bi ya no se
