@@ -253,13 +253,28 @@ class RecepcionParams(_Section):
 
     #: Tránsito desde pedidos_header_table + pedidos_detail_table (sin ellas, tránsito 0).
     transito_pedidos: bool = True
-    #: 1 Aprobado, 2 en Picking, 3 Documentado: todo el historial.
+    #: Todavía en el CD (1 Aprobado, 2 en Picking): cuentan con todo el historial.
     #: (0 Creado aún no se aprueba; 4 Recepcionado ya está en el stock de la tienda).
-    estados_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
-    #: Estados que cuentan sólo si el pedido es reciente: 6 en Transporte y 7 Prerecepcionado
-    #: (uno antiguo en esos estados ya llegó y quedó sin cerrar).
-    estados_transito_recientes: list[int] = Field(default_factory=lambda: [6, 7])
-    dias_transito_recientes: int = Field(15, ge=1, le=90)
+    estados_transito: list[int] = Field(default_factory=lambda: [1, 2])
+    #: Ya despachados (3 Documentado, 6 en Transporte, 7 Prerecepcionado): cuentan sólo
+    #: mientras el pedido esté dentro del plazo de entrega de su tienda; más antiguo, ya llegó
+    #: y quedó sin cerrar.
+    estados_transito_recientes: list[int] = Field(default_factory=lambda: [3, 6, 7])
+    #: Plazo para la tienda sin recepciones suficientes para medir el suyo.
+    dias_transito_recientes: int = Field(7, ge=1, le=90)
+    #: Plazo de cada tienda medido con sus propias recepciones (días entre el pedido y su
+    #: fecha de recepción, últimos 120 días): percentil + margen.
+    ventana_por_tienda: bool = True
+    percentil_plazo: Literal[0.5, 0.9, 0.95] = 0.95
+    margen_plazo_dias: int = Field(1, ge=0, le=15)
+    min_pedidos_plazo: int = Field(5, ge=1, le=500)
+    #: Corrida del día desde las ``hora_inicio_exclusion``: los pedidos creados hoy antes de
+    #: las ``hora_corte_pedidos`` (los de Neogística, de la madrugada) no cuentan como tránsito,
+    #: así el archivo de Forusight los reemplaza y siempre se puede cargar. Los creados
+    #: después (p. ej. el propio archivo ya cargado) sí cuentan, para no enviar dos veces.
+    excluir_pedidos_madrugada: bool = True
+    hora_corte_pedidos: int = Field(7, ge=0, le=23)
+    hora_inicio_exclusion: int = Field(8, ge=0, le=23)
     #: 1 Reposición, 2 Llenado de canal, 3 Traspaso tiendas (4 Devolución CD va al CD).
     clasificaciones_transito: list[int] = Field(default_factory=lambda: [1, 2, 3])
     #: Recepcionado (4) no es tránsito. El stock_bi de fecha F es el cierre de F: lo
@@ -350,8 +365,10 @@ class NivelNeoParams(_Section):
     z: float = Field(0.84, ge=0, le=3)
     #: La clave de un reporte reciente no baja del nivel que tenía en ese reporte.
     nivel_reporte_como_piso: bool = False
-    #: Antigüedad máxima del maestro de planificación (SMT/nivel por tienda × SKU).
-    dias_maximos: int = Field(60, ge=1, le=365)
+    #: Antigüedad máxima del maestro de planificación (SMT/nivel por tienda × SKU). 0 = sin
+    #: límite: el último SMT, UE y categoría conocidos de cada clave siguen valiendo, así la
+    #: corrida no depende de que llegue un reporte nuevo de Neogística.
+    dias_maximos: int = Field(0, ge=0, le=3650)
     #: Qué tienda × talla se evalúa: "venta" (stock/tránsito/venta de la talla y venta reciente
     #: del modelo en la tienda), "listada_reciente" (+ tallas de un reporte reciente si el modelo
     #: vendió) o "listada" (+ toda talla de un reporte reciente).

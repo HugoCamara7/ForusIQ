@@ -111,9 +111,16 @@ prioridad_tiendas:              # tiendas que reciben primero y con más cobertu
 
 recepcion:                      # tránsito = pedidos del sistema hacia la tienda (tablas de pedidos)
   transito_pedidos: true
-  estados_transito: [1, 2, 3]         # Aprobado, en Picking, Documentado: todo el historial
-  estados_transito_recientes: [6, 7]  # en Transporte, Prerecepcionado: sólo pedidos recientes
-  dias_transito_recientes: 15         # más antiguo en 6/7 = ya llegó y quedó sin cerrar
+  estados_transito: [1, 2]               # Aprobado, en Picking (aún en el CD): todo el historial
+  estados_transito_recientes: [3, 6, 7]  # Documentado, en Transporte, Prerecepcionado: dentro del plazo de la tienda
+  dias_transito_recientes: 7             # plazo de la tienda sin recepciones para medir el suyo
+  ventana_por_tienda: true               # plazo = días pedido → recepción de la propia tienda (120 días)
+  percentil_plazo: 0.95
+  margen_plazo_dias: 1
+  min_pedidos_plazo: 5
+  excluir_pedidos_madrugada: true        # desde las 8:00, los pedidos creados hoy antes de las 7:00 (Neogística) no cuentan
+  hora_corte_pedidos: 7
+  hora_inicio_exclusion: 8
   clasificaciones_transito: [1, 2, 3] # Reposición, Llenado de canal, Traspaso tiendas
   sumar_recepcion_post_corte: true    # recepcionado después del corte de stock_bi: se suma al stock físico
 
@@ -146,7 +153,7 @@ nivel_neo:                      # nivel y punto de reorden con la estructura del
   activo: true                  # pronóstico = k × venta 4 semanas × curva nacional; nivel = max(SMT, ceil(d + z·√d)); reorden = nivel − 1
   z: 0.84
   nivel_reporte_como_piso: false  # no: la fórmula se pasa en tallas de alta rotación
-  dias_maximos: 60              # antigüedad máxima del maestro de planificación (SMT por tienda × SKU)
+  dias_maximos: 0               # antigüedad máxima del maestro de planificación (SMT por tienda × SKU); 0 = sin límite (no depende de Neogística)
   dias_nivel_reporte: 3         # clave de un reporte de <= 3 días: su nivel y reorden tal cual (89,7 % el 30/09)
   banda_reporte: false          # con la fórmula, reorden = nivel − 1
   universo: listada_reciente    # talla con stock/tránsito/venta y modelo con venta reciente, o talla de un reporte reciente

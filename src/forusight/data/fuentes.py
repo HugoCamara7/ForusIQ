@@ -505,6 +505,7 @@ CAMPOS_CABECERA = (
     "clasificacion",
     "fecha",
     "fecha_recepcion",
+    "fecha_hora",
 )
 CAMPOS_DETALLE = (
     "nro_pedido",
@@ -577,6 +578,15 @@ def sql_pedidos(
             else "0"
         )
         + " AS dias_pedido",
+        # Minutos desde la medianoche (hora de Lima) si el pedido se creó hoy; NULL si no.
+        (
+            f"IF(DATE({_datetime_lima(h('fecha_hora'))}) = @hoy, "
+            f"EXTRACT(HOUR FROM {_datetime_lima(h('fecha_hora'))}) * 60 + "
+            f"EXTRACT(MINUTE FROM {_datetime_lima(h('fecha_hora'))}), NULL)"
+            if "fecha_hora" in m_h
+            else "CAST(NULL AS INT64)"
+        )
+        + " AS minuto_creacion_hoy",
         f"SUM({cant}) AS unidades",
     ]
     # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
@@ -588,7 +598,18 @@ def sql_pedidos(
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
         f"JOIN {_sin_repetidas(detalle, m_d, CAMPOS_DETALLE)} AS d\n"
         f"  ON TRIM(CAST({h('nro_pedido')} AS STRING)) = TRIM(CAST({d('nro_pedido')} AS STRING))"
-        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7, 8"
+        f"\nWHERE {where}\nGROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9"
+    )
+
+
+def _datetime_lima(col: str) -> str:
+    """Fecha-hora local de Lima de una columna de cualquier tipo: un TIMESTAMP (texto con zona,
+    «…+00») se pasa a la hora de Lima; DATETIME o texto sin zona se toma tal cual."""
+    s = f"CAST({col} AS STRING)"
+    return (
+        f"(CASE WHEN REGEXP_CONTAINS({s}, r'(\\+\\d\\d(:\\d\\d)?|Z| UTC)$') "
+        f"THEN DATETIME(SAFE_CAST({s} AS TIMESTAMP), 'America/Lima') "
+        f"ELSE SAFE_CAST({s} AS DATETIME) END)"
     )
 
 
@@ -613,6 +634,11 @@ def sql_revisar_transito(
         f"CAST({d('estado_linea')} AS STRING) AS estado_linea",
         f"SAFE_CAST({h('fecha')} AS DATE) AS fecha_pedido",
         f"SAFE_CAST({h('fecha_recepcion')} AS DATE) AS fecha_recepcion",
+        (
+            f"{_datetime_lima(h('fecha_hora'))} AS fecha_hora_pedido"
+            if "fecha_hora" in m_h
+            else "CAST(NULL AS DATETIME) AS fecha_hora_pedido"
+        ),
         f"CAST({d('id_linea')} AS STRING) AS id_linea",
         f"{sku_sql(d('id_producto'))} AS id_producto",
         f"SAFE_CAST({d('cantidad')} AS FLOAT64) AS cantidad_pedida",
@@ -699,6 +725,7 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
         "recibido_post_corte",
         "recepcionado",
         "dias_pedido",
+        "minuto_creacion_hoy",
         "unidades",
     ]
     if df is None or df.empty:
@@ -720,6 +747,11 @@ def a_pedidos(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataF
                 if "dias_pedido" in df
                 else 0
             ),
+            "minuto_creacion_hoy": (
+                pd.to_numeric(df["minuto_creacion_hoy"], errors="coerce")
+                if "minuto_creacion_hoy" in df
+                else np.nan
+            ),
             "unidades": pd.to_numeric(df["unidades"], errors="coerce").fillna(0),
         }
     )
@@ -734,6 +766,7 @@ def transito_de_pedidos(
     clasificaciones: list[int],
     estados_recientes: list[int] | None = None,
     dias_recientes: int = 15,
+    ventana: pd.Series | None = None,
 ) -> pd.DataFrame:
     """tienda_id, sku, stock_transito: pedidos hacia la tienda en los estados y
     clasificaciones elegidos. Sin columna de clasificación (todo NA) no se filtra por ella.
@@ -741,10 +774,13 @@ def transito_de_pedidos(
     Lo recepcionado después del corte no es tránsito: se suma al stock físico
     (``recepcion_de_pedidos``).
 
-    Se considera todo el historial: un pedido que sigue abierto, aunque sea antiguo, es
-    mercadería reservada para la tienda. ``estados_recientes`` (en transporte,
-    prerecepcionado) sólo cuentan si el pedido tiene ``dias_recientes`` días o menos. Lo ya recepcionado (con fecha de recepción o línea
-    en estado 4) no es tránsito aunque la cabecera siga en otro estado."""
+    ``estados`` cuentan con todo el historial (aún en el CD: aprobado, en picking).
+    ``estados_recientes`` (ya despachados: documentado, en transporte, prerecepcionado) sólo
+    cuentan mientras el pedido esté dentro del plazo de entrega de su tienda (``ventana``:
+    tienda_id → días, medido con las recepciones de la propia tienda; sin dato,
+    ``dias_recientes``): más antiguo, ya llegó y quedó sin cerrar. Lo ya recepcionado (con
+    fecha de recepción o línea en estado 4) no es tránsito aunque la cabecera siga en otro
+    estado."""
     if pedidos is None or pedidos.empty:
         return pd.DataFrame(columns=["tienda_id", "sku", "stock_transito"])
     recibido = (
@@ -754,8 +790,8 @@ def transito_de_pedidos(
     )
     en_estado = pedidos["estado"].isin(estados).fillna(False)
     if estados_recientes and "dias_pedido" in pedidos:  # 6/7: sólo si el pedido es reciente
-        reciente = (
-            pd.to_numeric(pedidos["dias_pedido"], errors="coerce").fillna(0) <= dias_recientes
+        reciente = pd.to_numeric(pedidos["dias_pedido"], errors="coerce").fillna(0) <= plazo_de(
+            pedidos["tienda_id"], ventana, dias_recientes
         )
         en_estado |= pedidos["estado"].isin(estados_recientes).fillna(False) & reciente
     en_estado &= ~recibido
@@ -766,6 +802,82 @@ def transito_de_pedidos(
     out = out.rename(columns={"unidades": "stock_transito"})
     out["stock_transito"] = out["stock_transito"].clip(lower=0)
     return out.loc[out["stock_transito"] > 0].reset_index(drop=True)
+
+
+def plazo_de(tiendas: pd.Series, ventana: pd.Series | None, defecto: float) -> pd.Series:
+    """Días máximos en tránsito de cada fila según su tienda (``defecto`` sin dato)."""
+    if ventana is None or not len(ventana):
+        return pd.Series(float(defecto), index=tiendas.index)
+    return tiendas.astype(str).map(ventana).astype(float).fillna(float(defecto))
+
+
+def sql_plazos_entrega(cabecera: str, m_h: Mapping[str, str]) -> str | None:
+    """Pedidos recepcionados en los 120 días previos a @fecha_foto por tienda destino,
+    clasificación y días entre el pedido y su recepción (None sin fecha o fecha de recepción
+    mapeadas). Sólo la cabecera: consulta chica."""
+    if not {"fecha", "fecha_recepcion", "tienda_destino", "nro_pedido"} <= set(m_h):
+        return None
+
+    def h(campo: str) -> str:
+        return f"h.{_c(m_h, campo)}"
+
+    clasif = (
+        f"CAST({h('clasificacion')} AS STRING)"
+        if "clasificacion" in m_h
+        else "CAST(NULL AS STRING)"
+    )
+    rec = f"SAFE_CAST({h('fecha_recepcion')} AS DATE)"
+    return (
+        f"SELECT TRIM(CAST({h('tienda_destino')} AS STRING)) AS tienda_cod, {clasif} AS "
+        f"clasificacion,\n  DATE_DIFF({rec}, SAFE_CAST({h('fecha')} AS DATE), DAY) AS dias,\n"
+        f"  COUNT(DISTINCT TRIM(CAST({h('nro_pedido')} AS STRING))) AS pedidos\n"
+        f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"
+        f"WHERE {rec} BETWEEN DATE_SUB(@fecha_foto, INTERVAL 120 DAY) AND @fecha_foto\n"
+        "GROUP BY 1, 2, 3"
+    )
+
+
+def plazos_entrega(df: pd.DataFrame | None, clasificaciones: list[int]) -> pd.DataFrame:
+    """Días entre el pedido y su recepción, por tienda (de ``sql_plazos_entrega``):
+    tienda_id, pedidos, dias_p50, dias_p90, dias_p95, dias_max."""
+    cols = ["tienda_id", "pedidos", "dias_p50", "dias_p90", "dias_p95", "dias_max"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    d = pd.DataFrame(
+        {
+            "tienda_id": df["tienda_cod"].map(codigo_tienda),
+            "clasificacion": codigo_pedido(df["clasificacion"], _NOMBRES_CLASIFICACION),
+            "dias": pd.to_numeric(df["dias"], errors="coerce"),
+            "pedidos": pd.to_numeric(df["pedidos"], errors="coerce").fillna(0),
+        }
+    )
+    d = d.loc[d["dias"].between(0, 60) & d["tienda_id"].ne("") & (d["pedidos"] > 0)]
+    if d["clasificacion"].notna().any():
+        d = d.loc[d["clasificacion"].isin(clasificaciones) | d["clasificacion"].isna()]
+    filas = []
+    for t, g in d.groupby("tienda_id"):
+        g = g.groupby("dias", as_index=False)["pedidos"].sum().sort_values("dias")
+        acum = g["pedidos"].cumsum() / g["pedidos"].sum()
+
+        def q(p: float, g=g, acum=acum) -> float:
+            return float(g["dias"].to_numpy()[np.searchsorted(acum.to_numpy(), p - 1e-9)])
+
+        filas.append([t, int(g["pedidos"].sum()), q(0.5), q(0.9), q(0.95), float(g["dias"].max())])
+    return pd.DataFrame(filas, columns=cols)
+
+
+def ventana_transito(plazos: pd.DataFrame | None, recepcion) -> pd.Series:
+    """tienda_id → días máximos que un pedido despachado sigue en tránsito: el percentil
+    ``percentil_plazo`` de sus recepciones + ``margen_plazo_dias`` (tiendas con al menos
+    ``min_pedidos_plazo`` pedidos recibidos)."""
+    if plazos is None or plazos.empty or not getattr(recepcion, "ventana_por_tienda", False):
+        return pd.Series(dtype=float)
+    col = {0.5: "dias_p50", 0.9: "dias_p90", 0.95: "dias_p95"}.get(
+        recepcion.percentil_plazo, "dias_p95"
+    )
+    p = plazos.loc[plazos["pedidos"] >= recepcion.min_pedidos_plazo]
+    v = (p[col] + recepcion.margen_plazo_dias).clip(lower=1, upper=30)
+    return pd.Series(v.to_numpy(dtype=float), index=p["tienda_id"].astype(str))
 
 
 def recepcion_de_pedidos(pedidos: pd.DataFrame, clasificaciones: list[int]) -> pd.DataFrame:
@@ -781,71 +893,6 @@ def recepcion_de_pedidos(pedidos: pd.DataFrame, clasificaciones: list[int]) -> p
     out = p.groupby(["tienda_id", "sku"], as_index=False)["unidades"].sum()
     out = out.rename(columns={"unidades": "recepcion_post_corte"})
     return out.loc[out["recepcion_post_corte"] > 0, cols].reset_index(drop=True)
-
-
-def comparar_transito(lineas: pd.DataFrame, reporte: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
-    """Compara las líneas de pedido (``revisar_transito``) con el tránsito del reporte de
-    Neogística, tienda × SKU, para saber qué estados cuenta Neogística como tránsito.
-
-    Devuelve (resumen, tabla por estado y clasificación): unidades de cada estado en
-    tienda × SKU donde el reporte tiene tránsito y donde no."""
-    from forusight.data import reporte as R
-
-    rep = pd.DataFrame(
-        {
-            "tienda_id": reporte[R.CENTRO].map(codigo_tienda),
-            "sku": sku_canonico(reporte[R.SKU].astype("string")),
-            "transito_neo": R._num(reporte.get(R.TR_INT, 0)) + R._num(reporte.get(R.TR_PROV, 0)),
-        }
-    )
-    rep = rep.groupby(["tienda_id", "sku"], as_index=False)["transito_neo"].sum()
-    li = lineas.assign(
-        tienda_id=lineas["tienda_cod"].map(codigo_tienda),
-        sku=sku_canonico(lineas["id_producto"].astype("string")),
-        estado_cod=codigo_pedido(lineas["estado"], _NOMBRES_ESTADO),
-        clasif_cod=codigo_pedido(lineas["clasificacion"], _NOMBRES_CLASIFICACION),
-    )
-    li = li.merge(rep, on=["tienda_id", "sku"], how="left")
-    li["transito_neo"] = li["transito_neo"].fillna(0)
-    li["con_transito_neo"] = li["transito_neo"] > 0
-    tabla = (
-        li.groupby(["estado_cod", "clasif_cod"], dropna=False)
-        .apply(
-            lambda g: pd.Series(
-                {
-                    "lineas": len(g),
-                    "unidades": g["unidades"].sum(),
-                    "unid_con_transito_neo": g.loc[g["con_transito_neo"], "unidades"].sum(),
-                    "unid_sin_transito_neo": g.loc[~g["con_transito_neo"], "unidades"].sum(),
-                }
-            ),
-            include_groups=False,
-        )
-        .reset_index()
-    )
-    tabla["% con tránsito Neo"] = (
-        tabla["unid_con_transito_neo"] / tabla["unidades"].where(tabla["unidades"] > 0)
-    ).round(3)
-    tabla["estado"] = tabla["estado_cod"].map(ESTADOS_PEDIDO)
-    tabla["clasificacion"] = tabla["clasif_cod"].map(CLASIFICACIONES_PEDIDO)
-    nuestro = (
-        li.loc[li["cuenta_transito"]].groupby(["tienda_id", "sku"])["unidades"].sum()
-        if "cuenta_transito" in li
-        else pd.Series(dtype=float)
-    )
-    cmp = rep.set_index(["tienda_id", "sku"])["transito_neo"]
-    idx = cmp.index.union(nuestro.index)
-    a, b = cmp.reindex(idx, fill_value=0), nuestro.reindex(idx, fill_value=0)
-    resumen = {
-        "transito_neogistica": float(a.sum()),
-        "transito_forusight": float(b.sum()),
-        "filas_iguales": float((np.isclose(a, b)).mean()) if len(idx) else 1.0,
-        "filas_forusight_mas": int((b > a + 0.01).sum()),
-        "filas_forusight_menos": int((b < a - 0.01).sum()),
-    }
-    cols = ["estado_cod", "estado", "clasif_cod", "clasificacion", "lineas", "unidades"]
-    cols += ["unid_con_transito_neo", "unid_sin_transito_neo", "% con tránsito Neo"]
-    return resumen, tabla[cols].sort_values(["estado_cod", "clasif_cod"]).reset_index(drop=True)
 
 
 def sql_maestro(tabla: str, mapa: Mapping[str, str]) -> str:
@@ -1091,8 +1138,8 @@ def construir_entradas(
     )
     st["stock_disponible"] = st["stock_disponible"].clip(lower=0)
     # stock_bi.transito es la salida de la tienda ORIGEN, no lo que llega: el tránsito sale de
-    # las tablas de pedidos (data.transito.aplicar_pedidos). El de stock_bi queda aparte, sólo
-    # para comparar en el Excel («Tránsito stock_bi [un]»).
+    # las tablas de pedidos (data.transito.aplicar_pedidos). El de stock_bi no se usa ni se
+    # muestra (en el 12/10 no coincidía con el tránsito real en ninguna tienda × SKU).
     st["stock_transito"] = 0.0
 
     # --- venta real semanal (cerradas + semana en curso)

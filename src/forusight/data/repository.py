@@ -13,6 +13,7 @@ import re
 from importlib import resources
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 
 from forusight.config.settings import AppSettings
@@ -573,7 +574,7 @@ class FuentesRepository(BigQueryRepository):
                     m_a,
                     con_marcas,
                 ),
-                {"fecha_foto": foto},
+                {"fecha_foto": foto, "hoy": C.hoy_lima().date()},
             )
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
@@ -584,8 +585,35 @@ class FuentesRepository(BigQueryRepository):
                 "Tránsito: la cabecera de pedidos no tiene clasificación mapeada; se cuentan "
                 "todas las clasificaciones."
             )
+        if "fecha_hora" not in m_h:
+            diag.notas.append(
+                "Tránsito: la cabecera de pedidos no tiene fecha y hora de registro mapeada "
+                "(fecreg); no se pueden separar los pedidos de la madrugada."
+            )
         diag.filas["pedidos_tienda_sku"] = len(pedidos)
+        entradas.plazos_entrega = self._plazos(q, tablas["pedidos"], m_h, foto, diag)
         return pedidos
+
+    def _plazos(self, q, cabecera, m_h, foto, diag) -> pd.DataFrame | None:
+        """Días entre pedido y recepción por tienda (None si no hay fechas mapeadas)."""
+        from forusight.data import fuentes as F
+        from forusight.data.bq_client import explicar_error
+
+        sql = F.sql_plazos_entrega(cabecera, m_h)
+        if sql is None:
+            diag.notas.append(
+                "Tránsito: sin fecha de pedido o de recepción mapeadas en la cabecera; el plazo "
+                "de entrega es el mismo para todas las tiendas."
+            )
+            return None
+        try:
+            crudo = q("plazos_entrega", sql, {"fecha_foto": foto})
+        except Exception as exc:
+            diag.notas.append(
+                f"Tránsito: no se pudo medir el plazo de entrega: {explicar_error(exc)}"
+            )
+            return None
+        return F.plazos_entrega(crudo, [1, 2, 3])
 
     def revisar_venta(self, marcas: list[str]) -> tuple[dict, pd.DataFrame]:
         """Última fecha de venta de la tabla y de la marca, y filas posteriores (si hay)."""
@@ -631,6 +659,26 @@ class FuentesRepository(BigQueryRepository):
                 out[k] = pd.Timestamp(df["ultima"].iloc[0]).date().isoformat()
         return out
 
+    def plazos_entrega(self, fecha_foto: dt.date, recepcion) -> pd.DataFrame:
+        """Plazo de entrega de cada tienda (días pedido → recepción, 120 días) y la ventana de
+        tránsito que resulta con ``recepcion``."""
+        from forusight.data import fuentes as F
+
+        tablas = self.tablas()
+        mapas = self.mapeos({"pedidos": tablas["pedidos"]})
+        if "pedidos" not in mapas:
+            return F.plazos_entrega(None, [])
+        sql = F.sql_plazos_entrega(tablas["pedidos"], mapas["pedidos"][0])
+        if sql is None:
+            return F.plazos_entrega(None, [])
+        crudo = self.client.query_df(
+            sql, {"fecha_foto": fecha_foto}, labels={"consulta": "plazos_entrega"}
+        )
+        p = F.plazos_entrega(crudo, recepcion.clasificaciones_transito)
+        v = F.ventana_transito(p, recepcion)
+        p["plazo_transito"] = p["tienda_id"].astype(str).map(v)
+        return p
+
     def revisar_transito(
         self, tiendas, recepcion, fecha_foto: dt.date | None = None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -652,6 +700,7 @@ class FuentesRepository(BigQueryRepository):
                 raise ValueError(f"Mapeo de {fuente} incompleto: falta {', '.join(falta)}.")
         m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
         hoy = fecha_foto or C.hoy_lima().date()
+        plazos = self.plazos_entrega(hoy, recepcion)
         lineas = self.client.query_df(
             F.sql_revisar_transito(tablas["pedidos"], m_h, tablas["pedidos_detalle"], m_d),
             {
@@ -675,9 +724,14 @@ class FuentesRepository(BigQueryRepository):
             # 6/7 (en transporte, prerecepcionado): sólo si el pedido es reciente.
             ped = pd.to_datetime(lineas["fecha_pedido"], errors="coerce")
             dias = (pd.Timestamp(hoy) - ped).dt.days.fillna(0)
-            abierto |= est.isin(recepcion.estados_transito_recientes).fillna(False) & (
-                dias <= recepcion.dias_transito_recientes
-            )
+            lineas["dias_pedido"] = dias
+            lineas["plazo_tienda"] = F.plazo_de(
+                lineas["tienda_cod"].map(F.codigo_tienda),
+                F.ventana_transito(plazos, recepcion),
+                recepcion.dias_transito_recientes,
+            ).to_numpy()
+            despachado = est.isin(recepcion.estados_transito_recientes).fillna(False)
+            abierto |= despachado & (dias <= lineas["plazo_tienda"])
             clase_ok = cla.isin(recepcion.clasificaciones_transito).fillna(False) | cla.isna()
             # Ya recibido: con fecha de recepción o línea en estado 4 (está en el stock).
             lineas["recepcionado"] = F.recepcionado(
@@ -686,7 +740,41 @@ class FuentesRepository(BigQueryRepository):
             abierto = abierto & ~lineas["recepcionado"]
             desp = lineas["cantidad_despachada"].where(lineas["cantidad_despachada"] > 0)
             lineas["unidades"] = desp.fillna(lineas["cantidad_pedida"]).fillna(0)
+            # Desde las 8:00, lo creado hoy antes de las 7:00 (Neogística) no cuenta.
+            fh = pd.to_datetime(
+                lineas["fecha_hora_pedido"]
+                if "fecha_hora_pedido" in lineas
+                else pd.Series(pd.NaT, index=lineas.index),
+                errors="coerce",
+            )
+            ahora = C.ahora_lima()
+            con_hora = bool(fh.notna().any() and (fh.dt.hour + fh.dt.minute > 0).any())
+            madrugada = (
+                (fh.dt.date == ahora.date())
+                & (fh.dt.hour < recepcion.hora_corte_pedidos)
+                & con_hora
+                & recepcion.excluir_pedidos_madrugada
+                & (ahora.hour >= recepcion.hora_inicio_exclusion)
+            ).fillna(False)
+            abierto = abierto & ~madrugada
             lineas["cuenta_transito"] = abierto & clase_ok
+            lineas["motivo"] = np.select(
+                [
+                    lineas["recepcionado"],
+                    madrugada,
+                    ~clase_ok,
+                    despachado & (dias > lineas["plazo_tienda"]),
+                    abierto,
+                ],
+                [
+                    "Ya recepcionado",
+                    f"Creado hoy antes de las {recepcion.hora_corte_pedidos}:00 (Neogística)",
+                    "Clasificación que no cuenta",
+                    "Despachado hace más que el plazo de la tienda: ya llegó",
+                    "Cuenta como tránsito",
+                ],
+                "Estado que no cuenta",
+            )
             lineas["repetida"] = lineas["filas"] > 1
         cat = set(self._codigos_catalogo())
         if len(locales):

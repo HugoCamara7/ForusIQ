@@ -126,6 +126,9 @@ def test_maestro_desde_reporte_y_guardado():
     r = PLAN.desde_bytes(PLAN.a_bytes(u))
     assert len(r.claves) == 2 and r.claves["sku"].tolist() == u.claves["sku"].tolist()
     assert len(PLAN.vigente(u, "2026-12-31", 30).claves) == 0
+    # sin límite (0): sin reportes nuevos de Neogística sigue valiendo el último dato conocido
+    assert len(PLAN.vigente(u, "2027-12-31", 0).claves) == 2
+    assert len(PLAN.vigente(u, "2026-09-01", 0).claves) == 0  # nunca claves del futuro
 
 
 def test_tienda_sin_planificacion_toma_el_smt_de_su_espejo():

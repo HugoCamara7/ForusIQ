@@ -254,20 +254,28 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Stock Trán. Int. [un]": (
         STOCK,
         "Unidades en camino a la tienda.",
-        "Pedidos del sistema hacia la tienda aprobados, en picking o documentados (todo el "
-        "historial), y en transporte o prerecepcionados de los últimos 15 días (reposición, "
-        "llenado de canal y traspasos). Recepcionado, con fecha de recepción o más antiguo se "
-        "toma como ya recibido.",
+        "Pedidos del sistema hacia la tienda (reposición, llenado de canal y traspasos): "
+        "aprobados o en picking (todo el historial) y documentados, en transporte o "
+        "prerecepcionados dentro del plazo de entrega de la tienda. Recepcionado o más antiguo "
+        "se toma como ya recibido. Desde las 8:00, no cuentan los pedidos creados hoy antes de "
+        "las 7:00 (Neogística). No incluye el tránsito de stock_bi: es lo que SALE de la tienda.",
         "pedidos_header_table + pedidos_detail_table (candes_pd o canped_pd)",
         "Copiado + envíos aprobados aún no recibidos",
     ),
-    "Tránsito stock_bi [un]": (
+    "Tránsito en CD [un]": (
         STOCK,
-        "Tránsito que registra stock_bi, para comparar con el de pedidos. No entra en el cálculo.",
-        "Columna transito de stock_bi en el corte del día. Es lo que sale de la tienda ORIGEN "
-        "(no lo que llega a esta), por eso la posición usa el tránsito de pedidos (Stock Trán. "
-        "Int.).",
-        "stock_bi · transito",
+        "Parte del tránsito que todavía está en el CD.",
+        "Pedidos hacia la tienda aprobados o en picking (todo el historial). Tránsito en CD + "
+        "Tránsito despachado = Stock Trán. Int.",
+        "pedidos_header_table + pedidos_detail_table",
+        "—",
+    ),
+    "Tránsito despachado [un]": (
+        STOCK,
+        "Parte del tránsito que ya salió del CD y va camino a la tienda.",
+        "Pedidos documentados, en transporte o prerecepcionados dentro del plazo de entrega de "
+        "la tienda (percentil 95 de sus recepciones + 1 día); más antiguos ya llegaron.",
+        "pedidos_header_table + pedidos_detail_table",
         "—",
     ),
     "Posición Stock [un]": (

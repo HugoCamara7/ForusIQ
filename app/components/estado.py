@@ -255,6 +255,7 @@ def _correr_motor(
     plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
     cargas: str = "",  # última carga de stock y venta (clave_cargas)
     rutas_huella: str = "",  # cambia si cambia una ruta o una excepción (mantenedor de rutas)
+    excluir_madrugada: bool = False,  # corrida de hoy desde las 8:00 (excluir_madrugada_hoy)
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -268,7 +269,7 @@ def _correr_motor(
     # Tránsito: pedidos del sistema hacia la tienda (data.transito).
     transito_pedidos = TR.usa_pedidos(inputs, params)
     if transito_pedidos:  # sin tablas de pedidos legibles el tránsito queda en 0 (diagnóstico)
-        inputs = TR.aplicar_pedidos(inputs, params)
+        inputs = TR.aplicar_pedidos(inputs, params, excluir_madrugada)
     dia = dia_reposicion or hoy_lima().date().isoformat()
     base_rutas, excepciones = rutas_vigentes()
     dt = CAL.aplicar(inputs.dim_tienda, dia, params, list(marcas or []), base_rutas, excepciones)
@@ -335,6 +336,13 @@ def _correr_motor(
                         inputs.stock_tienda["stock_transito"] > 0, "tienda_id"
                     ].nunique()
                 ),
+                "creado_post_corte": int(TR.transito_post_corte(inputs, params, excluir_madrugada)),
+                "en_cd": int(inputs.stock_tienda["transito_en_cd"].sum()),
+                "despachado": int(inputs.stock_tienda["transito_despachado"].sum()),
+                "madrugada": {
+                    **TR.resumen_madrugada(inputs, params),
+                    "excluida": bool(excluir_madrugada),
+                },
             }
             if transito_pedidos
             else None
@@ -407,7 +415,23 @@ def correr_motor(
         huella_planificacion(niveles_clave),
         clave_cargas(fuente, huella_config()),
         huella_rutas(),
+        excluir_madrugada_hoy(dia_reposicion, params_json),
     )
+
+
+def excluir_madrugada_hoy(dia_reposicion: str = "", params_json: str = "") -> bool:
+    """Corrida del día de hoy desde la hora de inicio (8:00 de Lima): los pedidos creados hoy
+    antes de la hora de corte (7:00) no cuentan como tránsito (params.recepcion)."""
+    from forusight.data.corridas import ahora_lima
+
+    rec = (
+        EngineParams.model_validate_json(params_json) if params_json else EngineParams()
+    ).recepcion
+    if not rec.excluir_pedidos_madrugada:
+        return False
+    ahora = ahora_lima()
+    dia = pd.Timestamp(dia_reposicion).date() if dia_reposicion else ahora.date()
+    return dia == ahora.date() and ahora.hour >= rec.hora_inicio_exclusion
 
 
 #: Bloqueos subidos (reporte de bloqueos), por huella del contenido. Se pasa sólo la huella a las
@@ -959,12 +983,12 @@ def carga_planificacion() -> None:
     lo usan la pantalla y la corrida de las 6:30). Vive en Parámetros, fuera del día a día."""
     ss = st.session_state
     archivos = st.file_uploader(
-        "Reportes de distribución (Neogística)",
+        "Reportes de distribución (opcional)",
         type=["xlsx"],
         accept_multiple_files=True,
         key="plan_uploader",
-        help="Actualizan stock mínimo, nivel, reorden y empaque por tienda × SKU. Quedan "
-        "guardados: no hace falta volver a subirlos.",
+        help="Opcional. Actualizan stock mínimo y empaque por tienda × SKU del maestro "
+        "guardado. Sin subir nada, la corrida usa el último dato conocido.",
     )
     try:
         if archivos:

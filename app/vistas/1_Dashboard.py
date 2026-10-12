@@ -81,16 +81,6 @@ with cabecera:
         eyebrow="Aprobada" if aprobada else "Propuesta",
         meta=meta,
     )
-plan = diag.get("planificacion") or {}
-if plan.get("claves") and plan.get("dias", 0) > res.params.nivel_neo.dias_nivel_reporte:
-    issue_box(
-        "warn",
-        f"El último reporte de Neogística cargado es del {_fecha(plan['ultimo_reporte'])} "
-        f"(hace {plan['dias']} días)",
-        "Para reponer al mismo ritmo que Neogística, sube el reporte de distribución de hoy en "
-        "Parámetros → «Planificación Neogística» y vuelve a ejecutar la corrida.",
-    )
-
 tiendas_res = getattr(res, "tiendas", None)
 if (
     tiendas_res is not None
@@ -106,21 +96,54 @@ if (
         "(1 por talla core) activa «Llenado inicial de marca nueva» arriba y vuelve a ejecutar.",
     )
 
+tr = diag.get("transito_pedidos") or {}
+if tr:
+    mad = tr.get("madrugada") or {}
+    corte = mad.get("hora_corte", 7)
+    partes = [
+        f"En el CD (aprobado, picking): {tr.get('en_cd', 0):,} u",
+        f"despachado (documentado, en transporte, prerecepcionado): {tr.get('despachado', 0):,} u",
+    ]
+    if tr.get("creado_post_corte"):
+        partes.append(
+            f"incluye {tr['creado_post_corte']:,} u de pedidos creados después del cierre del "
+            "stock (cuentan para no enviar dos veces)"
+        )
+    if not mad.get("con_hora"):
+        partes.append(
+            "la cabecera de pedidos no trae la hora de creación: no se pueden separar los "
+            f"pedidos de Neogística de antes de las {corte}:00"
+        )
+    elif mad.get("excluida"):
+        partes.append(
+            f"no cuentan {mad.get('unidades', 0):,} u de pedidos creados hoy antes de las "
+            f"{corte}:00 (Neogística)"
+        )
+    elif mad.get("unidades"):
+        partes.append(
+            f"{mad['unidades']:,} u son pedidos de hoy antes de las {corte}:00: todavía cuentan "
+            "(la corrida se hizo antes de las 8:00)"
+        )
+    issue_box(
+        "info" if mad.get("con_hora") else "warn",
+        f"Tránsito de pedidos: {tr.get('unidades', 0):,} u hacia {tr.get('tiendas', 0)} tiendas",
+        " · ".join(partes) + ".",
+    )
+
 sin_plan = diag.get("tiendas_sin_planificacion") or []
 if sin_plan:
     issue_box(
-        "warn",
-        f"{len(sin_plan)} tienda(s) sin datos de planificación: {', '.join(sin_plan)}",
-        "Su stock mínimo, nivel y punto de reorden se estiman con los de otras tiendas y pueden "
-        "salir altos. Sube un reporte de Neogística que incluya esas tiendas en Parámetros → "
-        "«Planificación Neogística».",
+        "info",
+        f"{len(sin_plan)} tienda(s) sin stock mínimo propio: {', '.join(sin_plan)}",
+        "Su stock mínimo se estima con el del mismo SKU en otras tiendas y el nivel sale de su "
+        "propia venta. Para fijarlo, asígnales una tienda espejo en config/tiendas_espejo.csv.",
     )
 
 con_espejo = diag.get("tiendas_con_espejo") or []
 if con_espejo:
     issue_box(
         "info",
-        f"{len(con_espejo)} tienda(s) que Neogística no planifica, con tienda espejo: "
+        f"{len(con_espejo)} tienda(s) sin stock mínimo propio, con tienda espejo: "
         f"{', '.join(con_espejo)}",
         "Toman el stock mínimo, la unidad de empaque y la categoría de su espejo; el pronóstico "
         "sale de su propia venta. Se cambia en config/tiendas_espejo.csv.",
@@ -181,6 +204,11 @@ with c2, st.container(key="card_disponibilidad"):
         velocimetro(
             hoy,
             "Disponibilidad del retail",
-            f"Después del envío: {despues:.1%} · {activos:,} SKU activos · meta ≥ 93 %",
+            (
+                f"Con tránsito: {r['disponibilidad_retail_transito']:.1%} · "
+                if r.get("disponibilidad_retail_transito") is not None
+                else ""
+            )
+            + f"Después del envío: {despues:.1%} · {activos:,} tallas activas · meta ≥ 93 %",
         )
     )
