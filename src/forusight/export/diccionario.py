@@ -84,8 +84,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         "adelante (INVIERNO 2027, VERANO 2027…) y ESCOLAR 2026; INVIERNO 2026 y anteriores no "
         "(Parámetros → surtido). Un modelo nuevo sin temporada conocida se repone.",
         "Maestro de temporadas guardado en Forusight (aprendido de reportes anteriores y del "
-        "reporte de bloqueos; ARTI no trae la temporada comercial).",
-        "config/temporadas.csv.gz",
+        "reporte de bloqueos; ARTI no trae la temporada comercial). Lo guardado en "
+        "Parámetros → Temporadas manda sobre el maestro.",
+        "config/temporadas.csv.gz + mantenedor de temporadas",
         REP,
     ),
     "Código Centro": (
@@ -225,12 +226,13 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Stock Mínimo Total": (
         NIVELES,
         "Piso del nivel máximo que fija el planificador por tienda × SKU.",
-        "Último valor conocido de la tienda × SKU en el maestro de planificación guardado "
+        "Primero, el valor guardado en Parámetros → Stock mínimo; si no, el último valor "
+        "conocido de la tienda × SKU en el maestro de planificación guardado "
         "(no vence: cambia en ~3,5 % de las claves entre reportes y el último valor acierta el "
         "94,5 % una semana después). Si la clave no está: el más frecuente del SKU en otras "
         "tiendas, luego de la marca × prenda × talla, luego de la marca × prenda; si nada, 1. "
         "Una tienda sin claves propias toma las de su tienda espejo.",
-        "config/planificacion_claves.csv.gz (maestro guardado)",
+        "config/planificacion_claves.csv.gz (maestro guardado) + mantenedor de stock mínimo",
         "Puede diferir en las claves que el planificador cambió después del 12/10/2026.",
     ),
     "Código Centro Origen": (

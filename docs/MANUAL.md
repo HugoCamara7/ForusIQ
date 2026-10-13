@@ -32,7 +32,8 @@ del stock), así que se usa **el primer archivo del día**.
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
 | Producto | ARTI | SKU, modelo, color, talla, marca, clase, género. |
 | Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
-| Stock mínimo, empaque, k | Maestro de planificación guardado | No vence (sección 3.4). |
+| Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
+| Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
 | Bloqueos | Reporte de bloqueos + mantenedor | Se editan en **Bloqueos**. |
 
 ---
@@ -66,7 +67,11 @@ k es el factor del planificador por marca × clase × prenda × género. Si no h
 calzado y accesorios, 0,35 en vestuario.
 
 ### 3.4 Stock mínimo (piso del nivel)
-Último valor conocido de la tienda × SKU en el maestro guardado. Si la clave no está:
+Es un dato **propio de Forus**: no se vuelve a pedir a Neogística. Se usa, en este orden:
+
+0. el valor que alguien guardó en **Parámetros → Stock mínimo** (con usuario y fecha);
+
+luego el último valor conocido de la tienda × SKU en el maestro guardado. Si la clave no está:
 1. el más frecuente del SKU en otras tiendas;
 2. luego el de marca × prenda × talla;
 3. luego el de marca × prenda;
@@ -75,7 +80,10 @@ calzado y accesorios, 0,35 en vestuario.
 Una tienda nueva puede tomar los valores de una **tienda espejo** (`config/tiendas_espejo.csv`).
 
 Con 6 reportes (01–12/10/2026): el stock mínimo cambia en ~3,5 % de las claves entre reportes,
-y el último valor conocido acierta el 94,5 % una semana después.
+y el último valor conocido acierta el 94,5 % una semana después. Con el stock mínimo guardado,
+el nivel máximo coincide con el de Neogística en el **95,4 %** de las tienda × talla; si se
+reemplazara por una regla de venta, no pasa del 84 %. Por eso se conserva y sólo se edita
+cuando el planificador lo cambia.
 
 ### 3.5 Nivel máximo y punto de reorden
 ```
@@ -118,7 +126,7 @@ Lo enviado **nunca supera** el Stock en CD.
 ### 3.8 Filtros finales
 - Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**).
 - Un modelo-color **bloqueado** para la tienda no se envía (página **Bloqueos**).
-- Sólo se reponen **VERANO 2026 en adelante** (VERANO 2026, INVIERNO 2027, VERANO 2027…) y **ESCOLAR 2026**; INVIERNO 2026 y anteriores no. Un modelo nuevo sin temporada conocida se repone (Parámetros → surtido).
+- Sólo se reponen **VERANO 2026 en adelante** (VERANO 2026, INVIERNO 2027, VERANO 2027…) y **ESCOLAR 2026**; INVIERNO 2026 y anteriores no. Un modelo nuevo sin temporada conocida se repone. La temporada de cada modelo-color se corrige en **Parámetros → Temporadas**.
 
 ---
 
@@ -181,7 +189,7 @@ Recuadros de aviso:
 | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
 | **Bloqueos** | Bloquear o desbloquear modelo-color × tienda (o cargar Excel). |
 | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
-| **Parámetros** | Reglas del motor (formulario o YAML). |
+| **Parámetros** | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo** (buscar, editar, cargar Excel, historial). |
 | **Comparar con Neogística** | Pone lado a lado la corrida y el reporte de Neogística, sólo para revisar. |
 | **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
 | **Manual** | Este documento y el diccionario de columnas. |

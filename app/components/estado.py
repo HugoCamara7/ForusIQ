@@ -255,6 +255,7 @@ def _correr_motor(
     plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
     cargas: str = "",  # última carga de stock y venta (clave_cargas)
     rutas_huella: str = "",  # cambia si cambia una ruta o una excepción (mantenedor de rutas)
+    mant_huella: str = "",  # cambia si cambia el mantenedor de temporadas o de stock mínimo
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -283,12 +284,15 @@ def _correr_motor(
             ["venta_desde_ruta", "venta_post_corte", "recepcion_post_corte"]
         ].fillna(0.0)
     bloq = bloqueos_de(bloq_clave)
+    from forusight.data import mantenedores as MT
     from forusight.data import temporadas as TEMP
 
     maestro = TEMP.combinar(
         TEMP.por_defecto(),
         _TEMPORADAS.get(bloq_clave.partition("|")[0]),
         _TEMPORADAS.get(niveles_clave),
+        # mantenedor de temporadas: manda sobre el maestro guardado
+        MT.temporadas_vigentes(mantenedor(MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS)),
     )
     inputs = replace(
         inputs,
@@ -298,7 +302,12 @@ def _correr_motor(
     )
     from forusight.data import planificacion as PLAN
 
-    plan = maestro_planificacion(niveles_clave)
+    # stock mínimo del mantenedor: manda sobre el maestro guardado
+    plan = MT.aplicar_stock_minimo(
+        maestro_planificacion(niveles_clave),
+        mantenedor(MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
+        dia,
+    )
     plan_vig = PLAN.con_espejos(PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos))
     # Tiendas que reponen hoy sin claves de planificación: su nivel sale de otras tiendas.
     hoy = dt.loc[dt["activa"] & dt["recibe_hoy"]]
@@ -410,6 +419,7 @@ def correr_motor(
         huella_planificacion(niveles_clave),
         clave_cargas(fuente, huella_config()),
         huella_rutas(),
+        huella_mantenedores(),
     )
 
 
@@ -507,6 +517,53 @@ def _store_bloqueos():
     if cfg is None:
         return None
     return GitHubStore(cfg["repository"], cfg["token"], cfg["branch"], cfg["prefix"])
+
+
+# ------------------------------------------------------------------ mantenedores propios
+
+#: Historial de cada mantenedor (temporadas, stock mínimo), por ruta en GitHub.
+_MANT: dict[str, pd.DataFrame] = {}
+
+
+def mantenedor(ruta: str, cols: list[str]) -> pd.DataFrame:
+    """Historial del mantenedor (GitHub; sin GitHub, sólo lo de este proceso)."""
+    from forusight.data import mantenedores as MT
+
+    if ruta not in _MANT:
+        d = MT.vacio(cols)
+        store = _store_bloqueos()
+        if store is not None:
+            with contextlib.suppress(Exception):  # sin el archivo se sigue con el maestro
+                d = MT.leer(store.leer(f"{store.prefix}/{ruta}"), cols)
+        _MANT[ruta] = d
+    return _MANT[ruta]
+
+
+def guardar_mantenedor(
+    ruta: str, cols: list[str], nuevos: pd.DataFrame, usuario: str, mensaje: str
+) -> str:
+    """Agrega cambios al historial y lo guarda. Devuelve dónde quedó guardado."""
+    from forusight.data import mantenedores as MT
+
+    todo = pd.concat([mantenedor(ruta, cols), nuevos], ignore_index=True)[cols]
+    _MANT[ruta] = todo
+    store = _store_bloqueos()
+    if store is None:
+        return "esta sesión (sin GitHub configurado: se pierde al reiniciar la app)"
+    donde = store.guardar(ruta, MT.a_csv(todo), f"forusight: {mensaje} por {usuario}")
+    return f"GitHub ({store.repository}: {donde})"
+
+
+def huella_mantenedores() -> str:
+    from forusight.data import mantenedores as MT
+
+    h = hashlib.sha1()
+    for ruta, cols in (
+        (MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS),
+        (MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
+    ):
+        h.update(MT.a_csv(mantenedor(ruta, cols)))
+    return h.hexdigest()[:10]
 
 
 def bloqueos_manuales() -> pd.DataFrame:
@@ -693,6 +750,7 @@ def limpiar_cache() -> None:
         _correr_reporte,
     ):
         f.clear()
+    _MANT.clear()  # vuelve a leer los mantenedores de GitHub
 
 
 def lunes_actual() -> pd.Timestamp:

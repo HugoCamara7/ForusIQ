@@ -4,6 +4,7 @@ import streamlit as st
 import yaml
 from app.components.estado import SETTINGS
 from app.components.login import puede
+from app.components.mantenedores import tab_stock_minimo, tab_temporadas
 from app.components.ui import hero
 from pydantic import BaseModel, ValidationError
 
@@ -79,7 +80,9 @@ def _aplicar_yaml(clave: str) -> None:
 # Conexión), el formulario se vuelve a crear con los valores vigentes en vez de conservar los
 # viejos (que «Aplicar a la sesión» volvería a imponer).
 VER = huella_params()
-tab_form, tab_yaml = st.tabs(["Formulario", "YAML avanzado"])
+tab_form, tab_temp, tab_smt, tab_yaml = st.tabs(
+    ["Formulario", "Temporadas", "Stock mínimo", "YAML avanzado"]
+)
 with tab_form, st.form("form_params"):
     nuevos = {}
     for seccion in EngineParams.model_fields:
@@ -91,6 +94,12 @@ with tab_form, st.form("form_params"):
             st.success("Parámetros aplicados. Vuelve a ejecutar la corrida.")
         except ValidationError as exc:
             st.error(str(exc))
+
+with tab_temp:
+    tab_temporadas()
+
+with tab_smt:
+    tab_stock_minimo()
 
 with tab_yaml:
     if flash := ss.pop("flash_params", None):
