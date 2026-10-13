@@ -281,6 +281,44 @@ def test_github_store_dos_guardados_seguidos_no_chocan():
         s.guardar("rutas/excepciones.csv", b"d", "4")
 
 
+def test_columnas_de_transito_siempre_aunque_hoy_no_haya(corrida):
+    """La columna de tránsito no desaparece en una corrida sin tránsito: sale en 0."""
+    inp, corte, p, r = corrida
+    det = r.detalle.assign(stock_transito=0.0)
+    t = construir_tabla(det, inp.ventas, inp.dim_producto, inp.dim_tienda, p, corte)
+    for c in ("Stock Trán. Int. [un]", "Tránsito en CD [un]", "Tránsito despachado [un]"):
+        assert c in t and t[c].eq(0).all()
+
+
+def test_archivo_de_la_app_abre_el_transito_de_los_pedidos(corrida):
+    """La app guarda las entradas SIN los pedidos aplicados (se aplican dentro de la corrida):
+    el archivo los aplica para mostrar el tránsito en CD y despachado."""
+    from dataclasses import replace
+
+    from app.components.archivo import tabla_archivo
+
+    from forusight.data import transito as TR
+
+    inp, corte, p, _ = corrida
+    fila = inp.stock_tienda.loc[inp.stock_tienda["stock_disponible"] > 0].iloc[0]
+    ped = pd.DataFrame(
+        {
+            "tienda_id": [fila.tienda_id] * 2,
+            "sku": [fila.sku] * 2,
+            "estado": [1, 6],
+            "clasificacion": [1, 1],
+            "recepcionado": [False, False],
+            "dias_pedido": [1, 1],
+            "unidades": [4.0, 3.0],
+        }
+    )
+    inp = replace(inp, pedidos=ped)
+    r = ejecutar(TR.aplicar_pedidos(inp, p), p, corte, run_id="R")
+    t = tabla_archivo(r, inp, p, "320", None)
+    assert t["Stock Trán. Int. [un]"].sum() == 7
+    assert t["Tránsito en CD [un]"].sum() == 4 and t["Tránsito despachado [un]"].sum() == 3
+
+
 def test_transito_se_ve_en_cd_y_despachado_y_suma_el_total(corrida):
     """El tránsito de pedidos (Stock Trán. Int.) se abre en lo que sigue en el CD y lo ya
     despachado; el de stock_bi (salida de la tienda) no se muestra."""
