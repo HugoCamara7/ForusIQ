@@ -16,7 +16,6 @@ ENVIO_CURVA_ROTA = "ENVIO_CURVA_ROTA"
 ENVIO_INTRODUCCION = "ENVIO_INTRODUCCION"
 ENVIO_REPOSICION = "ENVIO_REPOSICION"
 ENVIO_VENTA_RUTA = "ENVIO_VENTA_RUTA"
-ENVIO_LLENADO = "ENVIO_LLENADO"
 
 PARCIAL_CD = "PARCIAL_CD"
 PARCIAL_TOPE = "PARCIAL_TOPE"
@@ -33,7 +32,6 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     ENVIO_INTRODUCCION: "Introducción de modelo con afinidad suficiente",
     ENVIO_REPOSICION: "Reposición hasta el stock objetivo",
     ENVIO_VENTA_RUTA: "Reposición de lo vendido desde la ruta anterior del mall",
-    ENVIO_LLENADO: "Llenado inicial de marca nueva: 1 por talla core",
     "NO_SIN_DEMANDA": "Tuvo exposición suficiente y no vendió",
     "NO_SIN_REFERENCIA": "Sin historia ni referencias de venta",
     "NO_AFINIDAD_BAJA": "Afinidad bajo el umbral para introducir",
@@ -64,14 +62,9 @@ def asignar_codigos(f: pd.DataFrame, params: EngineParams) -> pd.DataFrame:
         if "repone_venta_ruta" in out
         else pd.Series(False, index=out.index)
     )
-    llenado = (
-        out["llenado_inicial"].fillna(False).astype(bool)
-        if "llenado_inicial" in out
-        else pd.Series(False, index=out.index)
-    )
     cod_envio = np.select(
-        [llenado, out["es_introduccion"], venta_ruta, quiebre, out["talla_core_faltante"]],
-        [ENVIO_LLENADO, ENVIO_INTRODUCCION, ENVIO_VENTA_RUTA, ENVIO_QUIEBRE, ENVIO_CURVA_ROTA],
+        [out["es_introduccion"], venta_ruta, quiebre, out["talla_core_faltante"]],
+        [ENVIO_INTRODUCCION, ENVIO_VENTA_RUTA, ENVIO_QUIEBRE, ENVIO_CURVA_ROTA],
         ENVIO_REPOSICION,
     )
     bloqueo = out["motivo_asignacion"].where(out["motivo_asignacion"].ne(""), out["motivo_bloqueo"])
@@ -131,12 +124,6 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
         t = (
             envio + f"la talla {r['talla']} es core y está en 0 mientras el modelo sigue vendiendo "
             f"(curva rota); " + base
-        )
-    elif c == ENVIO_LLENADO:
-        t = (
-            envio + f"es el llenado inicial de una marca nueva: la tienda todavía no tiene stock "
-            f"ni venta de la marca y entra con {params.llenado_inicial.unidades_por_talla_core} "
-            f"por talla core (talla {r['talla']})."
         )
     elif c == ENVIO_INTRODUCCION:
         t = (

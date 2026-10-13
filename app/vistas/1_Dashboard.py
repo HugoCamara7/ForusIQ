@@ -81,21 +81,6 @@ with cabecera:
         eyebrow="Aprobada" if aprobada else "Propuesta",
         meta=meta,
     )
-tiendas_res = getattr(res, "tiendas", None)
-if (
-    tiendas_res is not None
-    and "llenado_inicial" in tiendas_res
-    and tiendas_res["llenado_inicial"].fillna(False).astype(bool).any()
-    and not res.params.llenado_inicial.activo
-):
-    n_nuevas = int(tiendas_res["llenado_inicial"].fillna(False).astype(bool).sum())
-    issue_box(
-        "info",
-        f"{n_nuevas} tienda(s) de marca nueva sin stock ni venta",
-        "Esta corrida es sólo reposición, así que no les envía nada. Para su primer envío "
-        "(1 por talla core) activa «Llenado inicial de marca nueva» arriba y vuelve a ejecutar.",
-    )
-
 tr = diag.get("transito_pedidos") or {}
 if tr:
     partes = [

@@ -188,17 +188,6 @@ class ExhibicionParams(_Section):
         return int(self.minimo_por_categoria.get(categoria, self.minimo_por_talla_core))
 
 
-class LlenadoInicialParams(_Section):
-    """Marca nueva (p. ej. AZALEIA): tiendas de su cadena sin stock ni venta de la marca.
-    Cada modelo-color con stock en el CD entra con ``unidades_por_talla_core`` en cada talla
-    core (si el modelo no fabrica core, en sus ``exhibicion.tallas_minimas_sin_core`` tallas
-    principales). Desde la corrida siguiente la tienda ya tiene stock y se repone normal.
-    Apagado por defecto: Forusight es reposición; el llenado se pide en «Nueva corrida»."""
-
-    activo: bool = False
-    unidades_por_talla_core: int = Field(1, ge=1)
-
-
 class PrioridadTiendasParams(_Section):
     """Tiendas prioritarias (p. ej. Jockey): más cobertura y primeras cuando el CD no alcanza."""
 
@@ -391,7 +380,6 @@ class EngineParams(_Section):
     cobertura: CoberturaParams = Field(default_factory=CoberturaParams)
     rotacion: RotacionParams = Field(default_factory=RotacionParams)
     exhibicion: ExhibicionParams = Field(default_factory=ExhibicionParams)
-    llenado_inicial: LlenadoInicialParams = Field(default_factory=LlenadoInicialParams)
     tope_tienda: TopeTiendaParams = Field(default_factory=TopeTiendaParams)
     afinidad: AfinidadParams = Field(default_factory=AfinidadParams)
     asignacion: AsignacionParams = Field(default_factory=AsignacionParams)
@@ -403,6 +391,14 @@ class EngineParams(_Section):
     surtido: SurtidoParams = Field(default_factory=SurtidoParams)
     referencia: ReferenciaParams = Field(default_factory=ReferenciaParams)
     nivel_neo: NivelNeoParams = Field(default_factory=NivelNeoParams)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sin_retirados(cls, data):
+        # «llenado_inicial» (marca nueva) se retiró: las corridas guardadas aún lo traen.
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k != "llenado_inicial"}
+        return data
 
     @model_validator(mode="after")
     def _bloques(self) -> EngineParams:

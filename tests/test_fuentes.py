@@ -265,6 +265,9 @@ def _datos_falsos():
         "ventas": ventas,
         "maestro_tiendas": tiendas,
         "maestro_cadena": cadena,
+        "tiendas_venta": pd.DataFrame(
+            {"tienda_cod": ["008", "012"], "desc_local": ["HP JOCKEY", "HP CHICLAYO"]}
+        ).rename(columns={"desc_local": "tienda_nombre"}),
         "venta_diaria": pd.DataFrame(
             {
                 "fecha": [(CORTE + pd.Timedelta(days=d)).date() for d in (1, 2)],
@@ -310,6 +313,7 @@ def test_flujo_completo_bigquery_maestros_y_motor():
         "ventas",
         "maestro_tiendas",
         "maestro_cadena",
+        "tiendas_venta",
         "venta_diaria",
     ]
     assert inp.venta_diaria["unidades"].sum() == 25 and set(inp.venta_diaria["tienda_id"]) == {"8"}
@@ -848,93 +852,68 @@ def _marca_nueva(fake):
     d["venta_diaria"] = d["venta_diaria"].iloc[0:0]
 
 
-def test_marca_nueva_reciben_las_tiendas_de_sus_cadenas():
-    """Antes: «You are trying to merge on str and float64 columns for key 'tienda_id'»."""
+def test_marca_sin_stock_ni_venta_en_tiendas_es_mensaje_claro():
+    """Forusight sólo repone: sin stock ni venta de la marca en tiendas no hay a quién enviar."""
     fake = _FakeBQ()
     _marca_nueva(fake)
-    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
-        CORTE, marcas=["HUSH PUPPIES"]
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    with pytest.raises(ValueError, match="Forusight sólo repone"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+
+
+def test_params_guardados_con_llenado_inicial_siguen_cargando():
+    """«llenado_inicial» se retiró: las corridas guardadas que aún lo traen se abren igual."""
+    from forusight.config.settings import EngineParams
+
+    raw = params().model_dump()
+    raw["llenado_inicial"] = {"activo": False, "unidades_por_talla_core": 1}
+    assert "llenado_inicial" not in EngineParams.model_validate(raw).model_dump()
+
+
+def test_azaleia_tiendas_de_la_venta_sin_maestro_reponen():
+    """Tiendas AZALEIA que ya venden pero aún no están en el maestro ni en el catálogo: se
+    leen todas las tiendas de la venta (cualquier marca) con su nombre y cadena, y reponen.
+    Antes: «Ninguna tienda puede recibir AZALEIA»."""
+    fake = _FakeBQ()
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
+        [
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="501", tienda_nombre="1-501"),
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="777", tienda_nombre="1-777"),
+            foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
+        ]
     )
-    activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
-    assert len(activas) and set(activas["cadena"]) <= {"DH", "FB", "HP", "HPK", "SE"}
-    assert "39" not in set(inp.dim_tienda["tienda_id"])  # cerrada: no recibe
+    fake.datos["ventas"] = fake.datos["ventas"].assign(tienda_cod="501")
+    fake.datos["tiendas_venta"] = pd.DataFrame(
+        {
+            "tienda_cod": ["501", "502", "777"],
+            "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA", "ECOMMERCE"],
+            "cadena": ["AZALEIA", None, "WEB"],
+        }
+    )
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    dt = inp.dim_tienda.set_index("tienda_id")
+    assert dt.loc["501", "activa"] and dt.loc["501", "cadena"] == "AZALEIA"
+    assert dt.loc["501", "nombre"] == "AZALEIA JOCKEY"
+    assert dt.loc["501", "origen_tienda"] == "venta / stock"
+    assert not dt.loc["777", "activa"]  # sin cadena conocida: no recibe
     ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
 
 
-def test_marca_nueva_sin_cadena_es_mensaje_claro():
+def test_tiendas_con_stock_sin_identificar_es_mensaje_claro():
     fake = _FakeBQ()
-    _marca_nueva(fake)
-    fake.datos["arti"] = fake.datos["arti"].assign(marca="MARCA NUEVA")
-    with pytest.raises(ValueError, match="no está asignada a ninguna cadena"):
-        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
-            CORTE, marcas=["MARCA NUEVA"]
-        )
-
-
-def test_azaleia_reciben_sus_tiendas_del_maestro():
-    """Cadena AZALEIA: tiendas creadas en el maestro, todavía sin stock ni venta."""
-    fake = _FakeBQ()
-    _marca_nueva(fake)
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
-    with pytest.raises(ValueError, match="no se encontraron tiendas de la cadena AZALEIA"):
-        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
-    nuevas = pd.DataFrame(
-        {
-            "tienda_cod": ["501", "502"],
-            "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA"],
-            "centro_comercial": ["JOCKEY", "MEGA PLAZA"],
-            "zona": ["LIMA", "LIMA"],
-        }
-    )
-    fake.datos["maestro_tiendas"] = pd.concat([fake.datos["maestro_tiendas"], nuevas])
-    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
-    activas = inp.dim_tienda.loc[inp.dim_tienda["activa"]]
-    assert set(activas["tienda_id"]) == {"501", "502"} and set(activas["cadena"]) == {"AZALEIA"}
-
-
-def test_azaleia_llenado_inicial_1_por_talla_core():
-    """Tiendas Azaleia nuevas (sin stock ni venta) y modelos que el maestro modelo→cadena aún
-    no tiene: cada modelo-color con stock en el CD entra con 1 por talla core."""
-    fake = _FakeBQ()
-    _marca_nueva(fake)
-    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
-    fake.datos["maestro_cadena"] = pd.DataFrame({"cod_modelo": ["OTRO1"], "cadena": ["HP"]})
-    fake.datos["stock_foto"] = fake.datos["stock_foto"].assign(tienda_cod="380")  # su bodega
-    fake.datos["maestro_tiendas"] = pd.concat(
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
         [
-            fake.datos["maestro_tiendas"],
-            pd.DataFrame(
-                {
-                    "tienda_cod": ["501", "502"],
-                    "tienda_nombre": ["AZALEIA JOCKEY", "AZALEIA MEGA PLAZA"],
-                    "centro_comercial": ["JOCKEY", "MEGA PLAZA"],
-                    "zona": ["LIMA", "LIMA"],
-                }
-            ),
+            foto.loc[foto["tienda_cod"].eq("008")].assign(tienda_cod="501", tienda_nombre="1-501"),
+            foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
         ]
     )
-    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
-    # por defecto Forusight sólo repone: sin pedir el llenado no envía nada
-    assert ejecutar(inp, params(), CORTE, run_id="R").detalle["cantidad"].sum() == 0
-    d = ejecutar(inp, params(llenado_inicial={"activo": True}), CORTE, run_id="R").detalle
-    env = d.loc[d["cantidad"] > 0]
-    assert set(env["tienda_id"]) == {"501", "502"}
-    assert env["cantidad"].eq(1).all() and env["motivo_codigo"].eq("ENVIO_LLENADO").all()
-    assert env["es_core"].all()  # sólo tallas core
-    assert env["motivo_texto"].str.contains("llenado inicial de una marca nueva").all()
-    # el mismo modelo-color en las dos tiendas: misma curva
-    curvas = env.groupby("tienda_id")["sku"].apply(frozenset)
-    assert curvas.nunique() == 1
-
-
-def test_llenado_inicial_apagado_por_defecto_no_introduce():
-    fake = _FakeBQ()
-    _marca_nueva(fake)
-    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
-        CORTE, marcas=["HUSH PUPPIES"]
-    )
-    d = ejecutar(inp, params(), CORTE, run_id="R").detalle  # apagado por defecto
-    assert d["cantidad"].sum() == 0
+    fake.datos["ventas"] = fake.datos["ventas"].iloc[0:0]
+    with pytest.raises(ValueError, match="501"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
 
 
 def test_azaleia_sale_de_la_bodega_380():
@@ -943,13 +922,18 @@ def test_azaleia_sale_de_la_bodega_380():
     from forusight.export.archivo import construir_tabla
 
     fake = _FakeBQ()
-    _marca_nueva(fake)
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
     fake.datos["maestro_cadena"] = pd.DataFrame({"cod_modelo": ["OTRO1"], "cadena": ["HP"]})
     foto = fake.datos["stock_foto"]
+    cd = foto.loc[foto["tienda_cod"].eq("320")]
     fake.datos["stock_foto"] = pd.concat(
-        [foto.assign(stock_tienda=99.0, stock_bodega=0.0), foto.assign(tienda_cod="380")]
-    )  # la 320 tiene otro stock: no debe usarse
+        [
+            cd.assign(stock_tienda=99.0, stock_bodega=0.0),  # la 320 tiene otro stock: no se usa
+            cd.assign(tienda_cod="380"),
+            foto.loc[foto["tienda_cod"].eq("012")].assign(tienda_cod="501"),  # en 0, vende
+        ]
+    )
+    fake.datos["ventas"] = fake.datos["ventas"].assign(tienda_cod="501")
     fake.datos["maestro_tiendas"] = pd.concat(
         [
             fake.datos["maestro_tiendas"],
@@ -966,10 +950,10 @@ def test_azaleia_sale_de_la_bodega_380():
     inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
     assert inp.stock_cd["fisico"].eq(3 + 5).all()  # el de la 380, no los 99 de la 320
     assert not {"320", "380"} & set(inp.dim_tienda["tienda_id"])
-    p = params(llenado_inicial={"activo": True})
+    p = params()
     r = ejecutar(inp, p, CORTE, run_id="R")
     env = r.detalle.loc[r.detalle["cantidad"] > 0]
-    assert len(env) and env["motivo_texto"].notna().all()
+    assert len(env) and set(env["tienda_id"]) == {"501"} and env["motivo_texto"].notna().all()
     t = construir_tabla(r.detalle, inp.ventas, inp.dim_producto, inp.dim_tienda, p, CORTE, "320")
     assert set(t["Código Centro Origen"]) == {"380"}
 

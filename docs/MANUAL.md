@@ -177,7 +177,6 @@ Recuadros de aviso:
 - **Tránsito de pedidos:** total, en CD, despachado, y lo que quedó fuera por ser posterior al
   cierre.
 - **Tiendas sin stock mínimo propio:** se estima con otras tiendas, o con su tienda espejo.
-- **Marca nueva sin stock:** activa «Llenado inicial» para su primer envío.
 
 ---
 

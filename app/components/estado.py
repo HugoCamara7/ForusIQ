@@ -800,10 +800,6 @@ def ejecutar_corrida(avance=None) -> EngineResult:
         raise ValueError("Elige al menos una marca en Inicio (p. ej. HUSH PUPPIES).")
     avance(1)
     params = ss.params
-    if ss.get("llenado_inicial"):  # pedido en «Nueva corrida»: sólo esta corrida
-        params = params.model_copy(
-            update={"llenado_inicial": params.llenado_inicial.model_copy(update={"activo": True})}
-        )
     res, diag = correr_motor(
         ss.fuente,
         pd.Timestamp(ss.fecha_corte).date().isoformat(),
@@ -1025,14 +1021,6 @@ def panel_corrida() -> None:
                 disabled=not puede("ejecutar"),
                 key="btn_ejecutar",
             )
-        ss.llenado_inicial = st.toggle(
-            "Llenado inicial de marca nueva",
-            value=bool(ss.get("llenado_inicial", False)),
-            key="sb_llenado",
-            help="Apagado = sólo reposición (lo normal). Encendido = además, las tiendas de una "
-            "marca nueva sin stock ni venta (p. ej. AZALEIA) reciben 1 por talla core de cada "
-            "modelo-color con stock en su bodega. Vale sólo para esta corrida.",
-        )
         if estado := estado_stock(cargas_actuales()):  # ¿ya llegó el cierre de ayer?
             html(
                 f'<div class="run-estado run-{estado[0]}">'

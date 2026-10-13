@@ -85,6 +85,10 @@ ALIAS_VENTAS: dict[str, list[str]] = {
     "marca": ["marca", "desc_marca", "nombre_marca"],
     # nombre del modelo (ft_pe_venta_retail · modelo): respaldo si ARTI no trae descripción
     "nombre_modelo": ["modelo", "nombre_modelo", "desc_modelo", "descripcion_modelo"],
+    # tienda y cadena (ft_pe_venta_retail · nombre_tienda, cadena_sitio): identifican las
+    # tiendas nuevas que aún no están en el maestro (p. ej. AZALEIA JOCKEY)
+    "tienda_nombre": ["nombre_tienda", "desc_tienda", "nombre_local", "desc_local"],
+    "cadena": ["cadena_sitio", "cadena", "desc_cadena", "nombre_cadena"],
 }
 
 #: Maestro de productos ARTI (`product_master_table`), p. ej. stg_pe_central_arti.
