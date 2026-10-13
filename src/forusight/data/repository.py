@@ -444,6 +444,19 @@ class FuentesRepository(BigQueryRepository):
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer el maestro de {fuente}: {explicar_error(exc)}")
 
+        # Todas las tiendas con venta reciente (cualquier marca): nombre y cadena de las
+        # tiendas nuevas (p. ej. AZALEIA) que todavía no están en el maestro.
+        tiendas_v = None
+        if "tienda_nombre" in m_v or "cadena" in m_v:
+            try:
+                tiendas_v = q(
+                    "tiendas_venta",
+                    F.sql_tiendas_venta(tablas["ventas"], m_v),
+                    {"desde_tiendas": foto - dt.timedelta(days=60)},
+                )
+            except Exception as exc:
+                diag.notas.append(f"No se pudo leer las tiendas de la venta: {explicar_error(exc)}")
+
         from forusight.data.cadenas import tiendas_cerradas
 
         excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
@@ -462,29 +475,28 @@ class FuentesRepository(BigQueryRepository):
             cadena_m=maestros.get("cadena"),
             marcas_por_cadena=self.settings.marcas_por_cadena,
             cd_por_marca=self.settings.cd_por_marca,
+            tiendas_v=tiendas_v,
         )
         if not entradas.dim_tienda["activa"].any():
-            from forusight.data.cadenas import marcas_por_cadena
-
             pedidas = {str(m).upper() for m in (marcas or [])}
-            cadenas = sorted(
-                c
-                for c, ms in marcas_por_cadena(self.settings.marcas_por_cadena).items()
-                if ms & pedidas
-            )
             nombres = ", ".join(sorted(pedidas)) or "la marca"
-            raise ValueError(
-                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta de la "
-                + (
-                    f"marca y no se encontraron tiendas de la cadena {', '.join(cadenas)} en el "
-                    "maestro de tiendas de BigQuery ni en el catálogo. Revisa que las tiendas "
-                    "nuevas estén en el maestro y que su nombre empiece con la cadena "
-                    f"(p. ej. «{cadenas[0]} JOCKEY»)."
-                    if cadenas
-                    else "marca y la marca no está asignada a ninguna cadena. Si es una marca "
-                    "nueva, agrégala a las cadenas que la venden en config/cadenas.yaml "
-                    "(marcas_por_cadena) o en los secrets ([forusight.marcas_por_cadena])."
+            sin_id = [
+                str(t["tienda_id"])
+                for t in diag.tiendas
+                if pd.isna(t.get("origen_tienda")) and str(t.get("tienda_id", ""))
+            ]
+            if sin_id:
+                raise ValueError(
+                    f"Ninguna tienda puede recibir {nombres}: las tiendas con stock o venta de la "
+                    f"marca ({', '.join(sin_id[:15])}{'…' if len(sin_id) > 15 else ''}) no están "
+                    "en el maestro de tiendas de BigQuery ni en el catálogo, y su nombre en la "
+                    "venta no empieza con una cadena conocida. Agrégalas al maestro (p. ej. "
+                    "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
                 )
+            raise ValueError(
+                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock en sala ni venta "
+                "de la marca en las últimas 4 semanas, y Forusight sólo repone. Revisa que el "
+                "stock de ayer de esas tiendas ya esté cargado en BigQuery."
             )
         # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
         dp = entradas.dim_producto

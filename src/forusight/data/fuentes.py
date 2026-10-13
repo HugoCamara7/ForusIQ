@@ -346,6 +346,18 @@ def sql_ventas(
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY {grupos}"
 
 
+def sql_tiendas_venta(tabla: str, mapa: Mapping[str, str]) -> str:
+    """Todas las tiendas con venta reciente de cualquier marca: código, nombre y cadena.
+    Sirve para identificar tiendas que aún no están en el maestro ni en el catálogo."""
+    f = _c(mapa, "fecha")
+    sel = [f"CAST({_c(mapa, 'tienda_cod')} AS STRING) AS tienda_cod"]
+    for c in ("tienda_nombre", "cadena"):
+        if c in mapa:
+            sel.append(f"ANY_VALUE(TRIM(CAST({_c(mapa, c)} AS STRING))) AS {c}")
+    where = f"DATE({f}) >= @desde_tiendas AND DATE({f}) < @hasta_foto"
+    return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1"
+
+
 def sql_venta_diaria(
     tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
 ) -> str:
@@ -1025,35 +1037,31 @@ class Diagnostico:
     corte_venta: str | None = None
 
 
-def tiendas_de_cadenas(cadenas: set[str], tiendas_m: pd.DataFrame | None = None) -> set[str]:
-    """Códigos de las tiendas (catálogo Forus y maestro de BigQuery) de esas cadenas. La
-    cadena es la del maestro o, si no viene, el prefijo del nombre (HP JOCKEY → HP)."""
+def tiendas_vistas(
+    nombres_foto: pd.Series, tiendas_v: pd.DataFrame | None, cadenas: set[str]
+) -> pd.DataFrame:
+    """Tiendas de la venta (todas las marcas) y de la foto de stock con cadena conocida:
+    la cadena de la venta si está en la matriz; si no, el prefijo del nombre."""
     from forusight.data import cadenas as CAD
 
-    if not cadenas:
-        return set()
-    cat = CAD.catalogo_tiendas()
-    tablas = [
+    partes = [
         pd.DataFrame(
             {
-                "tienda_cod": cat["codigo_tienda"],
-                "tienda_nombre": cat["nombre_tienda"],
-                "cadena": cat["cadena"],
+                "tienda_cod": nombres_foto.index.astype(str),
+                "tienda_nombre": nombres_foto.astype(str).to_numpy(),
             }
         )
     ]
-    if tiendas_m is not None and len(tiendas_m) and "tienda_nombre" in tiendas_m:
-        tablas.append(tiendas_m)
-    out = set()
-    for t in tablas:
-        nombre = texto(t["tienda_nombre"])
-        cadena = (
-            texto(t["cadena"]).str.upper() if "cadena" in t else pd.Series(pd.NA, index=t.index)
-        )
-        cadena = cadena.where(cadena.notna() & cadena.ne(""), CAD.prefijo(nombre))
-        cods = t.loc[cadena.isin(cadenas).fillna(False).to_numpy(), "tienda_cod"].map(codigo_tienda)
-        out |= {c for c in cods if c}
-    return out
+    if tiendas_v is not None and len(tiendas_v) and "tienda_nombre" in tiendas_v:
+        partes.insert(0, tiendas_v)
+    t = pd.concat(partes, ignore_index=True)
+    t["tienda_nombre"] = texto(t["tienda_nombre"])
+    cad = texto(t["cadena"]).str.upper() if "cadena" in t else pd.Series(pd.NA, index=t.index)
+    cad = cad.where(cad.isin(cadenas).fillna(False), CAD.prefijo(t["tienda_nombre"]))
+    t["cadena"] = cad
+    t["tienda_cod"] = t["tienda_cod"].map(codigo_tienda)
+    t = t.loc[t["cadena"].isin(cadenas).fillna(False).to_numpy() & t["tienda_cod"].ne("")]
+    return t.drop_duplicates("tienda_cod")[["tienda_cod", "tienda_nombre", "cadena"]]
 
 
 def construir_entradas(
@@ -1070,8 +1078,12 @@ def construir_entradas(
     cadena_m: pd.DataFrame | None = None,
     marcas_por_cadena: dict | None = None,
     cd_por_marca: dict | None = None,
+    tiendas_v: pd.DataFrame | None = None,
 ):
-    """DataFrames crudos de las consultas → EngineInputs (contratos canónicos)."""
+    """DataFrames crudos de las consultas → EngineInputs (contratos canónicos).
+
+    ``tiendas_v``: todas las tiendas con venta reciente (cualquier marca) con su nombre y
+    cadena; identifica las tiendas nuevas que faltan en el maestro y el catálogo."""
     from forusight.engine.pipeline import EngineInputs
 
     cd = codigo_tienda(cd_id)
@@ -1178,21 +1190,10 @@ def construir_entradas(
         ]
     )
     con_stock = set(st.loc[st["stock_disponible"] > 0, "tienda_id"])
-    # Marca nueva (p. ej. AZALEIA): ninguna tienda tiene stock ni venta reciente. Reciben las
-    # tiendas de las cadenas que venden la marca (marcas_por_cadena), para poder introducirla.
-    marca_nueva: set[str] = set()
-    if not reciente and not con_stock:
-        marcas_run = set(texto(dim["marca"]).dropna().str.upper()) if "marca" in dim else set()
-        cadenas_marca = {c for c, ms in matriz.items() if ms & marcas_run}
-        marca_nueva = tiendas_de_cadenas(cadenas_marca, tiendas_m) - no_reciben
-        ids = sorted(set(ids) | marca_nueva)
-        venta_t = venta_t.reindex(ids, fill_value=0)
-        if marca_nueva:
-            diag.notas.append(
-                f"Marca nueva ({', '.join(sorted(marcas_run))}): sin stock ni venta en tiendas; "
-                f"reciben las {len(marca_nueva)} tiendas de las cadenas "
-                f"{', '.join(sorted(cadenas_marca))}."
-            )
+    # Todas las tiendas (venta de cualquier marca y foto de stock) cuya cadena es conocida
+    # (AZALEIA JOCKEY → AZALEIA): las nuevas aún pueden faltar en el maestro y el catálogo.
+    # Forusight sólo repone: reciben las tiendas con stock o venta reciente de la marca.
+    vistas_t = tiendas_vistas(nombres, tiendas_v, set(matriz))
     dim_t = pd.DataFrame(
         {
             # dtype fijo: con la lista vacía pandas lo deja float64 y los cruces por tienda fallan
@@ -1203,8 +1204,7 @@ def construir_entradas(
             "importancia_comercial": (
                 np.clip(venta_t.rank(pct=True).to_numpy(), 0.05, 1.0) if len(ids) else []
             ),
-            "activa": [t in reciente or t in con_stock or t in marca_nueva for t in ids],
-            "llenado_inicial": [t in marca_nueva for t in ids],
+            "activa": [t in reciente or t in con_stock for t in ids],
             "max_unidades_corrida": np.nan,
         }
     )
@@ -1216,6 +1216,8 @@ def construir_entradas(
     if tiendas_m is not None and len(tiendas_m):
         fuentes_t.append(("maestro", tiendas_m))
     fuentes_t.append(("catálogo Forus", cat))
+    if len(vistas_t):
+        fuentes_t.append(("venta / stock", vistas_t))
     dim_t["origen_tienda"] = pd.NA
     for c in ("centro_comercial", "zona", "cadena"):
         dim_t[c] = pd.NA
