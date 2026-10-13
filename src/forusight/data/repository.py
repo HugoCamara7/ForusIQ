@@ -478,14 +478,7 @@ class FuentesRepository(BigQueryRepository):
             tiendas_v=tiendas_v,
         )
         if not entradas.dim_tienda["activa"].any():
-            from forusight.data.cadenas import marcas_por_cadena
-
             pedidas = {str(m).upper() for m in (marcas or [])}
-            cadenas = sorted(
-                c
-                for c, ms in marcas_por_cadena(self.settings.marcas_por_cadena).items()
-                if ms & pedidas
-            )
             nombres = ", ".join(sorted(pedidas)) or "la marca"
             sin_id = [
                 str(t["tienda_id"])
@@ -501,17 +494,9 @@ class FuentesRepository(BigQueryRepository):
                     "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
                 )
             raise ValueError(
-                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta de la "
-                + (
-                    f"marca y no se encontraron tiendas de la cadena {', '.join(cadenas)} en el "
-                    "maestro de tiendas de BigQuery ni en el catálogo. Revisa que las tiendas "
-                    "nuevas estén en el maestro y que su nombre empiece con la cadena "
-                    f"(p. ej. «{cadenas[0]} JOCKEY»)."
-                    if cadenas
-                    else "marca y la marca no está asignada a ninguna cadena. Si es una marca "
-                    "nueva, agrégala a las cadenas que la venden en config/cadenas.yaml "
-                    "(marcas_por_cadena) o en los secrets ([forusight.marcas_por_cadena])."
-                )
+                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock en sala ni venta "
+                "de la marca en las últimas 4 semanas, y Forusight sólo repone. Revisa que el "
+                "stock de ayer de esas tiendas ya esté cargado en BigQuery."
             )
         # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
         dp = entradas.dim_producto

@@ -1037,37 +1037,6 @@ class Diagnostico:
     corte_venta: str | None = None
 
 
-def tiendas_de_cadenas(cadenas: set[str], tiendas_m: pd.DataFrame | None = None) -> set[str]:
-    """Códigos de las tiendas (catálogo Forus y maestro de BigQuery) de esas cadenas. La
-    cadena es la del maestro o, si no viene, el prefijo del nombre (HP JOCKEY → HP)."""
-    from forusight.data import cadenas as CAD
-
-    if not cadenas:
-        return set()
-    cat = CAD.catalogo_tiendas()
-    tablas = [
-        pd.DataFrame(
-            {
-                "tienda_cod": cat["codigo_tienda"],
-                "tienda_nombre": cat["nombre_tienda"],
-                "cadena": cat["cadena"],
-            }
-        )
-    ]
-    if tiendas_m is not None and len(tiendas_m) and "tienda_nombre" in tiendas_m:
-        tablas.append(tiendas_m)
-    out = set()
-    for t in tablas:
-        nombre = texto(t["tienda_nombre"])
-        cadena = (
-            texto(t["cadena"]).str.upper() if "cadena" in t else pd.Series(pd.NA, index=t.index)
-        )
-        cadena = cadena.where(cadena.notna() & cadena.ne(""), CAD.prefijo(nombre))
-        cods = t.loc[cadena.isin(cadenas).fillna(False).to_numpy(), "tienda_cod"].map(codigo_tienda)
-        out |= {c for c in cods if c}
-    return out
-
-
 def tiendas_vistas(
     nombres_foto: pd.Series, tiendas_v: pd.DataFrame | None, cadenas: set[str]
 ) -> pd.DataFrame:
@@ -1223,26 +1192,8 @@ def construir_entradas(
     con_stock = set(st.loc[st["stock_disponible"] > 0, "tienda_id"])
     # Todas las tiendas (venta de cualquier marca y foto de stock) cuya cadena es conocida
     # (AZALEIA JOCKEY → AZALEIA): las nuevas aún pueden faltar en el maestro y el catálogo.
+    # Forusight sólo repone: reciben las tiendas con stock o venta reciente de la marca.
     vistas_t = tiendas_vistas(nombres, tiendas_v, set(matriz))
-    # Marca nueva (p. ej. AZALEIA): ninguna tienda tiene stock ni venta reciente. Reciben las
-    # tiendas de las cadenas que venden la marca (marcas_por_cadena), para poder introducirla.
-    marca_nueva: set[str] = set()
-    if not reciente and not con_stock:
-        marcas_run = set(texto(dim["marca"]).dropna().str.upper()) if "marca" in dim else set()
-        cadenas_marca = {c for c, ms in matriz.items() if ms & marcas_run}
-        conocidas = [t for t in (tiendas_m, vistas_t) if t is not None and len(t)]
-        marca_nueva = (
-            tiendas_de_cadenas(cadenas_marca, pd.concat(conocidas) if conocidas else None)
-            - no_reciben
-        )
-        ids = sorted(set(ids) | marca_nueva)
-        venta_t = venta_t.reindex(ids, fill_value=0)
-        if marca_nueva:
-            diag.notas.append(
-                f"Marca nueva ({', '.join(sorted(marcas_run))}): sin stock ni venta en tiendas; "
-                f"reciben las {len(marca_nueva)} tiendas de las cadenas "
-                f"{', '.join(sorted(cadenas_marca))}."
-            )
     dim_t = pd.DataFrame(
         {
             # dtype fijo: con la lista vacía pandas lo deja float64 y los cruces por tienda fallan
@@ -1253,8 +1204,7 @@ def construir_entradas(
             "importancia_comercial": (
                 np.clip(venta_t.rank(pct=True).to_numpy(), 0.05, 1.0) if len(ids) else []
             ),
-            "activa": [t in reciente or t in con_stock or t in marca_nueva for t in ids],
-            "llenado_inicial": [t in marca_nueva for t in ids],
+            "activa": [t in reciente or t in con_stock for t in ids],
             "max_unidades_corrida": np.nan,
         }
     )
