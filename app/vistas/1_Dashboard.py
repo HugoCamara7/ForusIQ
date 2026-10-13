@@ -109,45 +109,6 @@ elif motivo := [n for n in diag.get("notas") or [] if str(n).startswith("Tránsi
         + " La posición de stock no descuenta lo que ya va en camino: revisa antes de aprobar.",
     )
 
-por_tienda = pd.DataFrame(diag.get("transito_por_tienda") or [])
-if len(por_tienda):
-    sin = por_tienda.loc[por_tienda["transito"] <= 0, "nombre"].fillna(por_tienda["tienda_id"])
-    with st.expander(
-        f"Tránsito por tienda de la ruta de hoy ({len(por_tienda)} tiendas"
-        + (f", {len(sin)} sin tránsito que cuente" if len(sin) else "")
-        + ")",
-        expanded=bool(len(sin)),
-    ):
-        st.caption(
-            "«Cuenta» = pedidos abiertos creados hasta el cierre del stock (en el CD + "
-            "despachado): se descuentan del envío. «Creado después del cierre» = pedidos de hoy "
-            "(la distribución del día): NO se descuentan. Si una tienda tiene pedidos viejos en "
-            "camino y aquí sale en 0, revísala en Conexión → Revisar tránsito."
-        )
-        st.dataframe(
-            por_tienda.rename(
-                columns={
-                    "tienda_id": "Tienda",
-                    "nombre": "Nombre",
-                    "transito": "Cuenta [u]",
-                    "en_cd": "En CD [u]",
-                    "despachado": "Despachado [u]",
-                    "creado_despues_del_cierre": "Creado después del cierre (no cuenta) [u]",
-                }
-            )[
-                [
-                    "Tienda",
-                    "Nombre",
-                    "Cuenta [u]",
-                    "En CD [u]",
-                    "Despachado [u]",
-                    "Creado después del cierre (no cuenta) [u]",
-                ]
-            ],
-            hide_index=True,
-            width="stretch",
-        )
-
 sin_plan = diag.get("tiendas_sin_planificacion") or []
 if sin_plan:
     issue_box(

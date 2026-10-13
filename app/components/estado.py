@@ -351,16 +351,6 @@ def _correr_motor(
             if transito_pedidos
             else None
         ),
-        # Tránsito de cada tienda de la ruta de hoy: qué cuenta y qué no (pedidos de hoy).
-        "transito_por_tienda": (
-            TR.por_tienda(inputs, params, dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"])
-            .merge(
-                dt[["tienda_id", "nombre"]].astype({"tienda_id": str}), on="tienda_id", how="left"
-            )
-            .to_dict("records")
-            if transito_pedidos
-            else []
-        ),
         "dia_reposicion": dia,
         "aviso_carga": aviso_carga(diag, dia),
         "tiendas_hoy": int(dt.loc[dt["activa"] & dt["recibe_hoy"], "tienda_id"].nunique()),
