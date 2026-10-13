@@ -117,6 +117,12 @@ def login_styles() -> None:
     html(f"""
     <style>
     [data-testid="stToolbar"], .stDeployButton, header[data-testid="stHeader"] {{ display:none !important; }}
+    /* Al cerrar sesión el navegador conserva la barra lateral (vacía) de la sesión anterior:
+       en el acceso no hay menú, así que se oculta junto con sus botones de abrir/cerrar. */
+    section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapseButton"] {{
+        display:none !important;
+    }}
     [data-testid="stAppViewContainer"] {{
         background:
             radial-gradient(1200px 620px at 12% -10%, #24407A 0%, transparent 60%),
