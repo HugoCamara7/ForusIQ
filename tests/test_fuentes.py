@@ -1025,3 +1025,11 @@ def test_transito_solo_con_pedidos_hasta_el_cierre_del_stock():
     assert TR.transito_post_cierre(inp, params()) == {"unidades": 4, "excluidos": True}
     p = params(recepcion={"solo_hasta_cierre_stock": False})
     assert TR.aplicar_pedidos(inp, p).stock_tienda["stock_transito"].sum() == 10
+
+    # por tienda de la ruta: lo que cuenta y lo de hoy (no cuenta); sin pedidos, en 0
+    t = TR.por_tienda(TR.aplicar_pedidos(inp, params()), params(), ["8", "12"]).set_index(
+        "tienda_id"
+    )
+    assert t.loc["8", "transito"] == 6 and t.loc["8", "creado_despues_del_cierre"] == 4
+    assert t.loc["8", "en_cd"] == 3 and t.loc["8", "despachado"] == 3
+    assert t.loc["12"].eq(0).all()

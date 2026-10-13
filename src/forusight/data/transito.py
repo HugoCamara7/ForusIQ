@@ -91,6 +91,38 @@ def transito_post_cierre(inputs, params) -> dict:
     }
 
 
+def por_tienda(inputs, params, tiendas) -> pd.DataFrame:
+    """Tránsito de cada tienda de ``tiendas`` (las de la ruta de hoy): lo que cuenta (en el CD
+    y despachado) y lo que NO cuenta por ser de pedidos creados después del cierre del stock
+    (normalmente, la distribución de hoy). Con las entradas ya pasadas por
+    ``aplicar_pedidos``. Una tienda sin nada en camino sale en 0: así se ve."""
+    cols = ["transito", "en_cd", "despachado", "creado_despues_del_cierre"]
+    ids = pd.Index(sorted({str(t) for t in tiendas}), name="tienda_id")
+    out = pd.DataFrame(0.0, index=ids, columns=cols)
+    if not usa_pedidos(inputs, params) or not len(ids):
+        return out.reset_index()
+    st = inputs.stock_tienda.assign(tienda_id=inputs.stock_tienda["tienda_id"].astype(str))
+    g = st.groupby("tienda_id")[["stock_transito", "transito_en_cd", "transito_despachado"]].sum()
+    g.columns = cols[:3]
+    out.update(g.reindex(ids))
+    p = inputs.pedidos
+    if params.recepcion.solo_hasta_cierre_stock and len(p):
+        rec = params.recepcion
+        hoy = _transito(
+            p.loc[post_cierre(p)],
+            inputs,
+            params,
+            rec.estados_transito,
+            rec.estados_transito_recientes,
+        )
+        if len(hoy):
+            h = hoy.assign(tienda_id=hoy["tienda_id"].astype(str))
+            out["creado_despues_del_cierre"] = (
+                h.groupby("tienda_id")["stock_transito"].sum().reindex(ids).fillna(0.0)
+            )
+    return out.fillna(0.0).reset_index()
+
+
 def recepcion_post_corte(inputs, params):
     """tienda_id, sku, recepcion_post_corte: lo recepcionado después del corte de stock_bi, que
     se suma al stock físico (None si está apagado o no hay pedidos)."""
