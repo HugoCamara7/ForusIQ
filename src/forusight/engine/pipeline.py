@@ -155,7 +155,12 @@ def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams):
             dim_producto.drop_duplicates("sku").set_index("sku")["temporada_comercial"]
         )
     bloq, fuera = fuera_de_surtido(
-        sku["tienda_id"], sku["modelo_color_id"], temp, bloqueos, params.surtido.temporadas_reponer
+        sku["tienda_id"],
+        sku["modelo_color_id"],
+        temp,
+        bloqueos,
+        params.surtido.temporadas_reponer,
+        params.surtido.temporada_desde,
     )
     if not (bloq.any() or fuera.any()):
         return sku

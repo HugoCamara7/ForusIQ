@@ -636,7 +636,7 @@ def test_revisar_transito_de_una_tienda():
                 "tienda_cod": ["97"] * 5,
                 "estado": ["1", "6. en Transporte", "4", "1", "7"],
                 "clasificacion": ["1", "1", "1", "4.-Devolucion CD", "1"],
-                "fecha_pedido": pd.to_datetime(["2026-10-01"] * 4 + ["2026-09-25"]),
+                "fecha_pedido": pd.to_datetime(["2026-10-01"] * 4 + ["2026-09-20"]),
                 "fecha_recepcion": pd.to_datetime([None, None, "2026-09-20", None, None]),
                 "id_linea": ["1", "1", "1", "1", "1"],
                 "id_producto": ["5"] * 5,
@@ -645,7 +645,7 @@ def test_revisar_transito_de_una_tienda():
                 "filas": [1, 2, 1, 1, 1],
             }
         ),
-        # la 97 recibe en 1 o 2 días (95 %: 2) → plazo de tránsito 2 + 1 = 3 días
+        # la 97 recibe en 1 o 2 días (95 %: 2) → plazo 2 + 1 = 3 días, con piso de 7
         "plazos_entrega": pd.DataFrame(
             {
                 "tienda_cod": ["097", "097", "097"],
@@ -675,11 +675,11 @@ def test_revisar_transito_de_una_tienda():
     lineas, locales = repo.revisar_transito(
         "97", params().recepcion, pd.Timestamp("2026-10-02").date()
     )
-    # en transporte (6) de hace 1 día cuenta (dentro del plazo de 3 días de la 97);
-    # prerecepcionado (7) de hace 7 días ya llegó; recepcionado y devolución no cuentan
+    # en transporte (6) de hace 1 día cuenta (dentro del plazo de 7 días de la 97);
+    # prerecepcionado (7) de hace 12 días ya llegó; recepcionado y devolución no cuentan
     assert lineas["cuenta_transito"].tolist() == [True, True, False, False, False]
     assert lineas.loc[lineas["cuenta_transito"], "unidades"].sum() == 5  # 2 pedidas + 3 desp.
-    assert lineas["plazo_tienda"].tolist() == [3.0] * 5
+    assert lineas["plazo_tienda"].tolist() == [7.0] * 5
     assert lineas["motivo"].iloc[4].startswith("Despachado hace más que el plazo")
     assert lineas["repetida"].tolist() == [False, True, False, False, False]
     assert locales["en_catalogo"].tolist() == [True, False]  # 097 = tienda 97
@@ -718,8 +718,13 @@ def test_plazo_de_entrega_por_tienda_y_ventana_de_transito():
     # Lima (8): casi todo al día siguiente; la devolución (4) no entra
     assert pl.loc["8", "pedidos"] == 20 and pl.loc["8", "dias_p95"] == 1
     assert pl.loc["61", "dias_p50"] == 3 and pl.loc["61", "dias_p95"] == 5
-    v = F.ventana_transito(pl.reset_index(), params().recepcion)
     # percentil 95 + 1 día; la 5 tiene sólo 2 pedidos: usa el plazo general
+    assert F.ventana_transito(pl.reset_index(), params().recepcion).to_dict() == {
+        "8": 7.0,  # piso de 7 días (plazo_minimo_dias)
+        "61": 7.0,
+    }
+    rec1 = params(recepcion={"plazo_minimo_dias": 1}).recepcion
+    v = F.ventana_transito(pl.reset_index(), rec1)
     assert v.to_dict() == {"8": 2.0, "61": 6.0}
     ped = pd.DataFrame(
         {
@@ -732,7 +737,7 @@ def test_plazo_de_entrega_por_tienda_y_ventana_de_transito():
             "unidades": [2.0, 3.0, 1.0, 4.0, 5.0],
         }
     )
-    rec = params().recepcion
+    rec = rec1
     tr = F.transito_de_pedidos(
         ped,
         rec.estados_transito,

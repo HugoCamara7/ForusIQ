@@ -48,6 +48,7 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
             rep.get("Temporada comercial"),
             bloqueos_de(clave_bloqueos()),
             params.surtido.temporadas_reponer,
+            params.surtido.temporada_desde,
         )
         return tabla_para_archivo(rep, res.detalle, cantidad, (bloq | fuera).to_numpy())
     return construir_tabla(

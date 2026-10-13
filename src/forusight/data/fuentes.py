@@ -856,7 +856,8 @@ def ventana_transito(plazos: pd.DataFrame | None, recepcion) -> pd.Series:
         recepcion.percentil_plazo, "dias_p95"
     )
     p = plazos.loc[plazos["pedidos"] >= recepcion.min_pedidos_plazo]
-    v = (p[col] + recepcion.margen_plazo_dias).clip(lower=1, upper=30)
+    piso = max(1, getattr(recepcion, "plazo_minimo_dias", 1))
+    v = (p[col] + recepcion.margen_plazo_dias).clip(lower=piso, upper=max(piso, 30))
     return pd.Series(v.to_numpy(dtype=float), index=p["tienda_id"].astype(str))
 
 

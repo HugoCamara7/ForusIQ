@@ -231,3 +231,29 @@ def test_modelo_sin_temporada_se_repone():
     temp = pd.Series(["VERANO 2026", "VERANO 2025", pd.NA], dtype="string")
     _, fuera = B.fuera_de_surtido(t, mc, temp, None, ["VERANO 2026", "ESCOLAR 2026"])
     assert fuera.tolist() == [False, True, False]
+
+
+def test_temporadas_desde_verano_2026_y_escolar_2026():
+    """Se repone VERANO 2026 en adelante (INVIERNO 2027, VERANO 2027…) y ESCOLAR 2026; no
+    INVIERNO 2026 ni anteriores. Sin temporada conocida (modelo nuevo): se repone."""
+    from forusight.data.bloqueos import fuera_de_surtido, orden_temporada
+
+    assert orden_temporada("INVIERNO 2026") < orden_temporada("VERANO 2026")
+    assert orden_temporada("VERANO 2026") < orden_temporada("INVIERNO 2027")
+    assert orden_temporada("ESCOLAR 2026") is None
+    temps = pd.Series(
+        [
+            "VERANO 2026",
+            "INVIERNO 2026",
+            "INVIERNO 2027",
+            "ESCOLAR 2026",
+            "ESCOLAR 2025",
+            "VERANO 2025",
+            None,
+        ]
+    )
+    n = len(temps)
+    _, fuera = fuera_de_surtido(
+        pd.Series(["1"] * n), pd.Series(["M-C"] * n), temps, None, ["ESCOLAR 2026"], "VERANO 2026"
+    )
+    assert fuera.tolist() == [False, True, False, False, True, True, False]

@@ -27,12 +27,13 @@ del stock), así que se usa **el primer archivo del día**.
 
 | Dato | Fuente | Nota |
 |---|---|---|
-| Stock de tiendas y del CD | `stock_bi` (último corte) | El corte de fecha F es el cierre del día F. |
+| Stock de tiendas y del CD | `stock_bi` (último corte) | Stock con fecha de corte 12/10 = stock al cierre del 12/10. |
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
 | Producto | ARTI | SKU, modelo, color, talla, marca, clase, género. |
 | Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
-| Stock mínimo, empaque, k | Maestro de planificación guardado | No vence (sección 3.4). |
+| Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
+| Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
 | Bloqueos | Reporte de bloqueos + mantenedor | Se editan en **Bloqueos**. |
 
 ---
@@ -41,11 +42,13 @@ del stock), así que se usa **el primer archivo del día**.
 
 ### 3.1 Stock físico de la tienda
 ```
-Stock Físico = stock_bi (cierre del día F)
-             − venta neta posterior a F (hasta ayer)
-             + recepcionado posterior a F
+Stock Físico = stock_bi (stock al cierre del día de corte)
+             − venta posterior al día de corte (hasta ayer)
+             + lo recibido después del día de corte
 ```
-Con el corte de ayer no cambia nada. Un lunes, con el corte del sábado, se ajusta el domingo.
+La **fecha de corte** es el día cuyo cierre trae stock_bi: el lunes 13/10 llega el stock con fecha
+de corte 12/10, que es el stock al cierre del domingo 12/10. Con el corte de ayer no cambia nada;
+un lunes con el corte del sábado, se ajusta lo del domingo.
 
 ### 3.2 Tránsito y posición
 ```
@@ -64,7 +67,11 @@ k es el factor del planificador por marca × clase × prenda × género. Si no h
 calzado y accesorios, 0,35 en vestuario.
 
 ### 3.4 Stock mínimo (piso del nivel)
-Último valor conocido de la tienda × SKU en el maestro guardado. Si la clave no está:
+Es un dato **propio de Forus**: no se vuelve a pedir a Neogística. Se usa, en este orden:
+
+0. el valor que alguien guardó en **Parámetros → Stock mínimo** (con usuario y fecha);
+
+luego el último valor conocido de la tienda × SKU en el maestro guardado. Si la clave no está:
 1. el más frecuente del SKU en otras tiendas;
 2. luego el de marca × prenda × talla;
 3. luego el de marca × prenda;
@@ -73,16 +80,26 @@ calzado y accesorios, 0,35 en vestuario.
 Una tienda nueva puede tomar los valores de una **tienda espejo** (`config/tiendas_espejo.csv`).
 
 Con 6 reportes (01–12/10/2026): el stock mínimo cambia en ~3,5 % de las claves entre reportes,
-y el último valor conocido acierta el 94,5 % una semana después.
+y el último valor conocido acierta el 94,5 % una semana después. Con el stock mínimo guardado,
+el nivel máximo coincide con el de Neogística en el **95,4 %** de las tienda × talla; si se
+reemplazara por una regla de venta, no pasa del 84 %. Por eso se conserva y sólo se edita
+cuando el planificador lo cambia.
 
 ### 3.5 Nivel máximo y punto de reorden
 ```
-d             = Pronóstico × (Leadtime + Período Revisión) ÷ 7
-Nivel Máximo  = máx( Stock Mínimo ; ⌈ d + 0,84 × √d ⌉ )
-Punto Reorden = Nivel Máximo − 1
+1. Demanda hasta el próximo envío = Pronóstico × (Leadtime + Período Revisión) ÷ 7
+2. Seguridad     = 0,84 × raíz cuadrada(Demanda hasta el próximo envío)
+3. Nivel Máximo  = el mayor entre Stock Mínimo y (Demanda + Seguridad) redondeado hacia arriba
+4. Punto Reorden = Nivel Máximo − 1
 ```
-Ejemplo: Pronóstico 1 par/semana, Leadtime 3, Revisión 2,33 → d = 0,76 →
-⌈0,76 + 0,73⌉ = 2 → Nivel 2, Reorden 1.
+Se divide entre 7 para pasar de unidades por semana a unidades por día; el 0,84 da ≈ 80 % de
+seguridad por si la tienda vende más de lo esperado.
+
+Ejemplo: Pronóstico 1 par/semana, Leadtime 3 días, Revisión 2,33 días.
+1. Demanda = 1 × (3 + 2,33) ÷ 7 = 0,76 pares.
+2. Seguridad = 0,84 × raíz(0,76) = 0,73.
+3. 0,76 + 0,73 = 1,49 → redondeado hacia arriba = 2; Stock Mínimo 1 → **Nivel Máximo 2**.
+4. **Punto Reorden 1**: si la tienda tiene 1 par o menos (stock + tránsito), se envía hasta 2.
 
 Una talla sin stock, tránsito ni venta, o de un modelo sin venta reciente en la tienda, no se
 evalúa (nivel 0), igual que en el reporte.
@@ -109,7 +126,7 @@ Lo enviado **nunca supera** el Stock en CD.
 ### 3.8 Filtros finales
 - Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**).
 - Un modelo-color **bloqueado** para la tienda no se envía (página **Bloqueos**).
-- Sólo se reponen las **temporadas comerciales** activas (Parámetros → surtido).
+- Sólo se reponen **VERANO 2026 en adelante** (VERANO 2026, INVIERNO 2027, VERANO 2027…) y **ESCOLAR 2026**; INVIERNO 2026 y anteriores no. Un modelo nuevo sin temporada conocida se repone. La temporada de cada modelo-color se corrige en **Parámetros → Temporadas**.
 
 ---
 
@@ -124,7 +141,7 @@ Lo enviado **nunca supera** el Stock en CD.
 
 Reglas:
 - **Plazo de entrega de la tienda:** percentil 95 de los días entre pedido y recepción de sus
-  propios pedidos de los últimos 120 días, + 1 día. Sin datos: 7 días. Se ve en **Conexión →
+  propios pedidos de los últimos 120 días, + 1 día, con un mínimo de 7 días (sin datos: 7). Se ve en **Conexión →
   Medir plazos de entrega**. Un pedido despachado más antiguo que el plazo ya llegó y quedó sin
   cerrar.
 - **Misma foto que el stock:** sólo cuentan los pedidos creados **hasta el día del cierre del
@@ -171,7 +188,8 @@ Recuadros de aviso:
 | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
 | **Bloqueos** | Bloquear o desbloquear modelo-color × tienda (o cargar Excel). |
 | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
-| **Parámetros** | Reglas del motor (formulario o YAML). Planificación: opcional. |
+| **Parámetros** | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo** (buscar, editar, cargar Excel, historial). |
+| **Comparar con Neogística** | Pone lado a lado la corrida y el reporte de Neogística, sólo para revisar. |
 | **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
 | **Manual** | Este documento y el diccionario de columnas. |
 
@@ -190,6 +208,10 @@ Recuadros de aviso:
 ---
 
 ## 8. Cómo comparar con Neogística (checklist)
+
+La página **Comparar con Neogística** lo hace sola: sube el reporte del mismo día y muestra por tienda y por causa dónde difieren, con descarga en Excel. El reporte sólo se lee para comparar: **no entra al cálculo de Forusight**.
+
+Si lo revisas a mano, sigue este orden:
 
 1. **Mismo día y mismas tiendas:** filtra en el reporte las tiendas de la ruta del día y sólo
    «Revision de stock».
@@ -215,6 +237,8 @@ Recuadros de aviso:
 | `recepcion.estados_transito` | [1, 2] | Cuentan con todo el historial. |
 | `recepcion.estados_transito_recientes` | [3, 6, 7] | Cuentan dentro del plazo de la tienda. |
 | `recepcion.percentil_plazo` / `margen_plazo_dias` | 0,95 / 1 | Plazo = p95 + 1 día. |
+| `recepcion.plazo_minimo_dias` | 7 | Un pedido despachado cuenta al menos 7 días. |
+| `surtido.temporada_desde` / `temporadas_reponer` | VERANO 2026 / ESCOLAR 2026 | Temporadas que se reponen. |
 | `recepcion.dias_transito_recientes` | 7 | Plazo si la tienda no tiene datos. |
 | `recepcion.solo_hasta_cierre_stock` | true | Tránsito en la misma foto que el stock. |
 | `stock_cd.componentes` | disponible | Qué parte del CD se reparte. |

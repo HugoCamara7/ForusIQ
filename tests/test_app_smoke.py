@@ -12,6 +12,7 @@ PAGINAS = [
     "10_Descargas",
     "8_Bloqueos",
     "11_Manual",
+    "12_Comparar",
     "9_Rutas",
     "5_Parametros",
 ]  # vista única + configuración
@@ -180,3 +181,21 @@ def test_descargas_lista_las_corridas_de_la_semana(monkeypatch):
     assert not app.exception, app.exception
     assert [b.label for b in app.get("download_button")] == ["Descargar"]
     assert any(f"{hoy:%d/%m/%Y}" in m.value for m in app.markdown)
+
+
+def test_parametros_mantenedores_buscar_y_guardar(monkeypatch):
+    from app.components import estado
+
+    estado._MANT.clear()
+    app = _app(monkeypatch)
+    app.switch_page("app/vistas/5_Parametros.py").run()
+    app.text_input(key="mt_buscar").input("HP").run()
+    app.text_input(key="mt_smt_tienda").input("8").run()
+    app.text_input(key="mt_smt_sku").input("123456").run()
+    assert not app.exception, app.exception
+    app.button(key="mt_smt_guardar").click().run()  # tienda × SKU nueva: se crea con 1
+    assert not app.exception, app.exception
+    from forusight.data import mantenedores as MT
+
+    assert estado._MANT[MT.RUTA_STOCK_MINIMO]["sku"].tolist() == ["123456"]
+    estado._MANT.clear()

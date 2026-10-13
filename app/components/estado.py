@@ -255,6 +255,7 @@ def _correr_motor(
     plan_huella: str = "",  # cambia si cambia el maestro de planificación (GitHub / repo)
     cargas: str = "",  # última carga de stock y venta (clave_cargas)
     rutas_huella: str = "",  # cambia si cambia una ruta o una excepción (mantenedor de rutas)
+    mant_huella: str = "",  # cambia si cambia el mantenedor de temporadas o de stock mínimo
 ) -> tuple[EngineResult, dict]:
     from dataclasses import replace
 
@@ -283,12 +284,15 @@ def _correr_motor(
             ["venta_desde_ruta", "venta_post_corte", "recepcion_post_corte"]
         ].fillna(0.0)
     bloq = bloqueos_de(bloq_clave)
+    from forusight.data import mantenedores as MT
     from forusight.data import temporadas as TEMP
 
     maestro = TEMP.combinar(
         TEMP.por_defecto(),
         _TEMPORADAS.get(bloq_clave.partition("|")[0]),
         _TEMPORADAS.get(niveles_clave),
+        # mantenedor de temporadas: manda sobre el maestro guardado
+        MT.temporadas_vigentes(mantenedor(MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS)),
     )
     inputs = replace(
         inputs,
@@ -298,7 +302,12 @@ def _correr_motor(
     )
     from forusight.data import planificacion as PLAN
 
-    plan = maestro_planificacion(niveles_clave)
+    # stock mínimo del mantenedor: manda sobre el maestro guardado
+    plan = MT.aplicar_stock_minimo(
+        maestro_planificacion(niveles_clave),
+        mantenedor(MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
+        dia,
+    )
     plan_vig = PLAN.con_espejos(PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos))
     # Tiendas que reponen hoy sin claves de planificación: su nivel sale de otras tiendas.
     hoy = dt.loc[dt["activa"] & dt["recibe_hoy"]]
@@ -410,6 +419,7 @@ def correr_motor(
         huella_planificacion(niveles_clave),
         clave_cargas(fuente, huella_config()),
         huella_rutas(),
+        huella_mantenedores(),
     )
 
 
@@ -430,47 +440,7 @@ def clave_bloqueos() -> str:
 _TEMPORADAS: dict[str, pd.Series] = {}
 
 
-#: Maestros de planificación de los reportes subidos en la sesión, por huella del contenido.
-_PLANIF: dict[str, object] = {}
 CARPETA_PLAN = "planificacion"
-
-
-def registrar_planificacion(archivos: list[tuple[bytes, str]]) -> str:
-    """Reportes de distribución (Neogística) → maestro de planificación (SMT, nivel, reorden y
-    UE por tienda × SKU; k por categoría) y temporadas. Se guarda en GitHub si está
-    configurado. Devuelve la huella ('' si no hay archivos)."""
-    from forusight.data import planificacion as PLAN
-    from forusight.data import reporte as R
-    from forusight.data import temporadas as TEMP
-
-    if not archivos:
-        return ""
-    clave = hashlib.sha1(b"".join(hashlib.sha1(a).digest() for a, _ in archivos)).hexdigest()[:12]
-    if clave not in _PLANIF:
-        partes = []
-        for contenido, nombre in archivos:
-            df, fecha = _leer_reporte(contenido)
-            fecha = fecha if fecha is not None else R.fecha_de_nombre(nombre)
-            if fecha is None:
-                raise ValueError(f"{nombre}: no se encontró la fecha del reporte.")
-            partes.append((df, pd.Timestamp(fecha)))
-        partes.sort(key=lambda p: p[1])
-        ms = [PLAN.desde_reporte(df, f) for df, f in partes]
-        _PLANIF[clave] = PLAN.combinar(*ms)
-        _TEMPORADAS[clave] = TEMP.combinar(*[TEMP.desde_reporte(df) for df, _ in partes])
-        store = _store_bloqueos()
-        if store is not None:
-            for m, (_, f) in zip(ms, partes, strict=True):
-                contenido = PLAN.a_bytes(m)
-                huella = hashlib.sha1(contenido).hexdigest()[:8]
-                with contextlib.suppress(Exception):  # sin GitHub se usa igual en esta sesión
-                    store.guardar(  # un archivo por reporte (varias rutas/marcas en un día)
-                        f"{CARPETA_PLAN}/{f:%Y%m%d}_{huella}.csv.gz",
-                        contenido,
-                        f"forusight: maestro de planificación del {f:%d/%m/%Y}",
-                    )
-            _planif_github.clear()
-    return clave
 
 
 @st.cache_data(ttl=_TTL, show_spinner=False, max_entries=2)
@@ -498,14 +468,14 @@ def huella_planificacion(clave: str = "") -> str:
 
 
 def maestro_planificacion(clave: str = ""):
-    """Maestro vigente: el guardado en el repositorio + GitHub + los reportes de la sesión."""
+    """Maestro vigente: el guardado en el repositorio + GitHub (ya no se suben reportes)."""
     from forusight.data import planificacion as PLAN
 
     gh = []
     for b in _planif_github(huella_config()):
         with contextlib.suppress(Exception):  # un archivo dañado no frena la corrida
             gh.append(PLAN.desde_bytes(b))
-    return PLAN.combinar(PLAN.por_defecto(), *gh, _PLANIF.get(clave))
+    return PLAN.combinar(PLAN.por_defecto(), *gh)
 
 
 def resumen_planificacion(m, dia) -> dict:
@@ -547,6 +517,53 @@ def _store_bloqueos():
     if cfg is None:
         return None
     return GitHubStore(cfg["repository"], cfg["token"], cfg["branch"], cfg["prefix"])
+
+
+# ------------------------------------------------------------------ mantenedores propios
+
+#: Historial de cada mantenedor (temporadas, stock mínimo), por ruta en GitHub.
+_MANT: dict[str, pd.DataFrame] = {}
+
+
+def mantenedor(ruta: str, cols: list[str]) -> pd.DataFrame:
+    """Historial del mantenedor (GitHub; sin GitHub, sólo lo de este proceso)."""
+    from forusight.data import mantenedores as MT
+
+    if ruta not in _MANT:
+        d = MT.vacio(cols)
+        store = _store_bloqueos()
+        if store is not None:
+            with contextlib.suppress(Exception):  # sin el archivo se sigue con el maestro
+                d = MT.leer(store.leer(f"{store.prefix}/{ruta}"), cols)
+        _MANT[ruta] = d
+    return _MANT[ruta]
+
+
+def guardar_mantenedor(
+    ruta: str, cols: list[str], nuevos: pd.DataFrame, usuario: str, mensaje: str
+) -> str:
+    """Agrega cambios al historial y lo guarda. Devuelve dónde quedó guardado."""
+    from forusight.data import mantenedores as MT
+
+    todo = pd.concat([mantenedor(ruta, cols), nuevos], ignore_index=True)[cols]
+    _MANT[ruta] = todo
+    store = _store_bloqueos()
+    if store is None:
+        return "esta sesión (sin GitHub configurado: se pierde al reiniciar la app)"
+    donde = store.guardar(ruta, MT.a_csv(todo), f"forusight: {mensaje} por {usuario}")
+    return f"GitHub ({store.repository}: {donde})"
+
+
+def huella_mantenedores() -> str:
+    from forusight.data import mantenedores as MT
+
+    h = hashlib.sha1()
+    for ruta, cols in (
+        (MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS),
+        (MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
+    ):
+        h.update(MT.a_csv(mantenedor(ruta, cols)))
+    return h.hexdigest()[:10]
 
 
 def bloqueos_manuales() -> pd.DataFrame:
@@ -699,7 +716,10 @@ def _correr_reporte(
     inp, diag = _entradas_reporte(contenido, marcas)
     # El tránsito es el que trae el reporte (Stock Trán. Int. + Prov.).
     base, n_bloq = R.aplicar_surtido(
-        inp.reporte, bloqueos_de(bloq_clave), params.surtido.temporadas_reponer
+        inp.reporte,
+        bloqueos_de(bloq_clave),
+        params.surtido.temporadas_reponer,
+        params.surtido.temporada_desde,
     )
     diag = {**diag, "bloqueadas": n_bloq}
     dist = R.distribuir(
@@ -730,6 +750,7 @@ def limpiar_cache() -> None:
         _correr_reporte,
     ):
         f.clear()
+    _MANT.clear()  # vuelve a leer los mantenedores de GitHub
 
 
 def lunes_actual() -> pd.Timestamp:
@@ -951,34 +972,6 @@ def barra_lateral(paginas: list | None = None, actual=None) -> None:
                 ss.releer_pendiente = True  # corre en Inicio, con la barra de progreso
                 if paginas:
                     st.switch_page(paginas[0])
-
-
-def carga_planificacion() -> None:
-    """Reportes de distribución de Neogística → maestro de planificación (se guarda en GitHub y
-    lo usan la pantalla y la corrida de las 6:30). Vive en Parámetros, fuera del día a día."""
-    ss = st.session_state
-    archivos = st.file_uploader(
-        "Reportes de distribución (opcional)",
-        type=["xlsx"],
-        accept_multiple_files=True,
-        key="plan_uploader",
-        help="Opcional. Actualizan stock mínimo y empaque por tienda × SKU del maestro "
-        "guardado. Sin subir nada, la corrida usa el último dato conocido.",
-    )
-    try:
-        if archivos:
-            ss.niveles_clave = registrar_planificacion([(a.getvalue(), a.name) for a in archivos])
-        info = resumen_planificacion(
-            maestro_planificacion(ss.get("niveles_clave", "")),
-            ss.get("dia_reposicion") or hoy_lima(),
-        )
-        if info.get("claves"):
-            st.caption(
-                f"Planificación vigente: {info['claves']:,} tienda × SKU · último reporte del "
-                f"{_ddmm(info['ultimo_reporte'])} (hace {info['dias']} días)"
-            )
-    except Exception as exc:
-        st.error(f"No se pudo leer el reporte de distribución: {exc}")
 
 
 def panel_corrida() -> None:

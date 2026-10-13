@@ -2,8 +2,9 @@ import hashlib
 
 import streamlit as st
 import yaml
-from app.components.estado import SETTINGS, carga_planificacion
+from app.components.estado import SETTINGS
 from app.components.login import puede
+from app.components.mantenedores import tab_stock_minimo, tab_temporadas
 from app.components.ui import hero
 from pydantic import BaseModel, ValidationError
 
@@ -79,7 +80,9 @@ def _aplicar_yaml(clave: str) -> None:
 # Conexión), el formulario se vuelve a crear con los valores vigentes en vez de conservar los
 # viejos (que «Aplicar a la sesión» volvería a imponer).
 VER = huella_params()
-tab_form, tab_yaml, tab_plan = st.tabs(["Formulario", "YAML avanzado", "Planificación (opcional)"])
+tab_form, tab_temp, tab_smt, tab_yaml = st.tabs(
+    ["Formulario", "Temporadas", "Stock mínimo", "YAML avanzado"]
+)
 with tab_form, st.form("form_params"):
     nuevos = {}
     for seccion in EngineParams.model_fields:
@@ -91,6 +94,12 @@ with tab_form, st.form("form_params"):
             st.success("Parámetros aplicados. Vuelve a ejecutar la corrida.")
         except ValidationError as exc:
             st.error(str(exc))
+
+with tab_temp:
+    tab_temporadas()
+
+with tab_smt:
+    tab_stock_minimo()
 
 with tab_yaml:
     if flash := ss.pop("flash_params", None):
@@ -105,12 +114,3 @@ with tab_yaml:
         ruta = save_params(ss.params, SETTINGS.params_path)
         st.success(f"Guardado en {ruta}. En despliegue se versionará en el dataset APP.")
     st.download_button("Descargar params.yaml", dump_params(ss.params), file_name="params.yaml")
-
-with tab_plan:
-    st.caption(
-        "Opcional: la corrida no necesita ningún archivo de Neogística. Usa el maestro de "
-        "planificación guardado (stock mínimo, empaque y categoría por tienda × SKU), que no "
-        "vence, y calcula nivel y punto de reorden con la venta de BigQuery. Si alguna vez "
-        "subes un reporte de distribución, sólo actualiza ese maestro."
-    )
-    carga_planificacion()
