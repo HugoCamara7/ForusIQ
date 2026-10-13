@@ -38,6 +38,13 @@ MINUTO_ULTIMO_INTENTO = 8 * 60
 
 GUARDAR, PRELIMINAR, ESPERAR = "guardar", "preliminar", "esperar"
 
+#: Si la carga aún no trae el cierre de ayer, la MISMA ejecución espera y reintenta cada
+#: ``MINUTOS_ENTRE_INTENTOS`` hasta el último intento (8:00). Así basta con que el cronjob
+#: externo (cron-job.org → workflow_dispatch a las 6:30) llame una vez: el cron de GitHub
+#: llega con horas de atraso (12/10: a las 15:22 de Lima en vez de las 6:30).
+MINUTOS_ENTRE_INTENTOS = 10
+PENDIENTE = "carga diaria pendiente: se reintenta"
+
 
 def decidir(aviso_carga: str | None, ahora, forzar: bool = False) -> str:
     """Si la carga diaria de stock/venta todavía no trae el cierre de ayer, se espera al
@@ -98,7 +105,7 @@ def correr(ahora, store, fuente: str = "bigquery", forzar: bool = False) -> dict
     )
     decision = decidir(diag.get("aviso_carga"), ahora, forzar)
     if decision == ESPERAR:
-        return {"estado": "carga diaria pendiente: se reintenta", "fecha": f"{hoy:%Y-%m-%d}"}
+        return {"estado": PENDIENTE, "fecha": f"{hoy:%Y-%m-%d}"}
     entradas = E.cargar_entradas(fuente, corte, None, "", marcas)[0]
     tabla = tabla_archivo(res, entradas, params, E.ajustes().cd_id, None)
     if tabla.empty:  # fin de semana o feriado: ninguna tienda repone hoy; nada que guardar
@@ -119,6 +126,20 @@ def correr(ahora, store, fuente: str = "bigquery", forzar: bool = False) -> dict
     }
 
 
+def con_reintentos(intento, reloj, dormir, al_reintentar=lambda: None) -> dict:
+    """Corre ``intento(ahora)``; mientras la carga siga pendiente espera y vuelve a intentar,
+    hasta el último intento (8:00 de Lima), donde ``decidir`` ya guarda PRELIMINAR."""
+    while True:
+        ahora = reloj()
+        r = intento(ahora)
+        if r.get("estado") != PENDIENTE:
+            return r
+        minuto = ahora.hour * 60 + ahora.minute
+        espera = min(MINUTOS_ENTRE_INTENTOS, max(MINUTO_ULTIMO_INTENTO - minuto, 0))
+        dormir(max(espera, 1) * 60)
+        al_reintentar()
+
+
 def main() -> int:
     from app.components import estado as E
 
@@ -131,8 +152,19 @@ def main() -> int:
             "[ticketing]) en FORUSIGHT_SECRETS_TOML: no hay donde guardar el Excel."
         )
         return 1
+    import time
+
+    import streamlit as st
+
+    def releer():  # el intento siguiente vuelve a leer BigQuery, no la caché
+        st.cache_data.clear()
+        st.cache_resource.clear()
+
+    fuente = E.fuente_por_defecto()
     try:
-        r = correr(ahora, store, E.fuente_por_defecto(), forzar)
+        r = con_reintentos(
+            lambda t: correr(t, store, fuente, forzar), C.ahora_lima, time.sleep, releer
+        )
     except Exception as exc:  # el detalle va al repo privado; el log es público
         print(f"La corrida falló ({type(exc).__name__}). Detalle en el repositorio de datos.")
         try:

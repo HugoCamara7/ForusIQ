@@ -3,11 +3,11 @@ name: Corrida diaria 6:30
 # Todos los días a las 6:30 de Lima (UTC-5) corre la distribución y guarda el Excel con su
 # fecha en el repositorio privado de datos (forusight/corridas/AAAA-MM/).
 #
-# Cuatro intentos (6:30, 7:00, 7:30, 8:00 de Lima) y no uno: GitHub DESCARTA ejecuciones de
-# un cron programado cuando hay carga (no las retrasa). La corrida es idempotente: si el
-# Excel del día ya está, el intento siguiente no hace nada. Si la carga diaria de stock y
-# venta todavía no trae el cierre de ayer, espera al intento siguiente; el de las 8:00 guarda
-# igual, marcado PRELIMINAR.
+# Quien la dispara de verdad es el cronjob externo (cron-job.org → workflow_dispatch a las
+# 6:30 de Lima): el cron de GitHub llega con horas de atraso (el 12/10, a las 15:22 de Lima)
+# y queda sólo de respaldo. Si la carga diaria de stock y venta todavía no trae el cierre de
+# ayer, la MISMA ejecución espera y reintenta cada 10 min hasta las 8:00, donde guarda igual,
+# marcado PRELIMINAR. La corrida es idempotente: si el Excel del día ya está, no hace nada.
 #
 # GitHub desactiva los workflows programados de un repositorio sin actividad en 60 días.
 on:
@@ -30,7 +30,9 @@ concurrency:
 jobs:
   corrida:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Si la carga aún no trae el cierre de ayer, la misma ejecución espera (cada 10 min) hasta
+    # las 8:00 de Lima: basta con que el cronjob externo la lance una vez a las 6:30.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
