@@ -155,6 +155,6 @@ nivel_neo:                      # nivel y punto de reorden con la estructura del
   z: 0.84
   nivel_reporte_como_piso: false  # no: la fórmula se pasa en tallas de alta rotación
   dias_maximos: 0               # antigüedad máxima del maestro de planificación (SMT por tienda × SKU); 0 = sin límite (no depende de Neogística)
-  dias_nivel_reporte: 3         # clave de un reporte de <= 3 días: su nivel y reorden tal cual (89,7 % el 30/09)
+  dias_nivel_reporte: 0         # 0: nunca copia el nivel, el reorden ni «sin espacio» de un reporte de Neogística
   banda_reporte: false          # con la fórmula, reorden = nivel − 1
   universo: listada_reciente    # talla con stock/tránsito/venta y modelo con venta reciente, o talla de un reporte reciente

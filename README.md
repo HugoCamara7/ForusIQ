@@ -276,8 +276,10 @@ punto de reorden se calculan con la venta de BigQuery.
 Por qué alcanza (6 reportes del 01–12/10/2026): el SMT no sale de una fórmula de la venta (la
 mejor regla con venta/stock acierta 68 %; "siempre 1", 76 %), pero es muy estable: cambia en el
 3,5 % de las claves entre reportes (sobre todo los lunes) y el último SMT conocido acierta el
-94,5 % una semana después. Claves nuevas: moda del SKU en otras tiendas (73 %). Subir un
-reporte en Parámetros → «Planificación (opcional)» sólo refresca ese maestro.
+94,5 % una semana después. Claves nuevas: moda del SKU en otras tiendas (73 %). Ya no se suben
+reportes de Neogística: nivel y punto de reorden siempre los calcula Forusight
+(`nivel_neo.dias_nivel_reporte: 0`). Para revisar, la página **Comparar con Neogística** pone el
+reporte al lado de la corrida sin que entre al cálculo.
 
 ## Relevamiento del esquema fuente
 

@@ -205,9 +205,8 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
     "Punto Reorden [un]": (
         NIVELES,
         "Posición a la que la talla vuelve a pedir (como el reporte de distribución).",
-        "Punto Reorden = Nivel Máximo − 1. Se pide sólo si Posición ≤ Punto Reorden. "
-        "(Si el maestro guardado trae esa tienda × SKU de un reporte de hasta 3 días, usa su "
-        "punto de reorden.)",
+        "Punto Reorden = Nivel Máximo − 1. Se pide sólo si Posición ≤ Punto Reorden. Siempre "
+        "lo calcula Forusight (no se copia de ningún reporte).",
         "Motor Forusight + maestro de planificación",
         "Debe coincidir cuando coincide el Nivel Máximo.",
     ),

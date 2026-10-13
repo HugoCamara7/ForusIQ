@@ -181,7 +181,8 @@ Recuadros de aviso:
 | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
 | **Bloqueos** | Bloquear o desbloquear modelo-color × tienda (o cargar Excel). |
 | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
-| **Parámetros** | Reglas del motor (formulario o YAML). Planificación: opcional. |
+| **Parámetros** | Reglas del motor (formulario o YAML). |
+| **Comparar con Neogística** | Pone lado a lado la corrida y el reporte de Neogística, sólo para revisar. |
 | **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
 | **Manual** | Este documento y el diccionario de columnas. |
 
@@ -200,6 +201,10 @@ Recuadros de aviso:
 ---
 
 ## 8. Cómo comparar con Neogística (checklist)
+
+La página **Comparar con Neogística** lo hace sola: sube el reporte del mismo día y muestra por tienda y por causa dónde difieren, con descarga en Excel. El reporte sólo se lee para comparar: **no entra al cálculo de Forusight**.
+
+Si lo revisas a mano, sigue este orden:
 
 1. **Mismo día y mismas tiendas:** filtra en el reporte las tiendas de la ruta del día y sólo
    «Revision de stock».

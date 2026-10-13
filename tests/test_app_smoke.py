@@ -12,6 +12,7 @@ PAGINAS = [
     "10_Descargas",
     "8_Bloqueos",
     "11_Manual",
+    "12_Comparar",
     "9_Rutas",
     "5_Parametros",
 ]  # vista única + configuración
