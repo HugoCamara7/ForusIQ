@@ -100,6 +100,14 @@ if tr:
         f"Tránsito de pedidos: {tr.get('unidades', 0):,} u hacia {tr.get('tiendas', 0)} tiendas",
         " · ".join(partes) + ".",
     )
+elif "transito_pedidos" in diag:  # no se leyeron los pedidos: el tránsito quedó en 0
+    motivo = [n for n in diag.get("notas") or [] if str(n).startswith("Tránsito")]
+    issue_box(
+        "warn",
+        "Tránsito en 0: no se pudieron leer los pedidos",
+        (" ".join(motivo) or "La corrida no trajo las tablas de pedidos.")
+        + " La posición de stock no descuenta lo que ya va en camino: revisa antes de aprobar.",
+    )
 
 sin_plan = diag.get("tiendas_sin_planificacion") or []
 if sin_plan:

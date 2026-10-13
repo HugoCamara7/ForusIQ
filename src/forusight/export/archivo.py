@@ -77,9 +77,9 @@ COLUMNAS: list[Col] = [
     Col("Código Centro Origen", ancho=15, siempre=True),
     _num("Stock en CD", ancho=10, siempre=True),
     _num("Stock Físico [un]", "#,##0.0", "#C4A687", siempre=True),
-    _num("Stock Trán. Int. [un]", "#,##0.0", "#C4A687"),
-    _num("Tránsito en CD [un]", "#,##0.0", "#C4A687"),
-    _num("Tránsito despachado [un]", "#,##0.0", "#C4A687"),
+    _num("Stock Trán. Int. [un]", "#,##0.0", "#C4A687", siempre=True),
+    _num("Tránsito en CD [un]", "#,##0.0", "#C4A687", siempre=True),
+    _num("Tránsito despachado [un]", "#,##0.0", "#C4A687", siempre=True),
     _num("Posición Stock [un]", "#,##0.0", "#C4A687", siempre=True),
     Col("Cantidad Pedida Final [un]", "#C2C567", "#,##0", 10, True, rojo=True, siempre=True),
     _num("Unidad Empaque Distribución", ancho=15),
@@ -260,14 +260,15 @@ def construir_tabla(
     out["Código Centro Origen"] = origen.fillna(str(cd_id)).astype(str)
     out["Stock en CD"] = d["stock_cd_disponible"]
     out["Stock Físico [un]"] = fisico
-    if d["stock_transito"].gt(0).any():  # la fuente de stock actual no trae tránsito
-        out["Stock Trán. Int. [un]"] = d["stock_transito"]
+    # Siempre en el archivo, aunque hoy no haya tránsito (en 0): que no desaparezca la columna.
+    out["Stock Trán. Int. [un]"] = d["stock_transito"].fillna(0.0)
     # Detalle del tránsito de pedidos: en el CD (aprobado, picking) + despachado = Trán. Int.
     for col, nombre in (
         ("transito_en_cd", "Tránsito en CD [un]"),
         ("transito_despachado", "Tránsito despachado [un]"),
     ):
-        if stock_tienda is not None and col in stock_tienda and d["stock_transito"].gt(0).any():
+        out[nombre] = 0.0
+        if stock_tienda is not None and col in stock_tienda and len(d):
             serie = stock_tienda.groupby(["tienda_id", "sku"])[col].sum()
             v = pd.MultiIndex.from_frame(d[["tienda_id", "sku"]].astype(str)).map(
                 serie.rename(index=str).to_dict().get

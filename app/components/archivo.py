@@ -51,6 +51,13 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
             params.surtido.temporada_desde,
         )
         return tabla_para_archivo(rep, res.detalle, cantidad, (bloq | fuera).to_numpy())
+    # El detalle del tránsito (en CD / despachado) sale de los pedidos, como en el motor: las
+    # entradas guardadas no los traen aplicados (se aplican dentro de la corrida).
+    from forusight.data import transito as TR
+
+    stock_tienda = getattr(entradas, "stock_tienda", None)
+    if stock_tienda is not None and TR.usa_pedidos(entradas, params):
+        stock_tienda = TR.aplicar_pedidos(entradas, params).stock_tienda
     return construir_tabla(
         res.detalle,
         entradas.ventas,
@@ -62,7 +69,7 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
         res.fecha_corte,
         cd_id,
         cantidad,
-        getattr(entradas, "stock_tienda", None),
+        stock_tienda,
     )
 
 
