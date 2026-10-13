@@ -139,6 +139,32 @@ def test_decidir():
     assert S.decidir(aviso, lima(6, 30), forzar=True) == S.PRELIMINAR
 
 
+def test_una_sola_llamada_espera_la_carga_y_reintenta():
+    """El cronjob llama una vez a las 6:30: si la carga aún no llega, la misma ejecución
+    espera 10 min, vuelve a leer (sin caché) y guarda cuando llega."""
+    S = _script()
+    reloj = iter([lima(6, 30), lima(6, 40), lima(6, 50)])
+    estados = iter([S.PENDIENTE, S.PENDIENTE, "guardada"])
+    esperas, releidas = [], []
+    r = S.con_reintentos(
+        lambda t: {"estado": next(estados), "hora": t},
+        lambda: next(reloj),
+        esperas.append,
+        lambda: releidas.append(1),
+    )
+    assert r["estado"] == "guardada" and r["hora"] == lima(6, 50)
+    assert esperas == [600, 600] and len(releidas) == 2
+
+
+def test_la_espera_no_pasa_del_ultimo_intento():
+    S = _script()
+    reloj = iter([lima(7, 55), lima(8, 0)])
+    estados = iter([S.PENDIENTE, "guardada (PRELIMINAR: sin el cierre de ayer)"])
+    esperas = []
+    S.con_reintentos(lambda t: {"estado": next(estados)}, lambda: next(reloj), esperas.append)
+    assert esperas == [300]  # 7:55 → 8:00, no 10 min
+
+
 def test_el_cron_son_las_630_de_lima_y_el_ultimo_intento_coincide():
     import yaml
 
