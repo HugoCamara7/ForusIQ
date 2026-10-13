@@ -1127,6 +1127,12 @@ def construir_entradas(
     v = ventas.copy()
     v["sku"] = sku_canonico(v["id_producto"]) if "id_producto" in v else _sku_desde_llave(v, dim)
     v["tienda_id"] = v["tienda_cod"].map(codigo_tienda)
+    # Resumen para el mensaje de error si ninguna tienda puede recibir.
+    v_marca = v.loc[v["sku"].isin(skus)]
+    diag.filas["marca_venta_filas_leidas"] = len(v)
+    diag.filas["marca_venta_u_en_bodegas_o_excluidas"] = int(
+        v_marca.loc[v_marca["tienda_id"].isin(no_reciben), "unidades"].sum()
+    )
     v = v.loc[v["sku"].isin(skus) & ~v["tienda_id"].isin(no_reciben)]
     v["semana_inicio"] = pd.to_datetime(v["semana_inicio"])
     v = v.groupby(["semana_inicio", "tienda_id", "sku"], as_index=False)["unidades"].sum()
@@ -1191,6 +1197,21 @@ def construir_entradas(
         ]
     )
     con_stock = set(st.loc[st["stock_disponible"] > 0, "tienda_id"])
+    # Tienda recién abierta: su venta puede estar toda en la semana en curso. También repone.
+    # El stock en bodega de la tienda sólo se cuenta para el diagnóstico.
+    vende_ahora = set(en_curso.loc[en_curso["unidades"] > 0, "tienda_id"])
+    con_bodega = set(tiendas_f.loc[tiendas_f["stock_bodega"] > 0, "tienda_id"])
+    diag.filas.update(
+        {
+            "marca_tiendas_stock_sala": len(con_stock),
+            "marca_tiendas_stock_bodega": len(con_bodega),
+            "marca_tiendas_venta_4_semanas": len(reciente),
+            "marca_tiendas_venta_semana_en_curso": len(vende_ahora),
+        }
+    )
+    reciente |= vende_ahora
+    ids = sorted(set(ids) | reciente)
+    venta_t = venta_t.reindex(ids, fill_value=0)
     # Todas las tiendas (venta de cualquier marca y foto de stock) cuya cadena es conocida
     # (AZALEIA JOCKEY → AZALEIA): las nuevas aún pueden faltar en el maestro y el catálogo.
     # Forusight sólo repone: reciben las tiendas con stock o venta reciente de la marca.

@@ -901,6 +901,40 @@ def test_azaleia_tiendas_de_la_venta_sin_maestro_reponen():
     ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
 
 
+def test_azaleia_tienda_nueva_con_venta_solo_esta_semana_repone():
+    """Tienda AZALEIA recién abierta: toda su venta cae en la semana en curso (ninguna semana
+    cerrada) y su stock en sala está en 0. Antes: «Ninguna tienda puede recibir AZALEIA»."""
+    fake = _FakeBQ()
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    foto = fake.datos["stock_foto"]
+    fake.datos["stock_foto"] = pd.concat(
+        [
+            foto.loc[foto["tienda_cod"].eq("012")].assign(tienda_cod="501"),  # sala en 0
+            foto.loc[foto["tienda_cod"].eq("320")].assign(tienda_cod="380"),
+        ]
+    )
+    v = fake.datos["ventas"]
+    fake.datos["ventas"] = v.loc[pd.to_datetime(v["semana_inicio"]).eq(CORTE)].assign(
+        tienda_cod="501", unidades=2.0
+    )
+    fake.datos["venta_diaria"] = fake.datos["venta_diaria"].assign(tienda_cod="501")
+    fake.datos["tiendas_venta"] = pd.DataFrame(
+        {"tienda_cod": ["501"], "tienda_nombre": ["AZALEIA JOCKEY"], "cadena": ["AZALEIA"]}
+    )
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    dt = inp.dim_tienda.set_index("tienda_id")
+    assert dt.loc["501", "activa"] and dt.loc["501", "cadena"] == "AZALEIA"
+    ejecutar(inp, params(), CORTE, run_id="R")  # no se cae
+
+
+def test_ninguna_tienda_puede_recibir_resume_lo_leido():
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    with pytest.raises(ValueError, match=r"tiendas con stock en sala.*semana en curso"):
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+
+
 def test_tiendas_con_stock_sin_identificar_es_mensaje_claro():
     fake = _FakeBQ()
     fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")

@@ -493,10 +493,19 @@ class FuentesRepository(BigQueryRepository):
                     "venta no empieza con una cadena conocida. Agrégalas al maestro (p. ej. "
                     "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
                 )
+            fl = diag.filas
             raise ValueError(
-                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock en sala ni venta "
-                "de la marca en las últimas 4 semanas, y Forusight sólo repone. Revisa que el "
-                "stock de ayer de esas tiendas ya esté cargado en BigQuery."
+                f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta reciente "
+                "de la marca, y Forusight sólo repone. Leído de BigQuery: "
+                f"{fl.get('sql_arti', 0):,} SKU en ARTI; foto de stock del {diag.fecha_foto}: "
+                f"{fl.get('sql_stock_foto', 0):,} filas, "
+                f"{fl.get('marca_tiendas_stock_sala', 0)} tiendas con stock en sala y "
+                f"{fl.get('marca_tiendas_stock_bodega', 0)} con stock en bodega; venta: "
+                f"{fl.get('marca_venta_filas_leidas', 0):,} filas, "
+                f"{fl.get('marca_tiendas_venta_4_semanas', 0)} tiendas con venta en 4 semanas, "
+                f"{fl.get('marca_tiendas_venta_semana_en_curso', 0)} en la semana en curso y "
+                f"{fl.get('marca_venta_u_en_bodegas_o_excluidas', 0):,} u vendidas con código "
+                "de bodega o tienda excluida."
             )
         # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
         dp = entradas.dim_producto
