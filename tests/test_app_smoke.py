@@ -120,17 +120,17 @@ def test_dashboard_con_aprobacion_en_curso(monkeypatch):
 
 
 def test_mantenedor_de_bloqueos(monkeypatch):
+    """Bloquear y desbloquear solo se hace subiendo Excel: no hay controles manuales."""
     app = _app(monkeypatch)
     app.switch_page("app/vistas/8_Bloqueos.py").run()
     assert not app.exception, app.exception
-    app.multiselect(key="blq_tiendas").select("8").run()
-    app.text_area(key="blq_texto").input("HP10201162490-N11").run()
-    app.button(key="btn_bloquear").click().run()
+    claves = {w.key for w in app.multiselect} | {w.key for w in app.text_area}
+    assert not claves & {"blq_tiendas", "blq_modelos", "blq_texto"}
+    assert "btn_bloquear" not in {b.key for b in app.button}
+    app.text_input(key="dbl_texto").input("HP").run()
     assert not app.exception, app.exception
-    m = app.session_state.bloqueos_manuales
-    assert (
-        m.iloc[-1]["accion"] == "BLOQUEAR" and m.iloc[-1]["modelo_color_id"] == "HP10201162490-N11"
-    )
+    assert not app.get("arrow_data_editor")
+    assert "btn_desbloquear" not in {b.key for b in app.button}
 
 
 def test_rutas_un_solo_cuadro_y_feriado_con_un_clic(monkeypatch):

@@ -186,7 +186,7 @@ Recuadros de aviso:
 |---|---|
 | **Inicio** | Nueva corrida, resultado, indicadores, **Aprobar y descargar**. |
 | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
-| **Bloqueos** | Bloquear o desbloquear modelo-color × tienda (o cargar Excel). |
+| **Bloqueos** | Bloquear o desbloquear modelo-color × tienda solo subiendo un Excel (Mod-Col, Cod Tienda); la consulta es de solo lectura. |
 | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
 | **Parámetros** | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo** (buscar, editar, cargar Excel, historial). |
 | **Comparar con Neogística** | Pone lado a lado la corrida y el reporte de Neogística, sólo para revisar. |

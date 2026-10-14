@@ -257,3 +257,12 @@ def test_temporadas_desde_verano_2026_y_escolar_2026():
         pd.Series(["1"] * n), pd.Series(["M-C"] * n), temps, None, ["ESCOLAR 2026"], "VERANO 2026"
     )
     assert fuera.tolist() == [False, True, False, False, True, True, False]
+
+
+def test_a_excel_carga_vuelve_a_leerse():
+    bloqueos = pd.DataFrame(
+        {"tienda_id": ["8", B.TODAS], "modelo_color_id": ["HP1-N11", "HP2-645"]}
+    )
+    carga = B.leer_carga(B.a_excel_carga(bloqueos), "x.xlsx")
+    assert carga["tienda_id"].tolist() == ["8", B.TODAS]
+    assert carga["modelo_color_id"].tolist() == ["HP1-N11", "HP2-645"]
