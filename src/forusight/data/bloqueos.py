@@ -167,6 +167,21 @@ def plantilla_excel() -> bytes:
     return buf.getvalue()
 
 
+def a_excel_carga(bloqueos: pd.DataFrame) -> bytes:
+    """Bloqueos (tienda_id, modelo_color_id) → Excel en el formato de carga (Mod-Col, Cod Tienda).
+
+    «Todas las tiendas» se escribe con Cod Tienda vacío, como lo lee :func:`leer_carga`."""
+    buf = io.BytesIO()
+    tienda = bloqueos["tienda_id"].astype(str)
+    pd.DataFrame(
+        {
+            "Mod-Col": bloqueos["modelo_color_id"].astype(str).to_numpy(),
+            "Cod Tienda": tienda.where(tienda.ne(TODAS), "").to_numpy(),
+        }
+    ).to_excel(buf, index=False, sheet_name="Bloqueos")
+    return buf.getvalue()
+
+
 def leer_carga(contenido: bytes, nombre: str = "") -> pd.DataFrame:
     """Excel/CSV con Mod-Col y Cod Tienda → (tienda_id, modelo_color_id). Sin tienda = «*»."""
     from forusight.data.fuentes import codigo_tienda
