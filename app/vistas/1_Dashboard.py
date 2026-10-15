@@ -207,12 +207,13 @@ with c2, st.container(key="card_disponibilidad"):
     # Icono chico bajo el velocímetro: el detalle por tienda (y las tallas en quiebre).
     with st.container(key="disp_descarga"):
         st.download_button(
-            "",
+            "Detalle por tienda",
             lambda: _excel_disponibilidad(res.run_id, res),
             file_name=f"{pd.Timestamp(res.fecha_corte):%Y%m%d}_Disponibilidad_por_tienda.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             icon=":material/download:",
             type="tertiary",
+            width="stretch",
             on_click="ignore",
             key="btn_disp_tienda",
             help="Descargar la disponibilidad por tienda (Excel)",

@@ -494,6 +494,7 @@ class FuentesRepository(BigQueryRepository):
                     "«AZALEIA JOCKEY») o a config/tiendas_forus.csv."
                 )
             fl = diag.filas
+            pistas = self._diagnostico_marca(q, tablas, m_s, m_v, m_a, marcas or [], foto, arti)
             raise ValueError(
                 f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta reciente "
                 "de la marca, y Forusight sólo repone. Leído de BigQuery: "
@@ -505,7 +506,7 @@ class FuentesRepository(BigQueryRepository):
                 f"{fl.get('marca_tiendas_venta_4_semanas', 0)} tiendas con venta en 4 semanas, "
                 f"{fl.get('marca_tiendas_venta_semana_en_curso', 0)} en la semana en curso y "
                 f"{fl.get('marca_venta_u_en_bodegas_o_excluidas', 0):,} u vendidas con código "
-                "de bodega o tienda excluida."
+                "de bodega o tienda excluida." + pistas
             )
         # Nombre del modelo: si ARTI no trae descripción, se toma de la venta (columna modelo).
         dp = entradas.dim_producto
@@ -559,6 +560,60 @@ class FuentesRepository(BigQueryRepository):
         diag.gb_leidos = round(self.client.gb_leidos, 3)
         self.ultimo_diagnostico = diag
         return entradas
+
+    def _diagnostico_marca(self, q, tablas, m_s, m_v, m_a, marcas, foto, arti) -> str:
+        """Pistas para una marca sin stock ni venta (p. ej. AZALEIA recién incorporada): qué
+        hay en su bodega (cd_por_marca) y en las tiendas con la marca en el nombre, y si esos
+        códigos están en ARTI. Nunca falla: si una consulta no corre, se omite."""
+        from forusight.data import fuentes as F
+        from forusight.data.bq_client import explicar_error
+
+        partes = []
+        ej_arti = ", ".join(arti["id_producto"].dropna().astype(str).head(4))
+        if ej_arti:
+            partes.append(f"Ejemplos de código en ARTI: {ej_arti}.")
+        pedidas = {str(m).strip().upper() for m in marcas}
+        bodegas = sorted(
+            {
+                F.codigo_tienda(c)
+                for m, c in (self.settings.cd_por_marca or {}).items()
+                if str(m).strip().upper() in pedidas
+            }
+        )
+        if bodegas:
+            try:
+                df = q(
+                    "diag_stock_bodega",
+                    F.sql_diag_stock_bodega(tablas["stock"], m_s, tablas["arti"], m_a),
+                    {"fecha_foto": foto, "bodegas": bodegas},
+                )
+                partes.append(
+                    F.resumen_diag(df, "stock", f"Bodega {', '.join(bodegas)} el {foto}", marcas)
+                )
+            except Exception as exc:
+                partes.append(
+                    f"No se pudo revisar la bodega {', '.join(bodegas)}: {explicar_error(exc)}"
+                )
+        sql = F.sql_diag_venta_tiendas(tablas["ventas"], m_v, tablas["arti"], m_a)
+        if sql and pedidas:
+            for marca in sorted(pedidas)[:2]:
+                try:
+                    df = q(
+                        "diag_venta_tiendas",
+                        sql,
+                        {
+                            "patron_tienda": f"%{marca}%",
+                            "desde_tiendas": foto - dt.timedelta(days=60),
+                            "hasta_foto": foto + dt.timedelta(days=1),
+                        },
+                    )
+                    partes.append(
+                        F.resumen_diag(df, "venta", f"Tiendas «{marca}» (60 días)", marcas)
+                    )
+                except Exception as exc:
+                    partes.append(f"No se pudo revisar la venta de {marca}: {explicar_error(exc)}")
+        partes = [p for p in partes if p]
+        return (" DIAGNÓSTICO: " + " ".join(partes)) if partes else ""
 
     def _leer_pedidos(self, q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag):
         """Pedidos por tienda destino × SKU × estado × clasificación (None si no se pudo)."""

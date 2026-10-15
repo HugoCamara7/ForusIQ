@@ -1025,3 +1025,47 @@ def test_transito_solo_con_pedidos_hasta_el_cierre_del_stock():
     assert TR.transito_post_cierre(inp, params()) == {"unidades": 4, "excluidos": True}
     p = params(recepcion={"solo_hasta_cierre_stock": False})
     assert TR.aplicar_pedidos(inp, p).stock_tienda["stock_transito"].sum() == 10
+
+
+def test_marca_sin_stock_ni_venta_diagnostica_bodega_y_tiendas():
+    """AZALEIA sin stock ni venta cruzada con ARTI: el error dice qué hay en su bodega (380) y
+    en las tiendas AZALEIA, y si esos códigos están en ARTI (p. ej. otro formato de código)."""
+    from forusight.data import fuentes as F
+
+    fake = _FakeBQ()
+    _marca_nueva(fake)
+    fake.datos["arti"] = fake.datos["arti"].assign(marca="AZALEIA")
+    fake.datos["diag_stock_bodega"] = pd.DataFrame(
+        {
+            "tienda_cod": ["380", "380"],
+            "codigo_crudo": ["7891234567890", "7891234567891"],
+            "id_producto": ["7891234567890", "7891234567891"],
+            "stock": [40.0, 12.0],
+            "marca": [None, None],
+            "en_arti": [False, False],
+            "productos": [312, 312],
+        }
+    )
+    fake.datos["diag_venta_tiendas"] = pd.DataFrame(
+        {
+            "tienda_cod": ["501"],
+            "codigo_crudo": ["AZ123-NEG-37"],
+            "id_producto": ["AZ123-NEG-37"],
+            "unidades": [5.0],
+            "marca": ["AZALEA"],
+            "en_arti": [True],
+            "productos": [80],
+        }
+    )
+    with pytest.raises(ValueError) as err:
+        FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE, marcas=["AZALEIA"])
+    msg = str(err.value)
+    assert "DIAGNÓSTICO" in msg and "Ejemplos de código en ARTI" in msg
+    assert "Bodega 380" in msg and "312 productos con stock" in msg and "NINGUNO" in msg
+    assert "7891234567890" in msg
+    assert "Tiendas «AZALEIA»" in msg and "marcas en ARTI: AZALEA 1" in msg
+    consultas = {c[0]: c for c in fake.consultas}
+    assert consultas["diag_stock_bodega"][2]["bodegas"] == ["380"]
+    assert consultas["diag_venta_tiendas"][2]["patron_tienda"] == "%AZALEIA%"
+    assert "UNNEST(@bodegas)" in consultas["diag_stock_bodega"][1]
+    assert F.resumen_diag(None, "stock", "x", ["A"]) == ""
