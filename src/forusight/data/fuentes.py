@@ -320,7 +320,9 @@ def sql_arti(tabla: str, mapa: Mapping[str, str], con_marcas: bool) -> str:
 def sql_ventas(
     tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
 ) -> str:
-    """Venta semanal por tienda×SKU: semanas cerradas y la semana en curso (hasta hoy)."""
+    """Venta semanal por tienda×SKU: semanas cerradas y la semana en curso hasta el cierre de
+    ayer (@hasta_venta = hoy, excluido): la venta parcial de hoy no entra, igual que el stock,
+    que es el cierre de ayer."""
     f = _c(mapa, "fecha")
     sel = [
         f"DATE_TRUNC(DATE({f}), WEEK(MONDAY)) AS semana_inicio",
@@ -335,7 +337,7 @@ def sql_ventas(
     grupos = ", ".join(str(i + 1) for i in range(len(sel)))
     sel.append(f"SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades")
     sel.append(f"MAX(DATE({f})) AS ultima_venta")
-    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto"
+    where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto AND DATE({f}) < @hasta_venta"
     if con_marcas:
         # La marca se toma de ARTI (igual que el stock): el texto de marca de la venta puede
         # cambiar y dejar semanas recientes fuera sin avisar.
@@ -1406,10 +1408,15 @@ def construir_entradas(
 
 
 def ventana(fecha_corte: pd.Timestamp, semanas: int) -> dict[str, dt.date]:
+    from forusight.data.corridas import hoy_lima
+
     corte = pd.Timestamp(fecha_corte).date()
+    hoy = hoy_lima().date()
     return {
         "desde": corte - dt.timedelta(weeks=semanas),
         "hasta": corte,
         "desde_foto": corte - dt.timedelta(days=400),
         "hasta_foto": max(corte + dt.timedelta(days=7), dt.date.today() + dt.timedelta(days=1)),
+        # venta hasta el cierre de ayer (hoy excluido), en hora de Lima
+        "hasta_venta": hoy,
     }
