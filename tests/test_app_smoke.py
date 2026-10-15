@@ -47,6 +47,8 @@ def test_vista_unica_aprobar_y_velocimetro(monkeypatch):
     app.button(key="btn_ejecutar").click().run()
     res = app.session_state.resultado
     assert any('class="gauge"' in m.value for m in app.markdown)  # disponibilidad del retail
+    # icono de descarga bajo el velocímetro: disponibilidad por tienda
+    assert "btn_disp_tienda" in {b.key for b in app.get("download_button")}
     descargas = [b.label for b in app.get("download_button")]
     assert "Aprobar y descargar" in descargas  # un solo botón: aprueba, guarda y descarga
     assert "Aprobar y guardar" not in [b.label for b in app.button]

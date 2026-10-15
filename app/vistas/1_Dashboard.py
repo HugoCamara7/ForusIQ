@@ -15,6 +15,19 @@ res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
 
 
+@st.cache_data(max_entries=4, show_spinner=False)
+def _excel_disponibilidad(run_id: str, _res) -> bytes:
+    """Detalle del velocímetro por tienda; ``run_id`` es la clave de la caché."""
+    from forusight.data.corridas import hoy_lima
+    from forusight.export.disponibilidad import a_excel
+
+    tiendas = getattr(_res, "tiendas", None)
+    if tiendas is None:
+        e = entradas_de_la_corrida()
+        tiendas = e.dim_tienda if e is not None else None
+    return a_excel(_res, tiendas, f"{hoy_lima():%d/%m/%Y}")
+
+
 def _fecha(x) -> str:
     return pd.Timestamp(x).strftime("%d/%m/%Y") if x else ""
 
@@ -191,3 +204,16 @@ with c2, st.container(key="card_disponibilidad"):
             + f"Después del envío: {despues:.1%} · {activos:,} tallas activas · meta ≥ 93 %",
         )
     )
+    # Icono chico bajo el velocímetro: el detalle por tienda (y las tallas en quiebre).
+    with st.container(key="disp_descarga"):
+        st.download_button(
+            "",
+            lambda: _excel_disponibilidad(res.run_id, res),
+            file_name=f"{pd.Timestamp(res.fecha_corte):%Y%m%d}_Disponibilidad_por_tienda.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:",
+            type="tertiary",
+            on_click="ignore",
+            key="btn_disp_tienda",
+            help="Descargar la disponibilidad por tienda (Excel)",
+        )

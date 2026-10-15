@@ -95,6 +95,123 @@ META = 1.0
 MINIMO = 0.92
 
 
+def activos(detalle: pd.DataFrame) -> pd.DataFrame:
+    """SKU activos (los que cuenta :func:`kpis`): tallas de modelos que la tienda maneja, con
+    stock o planificadas (stock objetivo > 0)."""
+    d = detalle.merge(por_modelo(detalle)[KEY], on=KEY)
+    if "stock_objetivo" in d:  # sólo tallas planificadas (o con stock)
+        d = d.loc[(d["stock_tienda"].fillna(0) > 0) | (d["stock_objetivo"].fillna(0) > 0)]
+    return d.reset_index(drop=True)
+
+
+#: Columnas por SKU activo que guarda la corrida para el detalle de disponibilidad.
+COLUMNAS_SKU = [
+    "tienda_id",
+    "modelo_color_id",
+    "sku",
+    "talla",
+    "stock_tienda",
+    "stock_transito",
+    "cantidad",
+    "stock_cd_disponible",
+    "venta_12s",
+    "demanda_semanal",
+]
+
+
+def sku_activos(detalle: pd.DataFrame) -> pd.DataFrame:
+    """SKU activos con lo necesario para recalcular la disponibilidad por tienda (pocas
+    columnas: se guarda en el resultado de la corrida para todo el retail)."""
+    d = activos(detalle)
+    for c in COLUMNAS_SKU:
+        if c not in d:
+            d[c] = 0.0 if c not in ("talla",) else ""
+    return d[COLUMNAS_SKU].copy()
+
+
+def _flags(d: pd.DataFrame) -> pd.DataFrame:
+    stock = d["stock_tienda"].fillna(0).astype(float)
+    trans = d["stock_transito"].fillna(0).astype(float)
+    cant = d["cantidad"].fillna(0).astype(float)
+    sin_cd = d["stock_cd_disponible"].fillna(0).astype(float) <= 0
+    return d.assign(
+        ok_antes=(stock > 0) | sin_cd,
+        ok_transito=(stock + trans > 0) | sin_cd,
+        ok_despues=(stock + cant > 0) | sin_cd,
+        quiebre=~((stock > 0) | sin_cd),
+        quiebre_se_repone=~((stock > 0) | sin_cd) & (cant > 0),
+        _venta=d["venta_12s"].fillna(0).astype(float),
+        _cob=stock + trans,
+        _dem=d["demanda_semanal"].fillna(0).astype(float),
+    )
+
+
+def por_tienda_kpis(skus: pd.DataFrame) -> pd.DataFrame:
+    """Disponibilidad por tienda con las mismas cuentas que el velocímetro (:func:`kpis`):
+    sumando sus tallas activas y disponibles se obtiene exactamente el total."""
+    cols = [
+        "tienda_id",
+        "activos",
+        "disponibles",
+        "quiebres",
+        "quiebres_se_reponen",
+        "disp_antes",
+        "disp_transito",
+        "disp_despues",
+        "disp_ponderada",
+        "wos",
+    ]
+    if skus is None or skus.empty:
+        return pd.DataFrame(columns=cols)
+    d = _flags(skus)
+    d["_vok"] = d["_venta"] * d["ok_antes"]
+    g = d.groupby("tienda_id").agg(
+        activos=("ok_antes", "size"),
+        disponibles=("ok_antes", "sum"),
+        _tr=("ok_transito", "sum"),
+        _de=("ok_despues", "sum"),
+        quiebres=("quiebre", "sum"),
+        quiebres_se_reponen=("quiebre_se_repone", "sum"),
+        _v=("_venta", "sum"),
+        _vok=("_vok", "sum"),
+        _cob=("_cob", "sum"),
+        _dem=("_dem", "sum"),
+    )
+    g["disp_antes"] = g["disponibles"] / g["activos"]
+    g["disp_transito"] = g["_tr"] / g["activos"]
+    g["disp_despues"] = g["_de"] / g["activos"]
+    g["disp_ponderada"] = np.where(
+        g["_v"] > 0, g["_vok"] / g["_v"].where(g["_v"] > 0, 1), g["disp_antes"]
+    )
+    g["wos"] = np.where(g["_dem"] > 0, g["_cob"] / g["_dem"].where(g["_dem"] > 0, 1), np.nan)
+    return g.reset_index()[cols]
+
+
+def kpis_skus(skus: pd.DataFrame) -> dict:
+    """Totales sobre los SKU activos de :func:`sku_activos` (mismas cuentas que :func:`kpis`)."""
+    if skus is None or skus.empty:
+        return {"activos": 0}
+    d = _flags(skus)
+    w = d["_venta"] if d["_venta"].sum() > 0 else pd.Series(1.0, index=d.index)
+    dem = d["_dem"].sum()
+    return {
+        "activos": int(len(d)),
+        "simple_antes": float(d["ok_antes"].mean()),
+        "simple_despues": float(d["ok_despues"].mean()),
+        "con_transito_antes": float(d["ok_transito"].mean()),
+        "ponderada_antes": float(np.average(d["ok_antes"], weights=w)),
+        "wos": float(d["_cob"].sum() / dem) if dem > 0 else float("nan"),
+    }
+
+
+def quiebres(skus: pd.DataFrame) -> pd.DataFrame:
+    """Tallas activas en quiebre (sin stock y el CD sí la tiene), con lo que se envía hoy."""
+    if skus is None or skus.empty:
+        return pd.DataFrame(columns=COLUMNAS_SKU)
+    d = _flags(skus)
+    return d.loc[d["quiebre"], COLUMNAS_SKU].reset_index(drop=True)
+
+
 def kpis(detalle: pd.DataFrame) -> dict:
     """KPI del piloto sobre los SKU activos (de modelos que la tienda maneja).
 
@@ -106,11 +223,7 @@ def kpis(detalle: pd.DataFrame) -> dict:
     (planificada): una talla que no se planifica para la tienda (objetivo 0) no se repone y
     no cuenta como quiebre. Un SKU sin stock que el CD tampoco tiene tampoco cuenta.
     """
-    d = detalle.copy()
-    manejados = por_modelo(d)[KEY]
-    d = d.merge(manejados, on=KEY)
-    if "stock_objetivo" in d:  # sólo tallas planificadas (o con stock)
-        d = d.loc[(d["stock_tienda"].fillna(0) > 0) | (d["stock_objetivo"].fillna(0) > 0)]
+    d = activos(detalle)
     if d.empty:
         return {"activos": 0}
     stock = d["stock_tienda"].fillna(0).to_numpy(dtype=float)

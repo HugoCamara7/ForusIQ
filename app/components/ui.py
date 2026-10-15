@@ -467,6 +467,12 @@ def app_styles() -> None:
     .stDownloadButton button {{ border-radius:14px; min-height:52px; font-weight:950; font-size:15px;
         background:linear-gradient(135deg,#0B7A3B,#16A34A); border:none; color:#FFF; }}
     .stDownloadButton button p {{ color:#FFFFFF; font-weight:900; font-size:15px; }}
+    /* icono chico bajo el velocímetro: descarga la disponibilidad por tienda */
+    .st-key-disp_descarga {{ align-items:center; margin-top:-6px; }}
+    .st-key-disp_descarga .stDownloadButton button {{ background:transparent; border:none;
+        min-height:0; padding:2px 6px; color:#64748B; box-shadow:none; }}
+    .st-key-disp_descarga .stDownloadButton button:hover {{ color:{BRAND_BLUE};
+        background:#EEF2FF; }}
     .st-key-btn_aprobar button, .st-key-aprobada button {{ border-radius:14px; min-height:52px;
         font-weight:950; font-size:15px; border:none; color:#FFF;
         background:linear-gradient(135deg,{BRAND_PRIMARY},{BRAND_BLUE}); }}
