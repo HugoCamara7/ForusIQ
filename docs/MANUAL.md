@@ -34,7 +34,7 @@ del stock), así que se usa **el primer archivo del día**.
 | Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
 | Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
 | Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
-| Bloqueos | Reporte de bloqueos + mantenedor | Se editan en **Bloqueos**. |
+| Bloqueos | Maestro (reporte de bloqueos del 14/10/2026) + cargas por Excel | Se editan y descargan en **Bloqueos**. |
 
 ---
 
@@ -126,7 +126,11 @@ Lo enviado **nunca supera** el Stock en CD.
 ### 3.8 Filtros finales
 - Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**).
 - Un modelo-color **bloqueado** para la tienda no se envía (página **Bloqueos**).
-- Sólo se reponen **VERANO 2026 en adelante** (VERANO 2026, INVIERNO 2027, VERANO 2027…) y **ESCOLAR 2026**; INVIERNO 2026 y anteriores no. Un modelo nuevo sin temporada conocida se repone. La temporada de cada modelo-color se corrige en **Parámetros → Temporadas**.
+- **Temporadas**, en el orden comercial (INVIERNO = marzo a septiembre, VERANO = septiembre a marzo del año siguiente; **ESCOLAR** va con el VERANO del mismo año): INVIERNO 2026 → VERANO 2026 = ESCOLAR 2026 → INVIERNO 2027 → VERANO 2027…
+  - **Liquidadoras (DH, SE, FB): reposición por jerarquía.** Sólo temporadas **hasta INVIERNO 2026 inclusive** (todo lo anterior a VERANO 2026 y ESCOLAR 2026). No reciben VERANO 2026, ESCOLAR 2026, temporadas posteriores ni FUTURA. Nada de lo de abajo cambia esta regla (`surtido.temporada_hasta_liquidadoras`).
+  - **Tiendas fuera de parámetros** (página **Temporadas por tienda**): esa temporada mínima y las posteriores.
+  - **Resto de tiendas (parámetro general):** **VERANO 2026 en adelante** y **ESCOLAR 2026** (más FUTURA); INVIERNO 2026 y anteriores no.
+  - Un modelo nuevo sin temporada conocida se repone en todas. La temporada de cada modelo-color se corrige en **Parámetros → Temporadas**.
 
 ---
 
@@ -184,14 +188,31 @@ Recuadros de aviso:
 
 | Página | Para qué |
 |---|---|
-| **Inicio** | Nueva corrida, resultado, indicadores, **Aprobar y descargar**. |
-| **Descargas** | Archivos de las corridas automáticas de las 6:30. |
-| **Bloqueos** | Bloquear o desbloquear modelo-color × tienda solo subiendo un Excel (Mod-Col, Cod Tienda); la consulta es de solo lectura. |
-| **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
-| **Parámetros** | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo** (buscar, editar, cargar Excel, historial). |
-| **Comparar con Neogística** | Pone lado a lado la corrida y el reporte de Neogística, sólo para revisar. |
-| **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
-| **Manual** | Este documento y el diccionario de columnas. |
+El menú lateral se divide en **Operación**, **Mantenedores** y **Configuración**.
+
+| Sección | Página | Para qué |
+|---|---|---|
+| Operación | **Inicio** | Nueva corrida, resultado, indicadores, **Aprobar y descargar**. |
+| Operación | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
+| Mantenedores | **Bloqueos** | En una sola pantalla: elegir **Bloquear** o **Desbloquear**, subir el Excel (COD MOD COL, Cod Tienda; vacío = todas las tiendas), revisar la validación (OK / omitidas / rechazadas) y confirmar. Descarga del **maestro completo de bloqueos** (reporte del 14/10/2026 + cargas por Excel) y consulta por tienda o modelo. |
+| Mantenedores | **Temporadas por tienda** | Temporada mínima de reposición por tienda (temporadas fuera de parámetros) por Excel (Cod Tienda, Temporada minima): asignar o volver al parámetro general, con validación, consulta y descarga. |
+| Mantenedores | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
+| Configuración | **Parámetros** (acceso restringido) | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo**. Sólo la ven y usan los usuarios autorizados en los secrets (`[app_auth.permisos] parametros`). |
+| Configuración | **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
+
+### Bloqueos: validación de la carga
+
+| Resultado | Cuándo | ¿Se guarda? |
+|---|---|---|
+| OK | Bloquear algo que no estaba bloqueado / desbloquear algo bloqueado. | Sí |
+| Omitida | Fila repetida en el archivo; bloquear lo que ya está bloqueado; desbloquear lo que no lo está. | No (no cambia nada) |
+| Rechazada | Falta COD MOD COL; formato que no es MODELO-COLOR; tienda que no existe; desbloquear en una tienda algo bloqueado para todas (se desbloquea con Cod Tienda vacío). | No |
+
+Al confirmar se vuelve a validar contra los bloqueos de ese momento: un doble clic o una carga simultánea no duplica registros.
+
+### Temporadas por tienda: validación de la carga
+
+Se rechaza la tienda vacía o inexistente, una **liquidadora** (DH, SE, FB: repone por jerarquía y no se configura), una temporada que no sea `VERANO AAAA` o `INVIERNO AAAA`, o una tienda que aparece con dos temporadas distintas. Se omite lo que no cambia nada. En el Excel descargado, una tienda con la temporada vacía sigue el parámetro general.
 
 ---
 
@@ -209,9 +230,7 @@ Recuadros de aviso:
 
 ## 8. Cómo comparar con Neogística (checklist)
 
-La página **Comparar con Neogística** lo hace sola: sube el reporte del mismo día y muestra por tienda y por causa dónde difieren, con descarga en Excel. El reporte sólo se lee para comparar: **no entra al cálculo de Forusight**.
-
-Si lo revisas a mano, sigue este orden:
+Sigue este orden:
 
 1. **Mismo día y mismas tiendas:** filtra en el reporte las tiendas de la ruta del día y sólo
    «Revision de stock».
@@ -238,7 +257,9 @@ Si lo revisas a mano, sigue este orden:
 | `recepcion.estados_transito_recientes` | [3, 6, 7] | Cuentan dentro del plazo de la tienda. |
 | `recepcion.percentil_plazo` / `margen_plazo_dias` | 0,95 / 1 | Plazo = p95 + 1 día. |
 | `recepcion.plazo_minimo_dias` | 7 | Un pedido despachado cuenta al menos 7 días. |
-| `surtido.temporada_desde` / `temporadas_reponer` | VERANO 2026 / ESCOLAR 2026 | Temporadas que se reponen. |
+| `surtido.temporada_desde` / `temporadas_reponer` | VERANO 2026 / ESCOLAR 2026, FUTURA | Temporadas que se reponen (parámetro general). |
+| `surtido.temporada_hasta_liquidadoras` | INVIERNO 2026 | Liquidadoras DH, SE, FB: sólo hasta esta temporada (jerarquía). |
+| `surtido.temporada_desde_tienda` | {} | Temporada mínima por tienda: la llena **Temporadas por tienda** en cada corrida. |
 | `recepcion.dias_transito_recientes` | 7 | Plazo si la tienda no tiene datos. |
 | `recepcion.solo_hasta_cierre_stock` | true | Tránsito en la misma foto que el stock. |
 | `stock_cd.componentes` | disponible | Qué parte del CD se reparte. |

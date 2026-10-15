@@ -39,24 +39,34 @@ if not requerir_login(modo_demo=fuente_por_defecto() == "synthetic", al_ingresar
     st.stop()
 
 inicializar()
-# Inicio (generar, aprobar y descargar) y las páginas de configuración, todas en el menú.
-paginas = [
-    st.Page("app/vistas/1_Dashboard.py", title="Inicio", icon=":material/home:", default=True),
-    st.Page("app/vistas/10_Descargas.py", title="Descargas", icon=":material/download:"),
-    st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
-    st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
-    st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:"),
-    st.Page(
-        "app/vistas/12_Comparar.py",
-        title="Comparar con Neogística",
-        icon=":material/compare_arrows:",
-    ),
-    st.Page("app/vistas/11_Manual.py", title="Manual", icon=":material/menu_book:"),
-]
+# Menú por secciones: el día a día arriba, los mantenedores y la configuración debajo. Una
+# página que no se registra aquí no existe para ese usuario (ni por URL).
+secciones = {
+    "Operación": [
+        st.Page("app/vistas/1_Dashboard.py", title="Inicio", icon=":material/home:", default=True),
+        st.Page("app/vistas/10_Descargas.py", title="Descargas", icon=":material/download:"),
+    ],
+    "Mantenedores": [
+        st.Page("app/vistas/8_Bloqueos.py", title="Bloqueos", icon=":material/lock:"),
+        st.Page(
+            "app/vistas/13_Temporadas_Tienda.py",
+            title="Temporadas por tienda",
+            icon=":material/event_repeat:",
+        ),
+        st.Page("app/vistas/9_Rutas.py", title="Rutas", icon=":material/local_shipping:"),
+    ],
+    "Configuración": [],
+}
+if puede("parametros"):  # sólo los usuarios de [app_auth.permisos] parametros
+    secciones["Configuración"].append(
+        st.Page("app/vistas/5_Parametros.py", title="Parámetros", icon=":material/tune:")
+    )
 if puede("conexion"):
-    paginas.append(
+    secciones["Configuración"].append(
         st.Page("app/vistas/6_Conexion.py", title="Conexión", icon=":material/database:")
     )
+secciones = {k: v for k, v in secciones.items() if v}
+paginas = [p for grupo in secciones.values() for p in grupo]
 nav = st.navigation(paginas, position="hidden")
-barra_lateral(paginas, nav)
+barra_lateral(paginas, nav, secciones)
 nav.run()

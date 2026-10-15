@@ -3,12 +3,16 @@ import hashlib
 import streamlit as st
 import yaml
 from app.components.estado import SETTINGS
-from app.components.login import puede
+from app.components.login import exigir, puede
 from app.components.mantenedores import tab_stock_minimo, tab_temporadas
 from app.components.ui import hero
 from pydantic import BaseModel, ValidationError
 
 from forusight.config.settings import EngineParams, dump_params, save_params
+
+# Sólo usuarios de [app_auth.permisos] parametros: el menú no la lista a nadie más y, si se
+# llegara igual, la página se corta aquí antes de dibujar o cambiar nada.
+exigir("parametros")
 
 hero(
     "Parámetros",
@@ -69,6 +73,9 @@ def huella_params() -> str:
 
 def _aplicar_yaml(clave: str) -> None:
     """Callback: corre antes del script, así el formulario ya se dibuja con los valores nuevos."""
+    if not puede("parametros"):
+        ss.flash_params = ("error", "No tienes acceso a Parámetros.")
+        return
     try:
         ss.params = EngineParams.model_validate(yaml.safe_load(ss[clave]) or {})
         ss.flash_params = ("ok", "YAML válido y aplicado a la sesión.")
@@ -88,7 +95,7 @@ with tab_form, st.form("form_params"):
     for seccion in EngineParams.model_fields:
         with st.expander(seccion.replace("_", " ").capitalize()):
             nuevos[seccion] = widgets(getattr(ss.params, seccion), f"{VER}.{seccion}")
-    if st.form_submit_button("Aplicar a la sesión", type="primary"):
+    if st.form_submit_button("Aplicar a la sesión", type="primary") and puede("parametros"):
         try:
             ss.params = EngineParams.model_validate(nuevos)
             st.success("Parámetros aplicados. Vuelve a ejecutar la corrida.")

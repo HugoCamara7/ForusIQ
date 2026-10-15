@@ -50,7 +50,8 @@ def test_roles_y_permisos():
     assert auth.puede(auth.ROL_APROBADOR, "aprobar")
     assert not auth.puede(auth.ROL_ANALISTA, "aprobar")
     assert not auth.puede(auth.ROL_APROBADOR, "conexion")
-    assert auth.puede(auth.ROL_ADMIN, "parametros")
+    # Parámetros no es de un rol: sólo de la lista [app_auth.permisos] parametros
+    assert not auth.puede(auth.ROL_ADMIN, "parametros")
 
 
 def test_secrets_de_catalogo_funcionan_tal_cual():
@@ -66,3 +67,37 @@ def test_secrets_de_catalogo_funcionan_tal_cual():
     assert auth.rol("a@f.pe", traducidos) == auth.ROL_APROBADOR
     assert auth.rol("b@f.pe", traducidos) == auth.ROL_ANALISTA
     assert auth.rol("c@f.pe", traducidos) == auth.ROL_ADMIN
+
+
+PERMISOS = {
+    "app_auth": {
+        "users": {"uno@forus.pe": "1", "dos@forus.pe": "2", "tres@forus.pe": "3"},
+        "permisos": {"parametros": [" UNO@forus.pe", "dos@forus.pe", "fantasma@forus.pe"]},
+    }
+}
+
+
+def test_parametros_solo_para_la_lista_de_los_secrets():
+    assert auth.acceso_restringido("uno@forus.pe", "parametros", PERMISOS)
+    assert auth.acceso_restringido(" Dos@Forus.pe ", "parametros", PERMISOS)
+    assert not auth.acceso_restringido("tres@forus.pe", "parametros", PERMISOS)  # admin sin roles
+    assert auth.rol("tres@forus.pe", PERMISOS) == auth.ROL_ADMIN
+    # en la lista pero sin usuario para iniciar sesión: nada
+    assert not auth.acceso_restringido("fantasma@forus.pe", "parametros", PERMISOS)
+    assert not auth.acceso_restringido("", "parametros", PERMISOS)
+    # sin lista configurada nadie entra (ni los admin)
+    assert not auth.acceso_restringido("hugo.camara@forus.pe", "parametros", MULTI)
+    texto = {"app_auth": {**PERMISOS["app_auth"], "permisos": {"parametros": "uno@forus.pe,"}}}
+    assert auth.autorizados("parametros", texto) == {"uno@forus.pe"}
+
+
+def test_correos_autorizados_no_estan_en_el_codigo():
+    """Los correos con acceso a Parámetros viven en los secrets, no en el código fuente."""
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parents[1]
+    fuentes = [*raiz.glob("app/**/*.py"), *raiz.glob("src/**/*.py"), raiz / "streamlit_app.py"]
+    for f in fuentes:
+        texto = f.read_text(encoding="utf-8").lower()
+        assert "luis.nunez@" not in texto, f
+        assert "hugo.camara@" not in texto, f

@@ -13,8 +13,8 @@ Neogistica) hacia las tiendas. La decisión de qué distribuir es de Forus y la 
 > Ver [Información pendiente](#información-pendiente).
 
 
-**Manual de uso:** [docs/MANUAL.md](docs/MANUAL.md) (también en la app, página **Manual**, con el
-diccionario de columnas descargable). Prompt para la presentación en Canva:
+**Manual de uso:** [docs/MANUAL.md](docs/MANUAL.md) (el diccionario de columnas va en la hoja
+«Diccionario» del archivo Forusight). Prompt para la presentación en Canva:
 [docs/PROMPT_CANVA.md](docs/PROMPT_CANVA.md).
 ---
 
@@ -95,9 +95,19 @@ Roles opcionales en `[app_auth.roles]`:
 
 | Rol | Puede |
 |---|---|
-| `admin` | todo: ejecutar, aprobar, guardar parámetros, página **Conexión**. Sin `[app_auth.roles]` todos son admin, como en el Catálogo |
+| `admin` | todo: ejecutar, aprobar, página **Conexión**. Sin `[app_auth.roles]` todos son admin, como en el Catálogo |
 | `aprobador` | ejecutar, revisar y confirmar aprobaciones |
 | `analista` | ejecutar, revisar y exportar (quien no esté listado si existe `[app_auth.roles]`) |
+
+**Parámetros** no depende del rol: sólo lo ven y usan los usuarios listados en
+`[app_auth.permisos] parametros` (correos en los secrets, nunca en el código). Sin esa lista
+nadie accede, ni los admin. La página no se registra para los demás (tampoco por URL) y la
+página y sus operaciones vuelven a validar al usuario autenticado.
+
+```toml
+[app_auth.permisos]
+parametros = ["nombre.apellido@forus.pe", "otro.usuario@forus.pe"]
+```
 
 Sin `[app_auth]` la app sólo abre en **modo demo** (datos sintéticos); con BigQuery exige login.
 
@@ -278,8 +288,7 @@ mejor regla con venta/stock acierta 68 %; "siempre 1", 76 %), pero es muy establ
 3,5 % de las claves entre reportes (sobre todo los lunes) y el último SMT conocido acierta el
 94,5 % una semana después. Claves nuevas: moda del SKU en otras tiendas (73 %). Ya no se suben
 reportes de Neogística: nivel y punto de reorden siempre los calcula Forusight
-(`nivel_neo.dias_nivel_reporte: 0`). Para revisar, la página **Comparar con Neogística** pone el
-reporte al lado de la corrida sin que entre al cálculo.
+(`nivel_neo.dias_nivel_reporte: 0`).
 
 ## Relevamiento del esquema fuente
 

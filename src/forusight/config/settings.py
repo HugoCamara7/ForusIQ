@@ -307,6 +307,13 @@ class SurtidoParams(_Section):
     #: modelo-color sin temporada conocida (modelo nuevo) se repone.
     temporada_desde: str = "VERANO 2026"
     temporadas_reponer: list[str] = Field(default_factory=lambda: ["ESCOLAR 2026", "FUTURA"])
+    #: Reposición por jerarquía de las liquidadoras (``prioridad_tiendas.cadenas_liquidadoras``:
+    #: DH, SE, FB): sólo temporadas hasta ésta inclusive (INVIERNO 2026 hacia atrás, sin
+    #: VERANO 2026 ni ESCOLAR 2026). Manda sobre el parámetro general y la mínima por tienda.
+    temporada_hasta_liquidadoras: str | None = "INVIERNO 2026"
+    #: Temporada mínima por tienda (código → «VERANO 2026»): se reponen esa y las posteriores.
+    #: La llena en cada corrida el módulo «Temporadas por tienda» (Excel); vacío = la general.
+    temporada_desde_tienda: dict[str, str] = Field(default_factory=dict)
     #: Usar la temporada de ARTI cuando el modelo-color no está en el maestro de temporadas
     #: (ARTI no trae la temporada comercial: apagado).
     temporadas_en_bigquery: bool = False
