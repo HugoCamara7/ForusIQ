@@ -1069,3 +1069,15 @@ def test_marca_sin_stock_ni_venta_diagnostica_bodega_y_tiendas():
     assert consultas["diag_venta_tiendas"][2]["patron_tienda"] == "%AZALEIA%"
     assert "UNNEST(@bodegas)" in consultas["diag_stock_bodega"][1]
     assert F.resumen_diag(None, "stock", "x", ["A"]) == ""
+
+
+def test_venta_de_la_semana_en_curso_hasta_el_cierre_de_ayer():
+    """La venta (incluida la semana en curso / Demanda Periodo Actual) llega hasta el cierre de
+    ayer, como el stock: la venta parcial de hoy no entra."""
+    from forusight.data.corridas import hoy_lima
+
+    fake = _FakeBQ()
+    FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(CORTE)
+    _, sql, p = next(c for c in fake.consultas if c[0] == "ventas")
+    assert "< @hasta_venta" in sql
+    assert p["hasta_venta"] == hoy_lima().date()
