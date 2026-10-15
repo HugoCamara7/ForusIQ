@@ -38,6 +38,7 @@ DESCRIPCION_CODIGOS: dict[str, str] = {
     "NO_INTRODUCCION": "Modelo nuevo para la tienda: entra por carga manual",
     "NO_TALLA_NUNCA_TUVO": "Talla que la tienda nunca tuvo ni vendió: no se llena la curva",
     "NO_MODELO_AGOTADO": "Modelo agotado en la tienda sin venta en 4 semanas: salió de la tienda",
+    "NO_CON_STOCK_SIN_VENTA": "Tiene stock y no vendió nada: no se repone",
     "NO_SOBRESTOCK": "Cobertura actual sobre el umbral de sobrestock",
     "NO_SIN_NECESIDAD": "Stock + tránsito cubren el objetivo",
     "NO_CURVA_MINIMA_CD": "El CD no cubre la curva mínima para introducir",
@@ -146,6 +147,11 @@ def texto_motivo(r: dict, params: EngineParams, cd_id: str = "320") -> str:
         )
     elif c == "NO_SIN_REFERENCIA":
         t = "No se envía: sin historia en la tienda ni referencias de venta en tiendas similares."
+    elif c == "NO_CON_STOCK_SIN_VENTA":
+        t = (
+            "No se envía: la talla tiene stock y no vendió nada en 12 semanas ni en la semana en "
+            "curso; con lo que tiene alcanza."
+        )
     elif c == "NO_MODELO_AGOTADO":
         t = (
             "No se envía: la tienda se quedó sin ninguna talla del modelo y no lo vende hace más "
