@@ -266,6 +266,85 @@ class FuentesRepository(BigQueryRepository):
             "[bigquery] (la misma que usa Catálogo)."
         )
 
+    def _artis_validas(self) -> list[tuple[str, dict]]:
+        """Todas las tablas ARTI de BigQuery que sirven (configuradas, la por defecto y las
+        que tengan «arti» en el nombre en bronze / pe_bronze), con su mapeo. Nunca falla."""
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+        from forusight.data.bq_client import tablas_candidatas
+
+        if getattr(self, "_artis_cache", None) is not None:
+            return self._artis_cache
+        candidatas = tablas_candidatas("arti", self.secrets, F.TABLA_ARTI)
+        if F.TABLA_ARTI_PE not in candidatas:
+            candidatas.append(F.TABLA_ARTI_PE)
+        for ruta in F.DATASETS_ARTI:
+            proyecto, dataset = ruta.split(".")
+            try:
+                for t in self.client.tablas_del_dataset(proyecto, dataset, "arti"):
+                    if f"{ruta}.{t}" not in candidatas:
+                        candidatas.append(f"{ruta}.{t}")
+            except Exception:
+                continue
+        out = []
+        for tabla in candidatas[:8]:
+            try:
+                cols, _ = self.columnas(tabla)
+            except Exception:
+                continue
+            mapa, _ = mapeo.resolver("arti", tabla, cols, self.secrets)
+            if not mapeo.faltantes("arti", mapa) and "marca" in mapa:
+                out.append((tabla, mapa))
+        self._artis_cache = out
+        return out
+
+    def _elegir_arti(self, q, tablas, m_v, m_a, marcas, diag) -> tuple[str, dict]:
+        """El ARTI de BigQuery que trae los códigos que de verdad se venden de la marca. Si el
+        configurado no los tiene y otro sí (p. ej. el de pe_bronze), se usa el otro."""
+
+        actual = (tablas["arti"], m_a)
+        if not marcas or "id_producto" not in m_v:
+            return actual
+        clave = (tablas["arti"], tuple(marcas))
+        elegidas = self.__dict__.setdefault("_arti_por_marca", {})
+        if clave in elegidas:
+            return elegidas[clave]
+        elegidas[clave] = self._comparar_artis(q, tablas, m_v, actual, marcas, diag)
+        return elegidas[clave]
+
+    def _comparar_artis(self, q, tablas, m_v, actual, marcas, diag) -> tuple[str, dict]:
+        from forusight.data import fuentes as F
+
+        cobertura = []
+        for tabla, mapa in self._artis_validas():
+            try:
+                df = q(
+                    "cobertura_arti",
+                    F.sql_cobertura_arti(tablas["ventas"], m_v, tabla, mapa),
+                    {"patron_tienda": f"%{marcas[0]}%"},
+                )
+            except Exception:
+                continue
+            if len(df):
+                n, v = df["en_arti"].iloc[0], df["vendidos"].iloc[0]
+                cobertura.append((int(n or 0), int(v or 0), tabla, mapa))
+        if not cobertura:
+            return actual
+        diag.notas.append(
+            "ARTI de BigQuery: códigos vendidos de la marca que trae cada tabla: "
+            + "; ".join(f"{t} {n:,} de {v:,}" for n, v, t, _ in cobertura)
+            + "."
+        )
+        de_actual = next((n for n, _, t, _ in cobertura if t == tablas["arti"]), -1)
+        mejor = max(cobertura, key=lambda x: x[0])
+        if mejor[0] > de_actual and mejor[2] != tablas["arti"]:
+            diag.notas.append(
+                f"Se usa el ARTI {mejor[2]} en vez de {tablas['arti']}: trae {mejor[0]:,} de "
+                f"{mejor[1]:,} códigos vendidos de la marca (el otro, {max(de_actual, 0):,})."
+            )
+            return mejor[2], mejor[3]
+        return actual
+
     def columnas(self, tabla: str) -> tuple[list[str], str]:
         """(columnas, origen). Si INFORMATION_SCHEMA falla, usa el esquema conocido."""
         from forusight.data import fuentes as F
@@ -383,7 +462,6 @@ class FuentesRepository(BigQueryRepository):
             for m in (marcas if marcas is not None else self.settings.marcas)
             if str(m).strip()
         ]
-        con_marcas = bool(marcas) and "marca" in m_a
         base = {**F.ventana(fecha_corte, semanas), "marcas": marcas}
         diag = F.Diagnostico(
             mapeos={k: v[0] for k, v in mapas.items()},
@@ -398,7 +476,40 @@ class FuentesRepository(BigQueryRepository):
             diag.filas[f"sql_{nombre}"] = len(df)
             return df
 
+        # El ARTI de BigQuery que trae los códigos que se venden (bronze o pe_bronze).
+        tablas = dict(tablas)
+        tablas["arti"], m_a = self._elegir_arti(q, tablas, m_v, m_a, marcas, diag)
+        diag.tablas["arti"] = tablas["arti"]
+        diag.mapeos["arti"] = m_a
+        con_marcas = bool(marcas) and "marca" in m_a
+
         arti = q("arti", F.sql_arti(tablas["arti"], m_a, con_marcas))
+        # Códigos de la marca que se venden y no están en ningún lado de ARTI: se toman de
+        # la venta (marca, modelo, color y talla) para que su stock y venta sí se lean.
+        alias: dict[str, str] = {}
+        extra = False
+        if con_marcas and F.puede_productos_venta(m_v):
+            try:
+                dv = q(
+                    "productos_venta",
+                    F.sql_productos_venta(tablas["ventas"], m_v, tablas["arti"], m_a),
+                )
+                arti, alias, nuevos = F.completar_arti(arti, dv)
+                skus_extra = sorted(set(alias) | set(F.sku_canonico(dv["id_producto"]).dropna()))
+                if skus_extra:
+                    extra = True
+                    base["skus_extra"] = skus_extra
+                    diag.notas.append(
+                        f"{len(skus_extra):,} códigos de {', '.join(marcas)} se venden y no "
+                        f"están en ARTI ({tablas['arti']}): {len(alias):,} son el mismo "
+                        f"modelo-color-talla de un SKU de ARTI y {nuevos:,} se agregan con los "
+                        "datos de la venta."
+                    )
+            except Exception as exc:
+                diag.notas.append(
+                    f"No se pudo buscar productos de la marca fuera de ARTI: {explicar_error(exc)}"
+                )
+        self._sku_extra = (extra, alias)
         if arti.empty:
             raise ValueError(
                 f"ARTI no devolvió productos para las marcas {marcas}. Elige la "
@@ -415,18 +526,19 @@ class FuentesRepository(BigQueryRepository):
         diag.fecha_foto = foto.isoformat()
         stock = q(
             "stock_foto",
-            F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
+            F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas, extra),
             {"fecha_foto": foto},
         )
-        sql_v = F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas)
-        ventas = q("ventas", sql_v)
+        stock = F.con_alias(stock, alias)
+        sql_v = F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra)
+        ventas = F.con_alias(q("ventas", sql_v), alias)
         corte_v = corte_por_venta(ventas, foto, diag)
         if corte_v is not None:  # venta atrasada: 12 semanas completas hasta la última venta
             fecha_corte = pd.Timestamp(corte_v)
             base.update(F.ventana(fecha_corte, semanas))
             base["hasta_foto"] = corte_v
             diag.corte_venta = corte_v.isoformat()
-            ventas = q("ventas", sql_v)
+            ventas = F.con_alias(q("ventas", sql_v), alias)
 
         maestros = {}
         for fuente in ("tiendas", "cadena"):
@@ -498,7 +610,7 @@ class FuentesRepository(BigQueryRepository):
             raise ValueError(
                 f"Ninguna tienda puede recibir {nombres}: ninguna tiene stock ni venta reciente "
                 "de la marca, y Forusight sólo repone. Leído de BigQuery: "
-                f"{fl.get('sql_arti', 0):,} SKU en ARTI; foto de stock del {diag.fecha_foto}: "
+                f"{fl.get('sql_arti', 0):,} SKU en ARTI ({tablas['arti']}); foto de stock del {diag.fecha_foto}: "
                 f"{fl.get('sql_stock_foto', 0):,} filas, "
                 f"{fl.get('marca_tiendas_stock_sala', 0)} tiendas con stock en sala y "
                 f"{fl.get('marca_tiendas_stock_bodega', 0)} con stock en bodega; venta: "
@@ -518,8 +630,11 @@ class FuentesRepository(BigQueryRepository):
             try:
                 nm = q(
                     "nombres_modelo",
-                    F.sql_nombres_modelo(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                    F.sql_nombres_modelo(
+                        tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra
+                    ),
                 )
+                nm = F.con_alias(nm, alias)
                 nombres = pd.Series(
                     F.texto(nm["nombre_modelo"]).str.upper().to_numpy(),
                     index=F.sku_canonico(nm["id_producto"]).to_numpy(),
@@ -537,9 +652,12 @@ class FuentesRepository(BigQueryRepository):
                 dias = 14
                 vd = q(
                     "venta_diaria",
-                    F.sql_venta_diaria(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                    F.sql_venta_diaria(
+                        tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra
+                    ),
                     {"desde_diaria": foto - dt.timedelta(days=dias)},
                 )
+                vd = F.con_alias(vd, alias)
                 entradas.venta_diaria = F.a_venta_diaria(
                     vd,
                     set(entradas.dim_producto["sku"]),
@@ -630,6 +748,7 @@ class FuentesRepository(BigQueryRepository):
             )
             return None
         m_h, m_d = mapas["pedidos"][0], mapas["pedidos_detalle"][0]
+        extra_sku, alias = getattr(self, "_sku_extra", (False, {}))
         for fuente, mapa in (("pedidos", m_h), ("pedidos_detalle", m_d)):
             falta = mapeo.faltantes(fuente, mapa)
             if falta:
@@ -649,9 +768,11 @@ class FuentesRepository(BigQueryRepository):
                     tablas["arti"],
                     m_a,
                     con_marcas,
+                    extra_sku,
                 ),
                 {"fecha_foto": foto},
             )
+            crudo = F.con_alias(crudo, alias)
         except Exception as exc:
             diag.notas.append(f"Tránsito: no se pudieron leer los pedidos: {explicar_error(exc)}")
             return None

@@ -36,6 +36,9 @@ from forusight.data.bq_client import validar_columna, validar_tabla
 from forusight.data.mapeo import RESERVAS
 
 TABLA_ARTI = "forus-analitica-prod-datalake.bronze.stg_pe_central_arti"
+#: ARTI de Perú central en pe_bronze (mismo dataset que los pedidos): trae los códigos que el
+#: de bronze no tiene (p. ej. AZALEIA). Se prueba siempre; gana el que cubre la venta.
+TABLA_ARTI_PE = "forus-analitica-prod-datalake.pe_bronze.stg_pe_perucentral_arti"
 TABLA_STOCK = "forus-analitica-prod-datalake.bronze.stg_pe_central_stock_bi"
 TABLAS_POR_DEFECTO = {"arti": TABLA_ARTI, "stock": TABLA_STOCK}
 
@@ -270,14 +273,22 @@ def _marca_sql(mapa: Mapping[str, str]) -> str:
     return f"UPPER(TRIM(CAST({_c(mapa, 'marca')} AS STRING)))"
 
 
-def filtro_marca_arti(col_producto: str, arti: str, mapa_arti: Mapping[str, str]) -> str:
-    """Semijoin: sólo productos de las marcas pedidas (evita bajar todo el tablón)."""
+def filtro_marca_arti(
+    col_producto: str, arti: str, mapa_arti: Mapping[str, str], extra: bool = False
+) -> str:
+    """Semijoin: sólo productos de las marcas pedidas (evita bajar todo el tablón).
+
+    ``extra``: suma los códigos de @skus_extra (productos de la marca que se venden con un
+    código que no está en ARTI, ver `sql_productos_venta`)."""
     if "marca" not in mapa_arti:
         return ""
-    return (
-        f"AND {sku_sql(col_producto)} IN (SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} "
+    en_arti = (
+        f"{sku_sql(col_producto)} IN (SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} "
         f"FROM {_t(arti)} WHERE {_marca_sql(mapa_arti)} IN UNNEST(@marcas))"
     )
+    if extra:
+        return f"AND ({en_arti} OR {sku_sql(col_producto)} IN UNNEST(@skus_extra))"
+    return f"AND {en_arti}"
 
 
 def sql_marcas(tabla: str, mapa: Mapping[str, str]) -> str:
@@ -318,7 +329,12 @@ def sql_arti(tabla: str, mapa: Mapping[str, str], con_marcas: bool) -> str:
 
 
 def sql_ventas(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+    tabla: str,
+    mapa: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    con_marcas: bool,
+    extra: bool = False,
 ) -> str:
     """Venta semanal por tienda×SKU: semanas cerradas y la semana en curso hasta el cierre de
     ayer (@hasta_venta = hoy, excluido): la venta parcial de hoy no entra, igual que el stock,
@@ -342,7 +358,7 @@ def sql_ventas(
         # La marca se toma de ARTI (igual que el stock): el texto de marca de la venta puede
         # cambiar y dejar semanas recientes fuera sin avisar.
         if "id_producto" in mapa:
-            where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+            where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti, extra)
         elif "marca" in mapa:
             where += f" AND {_marca_sql(mapa)} IN UNNEST(@marcas)"
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY {grupos}"
@@ -361,7 +377,12 @@ def sql_tiendas_venta(tabla: str, mapa: Mapping[str, str]) -> str:
 
 
 def sql_venta_diaria(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+    tabla: str,
+    mapa: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    con_marcas: bool,
+    extra: bool = False,
 ) -> str:
     """Venta diaria reciente por tienda×SKU (para reponer lo vendido desde la última ruta)."""
     f = _c(mapa, "fecha")
@@ -372,7 +393,7 @@ def sql_venta_diaria(
     ]
     where = f"DATE({f}) >= @desde_diaria AND DATE({f}) < @hasta_foto"
     if con_marcas:
-        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti, extra)
     return (
         f"SELECT {', '.join(sel)}, SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades"
         f"\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2, 3"
@@ -380,18 +401,135 @@ def sql_venta_diaria(
 
 
 def sql_nombres_modelo(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+    tabla: str,
+    mapa: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    con_marcas: bool,
+    extra: bool = False,
 ) -> str:
     """Nombre del modelo por SKU desde la venta (respaldo si ARTI no trae descripción)."""
     f = _c(mapa, "fecha")
     where = f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto"
     if con_marcas:
-        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti, extra)
     return (
         f"SELECT {sku_sql(_c(mapa, 'id_producto'))} AS id_producto, "
         f"ANY_VALUE(CAST({_c(mapa, 'nombre_modelo')} AS STRING)) AS nombre_modelo"
         f"\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1"
     )
+
+
+#: Campos de la venta que sirven de atributos de producto cuando el código no está en ARTI.
+CAMPOS_PRODUCTO_VENTA = ("cod_modelo", "cod_color", "talla", "genero", "categoria", "color")
+
+
+def puede_productos_venta(mapa: Mapping[str, str]) -> bool:
+    """La venta trae código, marca, modelo, color y talla: sirve de respaldo de ARTI."""
+    return all(c in mapa for c in ("id_producto", "marca", "cod_modelo", "cod_color", "talla"))
+
+
+def sql_productos_venta(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+) -> str:
+    """Productos de las marcas pedidas (según la marca de la VENTA) que se vendieron en la
+    ventana con un código que no está en ARTI (ninguna marca), con sus atributos de la venta.
+
+    Respaldo para marcas recién incorporadas (p. ej. AZALEIA): sus tiendas venden y tienen
+    stock con códigos que el maestro ARTI todavía no trae."""
+    f = _c(mapa, "fecha")
+    sel = [f"{sku_sql(_c(mapa, 'id_producto'))} AS id_producto"]
+    sel += [
+        f"ANY_VALUE(CAST({_c(mapa, c)} AS STRING)) AS {c}"
+        for c in CAMPOS_PRODUCTO_VENTA
+        if c in mapa
+    ]
+    sel.append(f"ANY_VALUE({_marca_sql(mapa)}) AS marca")
+    if "nombre_modelo" in mapa:
+        sel.append(f"ANY_VALUE(CAST({_c(mapa, 'nombre_modelo')} AS STRING)) AS descripcion")
+    sel.append(f"SUM(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64)) AS unidades")
+    en_arti = (
+        f"SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} FROM {_t(arti)} "
+        f"WHERE {_c(mapa_arti, 'id_producto')} IS NOT NULL"
+    )
+    where = (
+        f"DATE({f}) >= @desde AND DATE({f}) < @hasta_foto "
+        f"AND {_marca_sql(mapa)} IN UNNEST(@marcas) "
+        f"AND {_c(mapa, 'id_producto')} IS NOT NULL "
+        f"AND {sku_sql(_c(mapa, 'id_producto'))} NOT IN ({en_arti})"
+    )
+    return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1"
+
+
+#: Datasets donde buscar otros maestros ARTI (los pedidos ya vienen de pe_bronze).
+DATASETS_ARTI = (
+    "forus-analitica-prod-datalake.bronze",
+    "forus-analitica-prod-datalake.pe_bronze",
+)
+
+
+def sql_cobertura_arti(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+) -> str:
+    """Cuántos códigos vendidos de la marca (según la marca de la venta o el nombre de la
+    tienda, p. ej. «AZALEIA JOCKEY») están en esta tabla ARTI. Sirve para elegir el ARTI."""
+    f = _c(mapa, "fecha")
+    marca = [f"{_marca_sql(mapa)} IN UNNEST(@marcas)"] if "marca" in mapa else []
+    marca += [
+        f"UPPER(CAST({_c(mapa, c)} AS STRING)) LIKE @patron_tienda"
+        for c in ("tienda_nombre", "cadena")
+        if c in mapa
+    ]
+    return (
+        "SELECT COUNT(DISTINCT v.id) AS vendidos, COUNT(DISTINCT a.id) AS en_arti\n"
+        f"FROM (SELECT DISTINCT {sku_sql(_c(mapa, 'id_producto'))} AS id FROM {_t(tabla)} "
+        f"WHERE DATE({f}) >= @desde AND DATE({f}) < @hasta_foto "
+        f"AND ({' OR '.join(marca) or 'TRUE'})) v\n"
+        f"LEFT JOIN (SELECT DISTINCT {sku_sql(_c(mapa_arti, 'id_producto'))} AS id "
+        f"FROM {_t(arti)}) a ON a.id = v.id"
+    )
+
+
+def completar_arti(
+    arti: pd.DataFrame, de_venta: pd.DataFrame | None
+) -> tuple[pd.DataFrame, dict[str, str], int]:
+    """ARTI + productos de la venta que no están en ARTI → (arti, alias, nuevos).
+
+    Si el modelo-color×talla de un código de la venta ya está en ARTI con otro código, es el
+    mismo producto: ``alias`` lleva código de la venta → SKU de ARTI (para unir su stock,
+    venta y pedidos). Si no, el producto se agrega a ARTI con los atributos de la venta."""
+    if de_venta is None or de_venta.empty:
+        return arti, {}, 0
+    dv = de_venta.drop(columns=["unidades"], errors="ignore").copy()
+    dv["id_producto"] = sku_canonico(dv["id_producto"])
+    dv = dv.dropna(subset=["id_producto", "cod_modelo", "cod_color", "talla"])
+    dv = dv.loc[~dv["id_producto"].isin(set(sku_canonico(arti["id_producto"])))]
+
+    def llave(df: pd.DataFrame) -> pd.Series:
+        if "modcol" in df and df["modcol"].notna().any():
+            mc = texto(df["modcol"]).str.upper()
+        else:
+            mc = texto(df["cod_modelo"]).str.upper() + "-" + texto(df["cod_color"]).str.upper()
+        return mc + "-" + texto(df["talla"]).str.upper()
+
+    de_arti = pd.Series(sku_canonico(arti["id_producto"]).to_numpy(), index=llave(arti).to_numpy())
+    de_arti = de_arti[~de_arti.index.duplicated() & de_arti.index.notna()]
+    mismo = llave(dv).map(de_arti)
+    alias = dict(zip(dv.loc[mismo.notna(), "id_producto"], mismo.dropna(), strict=True))
+    nuevos = dv.loc[mismo.isna()].drop_duplicates("id_producto")
+    if nuevos.empty:
+        return arti, alias, 0
+    return pd.concat([arti, nuevos], ignore_index=True), alias, len(nuevos)
+
+
+def con_alias(df: pd.DataFrame | None, alias: dict[str, str]) -> pd.DataFrame | None:
+    """Reemplaza en ``id_producto`` los códigos de la venta por su SKU de ARTI."""
+    if df is None or not alias or "id_producto" not in df:
+        return df
+    df = df.copy()
+    sku = sku_canonico(df["id_producto"])
+    df["id_producto"] = sku.map(alias).fillna(sku)
+    return df
 
 
 def a_venta_diaria(df: pd.DataFrame, skus: set[str], excluidas: set[str]) -> pd.DataFrame:
@@ -488,9 +626,11 @@ def sql_diag_venta_tiendas(
     crudo = f"CAST({_c(mapa, 'id_producto')} AS STRING)"
     return (
         "SELECT v.tienda_cod, v.codigo_crudo, v.id_producto, v.unidades, a.marca, "
-        "a.id IS NOT NULL AS en_arti, COUNT(1) OVER () AS productos\n"
+        "v.marca_venta, a.id IS NOT NULL AS en_arti, COUNT(1) OVER () AS productos\n"
         f"FROM (SELECT CAST({_c(mapa, 'tienda_cod')} AS STRING) AS tienda_cod, "
         f"ANY_VALUE({crudo}) AS codigo_crudo, {sku_sql(_c(mapa, 'id_producto'))} AS id_producto, "
+        + (f"ANY_VALUE({_marca_sql(mapa)})" if "marca" in mapa else "CAST(NULL AS STRING)")
+        + " AS marca_venta, "
         f"SUM(COALESCE(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64), 0)) AS unidades "
         f"FROM {_t(tabla)} WHERE DATE({f}) >= @desde_tiendas AND DATE({f}) < @hasta_foto "
         f"AND ({' OR '.join(filtros)}) GROUP BY 1, 3) v\n"
@@ -522,6 +662,10 @@ def resumen_diag(df: pd.DataFrame | None, que: str, donde: str, marcas: list[str
         )
         if len(marcas_vistas):
             txt += f" (marcas en ARTI: {', '.join(f'{m} {n}' for m, n in marcas_vistas.items())})"
+    if "marca_venta" in df:
+        mv = df["marca_venta"].dropna().astype(str).value_counts().head(3)
+        if len(mv):
+            txt += f" (marca según la venta: {', '.join(f'{m} {n}' for m, n in mv.items())})"
     return txt + f". Ejemplos de código: {ej}."
 
 
@@ -548,7 +692,12 @@ def sql_ultima_fecha(tabla: str, mapa: Mapping[str, str]) -> str:
 
 
 def sql_stock_foto(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str], con_marcas: bool
+    tabla: str,
+    mapa: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    con_marcas: bool,
+    extra: bool = False,
 ) -> str:
     f = _c(mapa, "fecha")
     sel = [
@@ -562,7 +711,7 @@ def sql_stock_foto(
             sel.append(f"SUM(COALESCE(SAFE_CAST({_c(mapa, campo)} AS FLOAT64), 0)) AS {campo}")
     where = f"DATE({f}) = @fecha_foto"
     if con_marcas:
-        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti)
+        where += " " + filtro_marca_arti(_c(mapa, "id_producto"), arti, mapa_arti, extra)
     return f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\nWHERE {where}\nGROUP BY 1, 2"
 
 
@@ -630,6 +779,7 @@ def sql_pedidos(
     arti: str,
     mapa_arti: Mapping[str, str],
     con_marcas: bool,
+    extra: bool = False,
 ) -> str:
     """Unidades de pedidos por tienda destino × SKU × estado × clasificación."""
 
@@ -681,7 +831,7 @@ def sql_pedidos(
     # Todo el historial: un pedido abierto (aprobado, en picking…) sigue en tránsito.
     where = "TRUE"
     if con_marcas:
-        where += " " + filtro_marca_arti(d("id_producto"), arti, mapa_arti)
+        where += " " + filtro_marca_arti(d("id_producto"), arti, mapa_arti, extra)
     return (
         f"SELECT {', '.join(sel)}\n"
         f"FROM {_sin_repetidas(cabecera, m_h, CAMPOS_CABECERA)} AS h\n"

@@ -306,7 +306,7 @@ def test_flujo_completo_bigquery_maestros_y_motor():
     fake = _FakeBQ()
     repo = FuentesRepository(client=fake, secrets=SECRETS)
     inp = repo.cargar_entradas(CORTE)
-    assert [c[0] for c in fake.consultas] == [
+    assert [c[0] for c in fake.consultas if c[0] != "cobertura_arti"] == [
         "arti",
         "cortes",
         "stock_foto",
@@ -1081,3 +1081,62 @@ def test_venta_de_la_semana_en_curso_hasta_el_cierre_de_ayer():
     _, sql, p = next(c for c in fake.consultas if c[0] == "ventas")
     assert "< @hasta_venta" in sql
     assert p["hasta_venta"] == hoy_lima().date()
+
+
+def test_usa_el_arti_de_pe_bronze_si_trae_los_codigos_que_se_venden():
+    class Fake(_FakeBQ):
+        def columnas(self, tabla):
+            if tabla == F.TABLA_ARTI_PE:
+                return pd.DataFrame({"column_name": [c.lower() for c in COLS_ARTI]})
+            return super().columnas(tabla)
+
+        def query_df(self, sql, params=None, labels=None):
+            if labels["consulta"] == "cobertura_arti":
+                self.consultas.append((labels["consulta"], sql, params))
+                n = 700 if F.TABLA_ARTI_PE in sql else 0
+                return pd.DataFrame({"vendidos": [736], "en_arti": [n]})
+            return super().query_df(sql, params, labels)
+
+    fake = Fake()
+    repo = FuentesRepository(client=fake, secrets=SECRETS)
+    repo.cargar_entradas(CORTE)
+    sql_arti = next(sql for nombre, sql, _ in fake.consultas if nombre == "arti")
+    assert F.TABLA_ARTI_PE in sql_arti
+    sql_stock = next(sql for nombre, sql, _ in fake.consultas if nombre == "stock_foto")
+    assert F.TABLA_ARTI_PE in sql_stock and F.TABLA_ARTI + "`" not in sql_stock
+    assert any("pe_bronze" in n for n in repo.ultimo_diagnostico.notas)
+
+
+def test_productos_de_la_marca_fuera_de_arti_salen_de_la_venta():
+    arti = pd.DataFrame(
+        {
+            "id_producto": ["5327779", "5327780"],
+            "cod_modelo": ["M1", "M1"],
+            "cod_color": ["C1", "C1"],
+            "talla": ["37", "38"],
+            "marca": ["AZALEIA", "AZALEIA"],
+        }
+    )
+    venta = pd.DataFrame(
+        {
+            "id_producto": ["5601040", "5608927", "05608927"],
+            "cod_modelo": ["M1", "M9", "M9"],
+            "cod_color": ["C1", "C2", "C2"],
+            "talla": ["37", "40", "40"],
+            "marca": ["AZALEIA"] * 3,
+            "unidades": [3.0, 2.0, 1.0],
+        }
+    )
+    completo, alias, nuevos = F.completar_arti(arti, venta)
+    assert alias == {"5601040": "5327779"}  # mismo modelo-color-talla: es el SKU de ARTI
+    assert nuevos == 1 and "5608927" in set(completo["id_producto"])
+    stock = pd.DataFrame({"tienda_cod": ["8"], "id_producto": ["5601040"], "stock_tienda": [4]})
+    assert F.con_alias(stock, alias)["id_producto"].tolist() == ["5327779"]
+    a = M.mapear(COLS_ARTI, M.ALIAS_ARTI)
+    filtro = F.filtro_marca_arti("`codpro_df`", "p.d.arti", a, extra=True)
+    assert "IN UNNEST(@skus_extra)" in filtro and filtro.startswith("AND (")
+    assert "@skus_extra" not in F.filtro_marca_arti("`codpro_df`", "p.d.arti", a)
+    m_v = M.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_VENTA_RETAIL], M.ALIAS_VENTAS)
+    assert F.puede_productos_venta(m_v)
+    sql = F.sql_productos_venta(F.TABLA_VENTA_RETAIL, m_v, "p.d.arti", a)
+    assert "NOT IN (SELECT" in sql and "@marcas" in sql and "`clase`" in sql
