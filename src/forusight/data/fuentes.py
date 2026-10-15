@@ -438,6 +438,91 @@ def sql_revisar_venta(
     return resumen, muestra
 
 
+def _arti_marca(arti: str, mapa_arti: Mapping[str, str]) -> str:
+    """Subconsulta ARTI: SKU canónico → marca (para cruzar códigos en los diagnósticos)."""
+    marca = (
+        f"ANY_VALUE({_marca_sql(mapa_arti)})" if "marca" in mapa_arti else "CAST(NULL AS STRING)"
+    )
+    return (
+        f"(SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} AS id, {marca} AS marca "
+        f"FROM {_t(arti)} GROUP BY 1)"
+    )
+
+
+def sql_diag_stock_bodega(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+) -> str:
+    """Diagnóstico de una marca sin stock: qué productos hay en sus bodegas (p. ej. 380 de
+    AZALEIA) en la foto, si su código está en ARTI y con qué marca. Sin filtro de marca."""
+    stock = [c for c in ("stock_tienda", "stock_bodega", "disponible") if c in mapa]
+    suma = " + ".join(f"COALESCE(SAFE_CAST({_c(mapa, c)} AS FLOAT64), 0)" for c in stock) or "1"
+    crudo = f"CAST({_c(mapa, 'id_producto')} AS STRING)"
+    return (
+        "SELECT s.tienda_cod, s.codigo_crudo, s.id_producto, s.stock, a.marca, "
+        "a.id IS NOT NULL AS en_arti, COUNT(1) OVER () AS productos\n"
+        f"FROM (SELECT {tienda_sql(mapa)} AS tienda_cod, ANY_VALUE({crudo}) AS codigo_crudo, "
+        f"{sku_sql(_c(mapa, 'id_producto'))} AS id_producto, SUM({suma}) AS stock "
+        f"FROM {_t(tabla)} WHERE DATE({_c(mapa, 'fecha')}) = @fecha_foto "
+        f"AND REGEXP_REPLACE({tienda_sql(mapa)}, r'^0+([0-9])', r'\\1') IN UNNEST(@bodegas) "
+        "GROUP BY 1, 3) s\n"
+        f"LEFT JOIN {_arti_marca(arti, mapa_arti)} a ON a.id = s.id_producto\n"
+        "ORDER BY s.stock DESC LIMIT 25"
+    )
+
+
+def sql_diag_venta_tiendas(
+    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+) -> str | None:
+    """Diagnóstico de una marca sin venta: lo vendido en las tiendas cuyo nombre o cadena
+    contiene la marca (p. ej. AZALEIA JOCKEY), con su código y la marca que dice ARTI."""
+    filtros = [
+        f"UPPER(CAST({_c(mapa, c)} AS STRING)) LIKE @patron_tienda"
+        for c in ("tienda_nombre", "cadena")
+        if c in mapa
+    ]
+    if not filtros or "id_producto" not in mapa:
+        return None
+    f = _c(mapa, "fecha")
+    crudo = f"CAST({_c(mapa, 'id_producto')} AS STRING)"
+    return (
+        "SELECT v.tienda_cod, v.codigo_crudo, v.id_producto, v.unidades, a.marca, "
+        "a.id IS NOT NULL AS en_arti, COUNT(1) OVER () AS productos\n"
+        f"FROM (SELECT CAST({_c(mapa, 'tienda_cod')} AS STRING) AS tienda_cod, "
+        f"ANY_VALUE({crudo}) AS codigo_crudo, {sku_sql(_c(mapa, 'id_producto'))} AS id_producto, "
+        f"SUM(COALESCE(SAFE_CAST({_c(mapa, 'unidades')} AS FLOAT64), 0)) AS unidades "
+        f"FROM {_t(tabla)} WHERE DATE({f}) >= @desde_tiendas AND DATE({f}) < @hasta_foto "
+        f"AND ({' OR '.join(filtros)}) GROUP BY 1, 3) v\n"
+        f"LEFT JOIN {_arti_marca(arti, mapa_arti)} a ON a.id = v.id_producto\n"
+        "ORDER BY v.unidades DESC LIMIT 25"
+    )
+
+
+def resumen_diag(df: pd.DataFrame | None, que: str, donde: str, marcas: list[str]) -> str:
+    """Texto corto del diagnóstico: cuántos productos hay, si sus códigos están en ARTI y con
+    qué marca, y ejemplos de código (para comparar el formato con el de ARTI)."""
+    if df is None:
+        return ""
+    if df.empty:
+        return f"{donde}: sin {que}."
+    total = int(df["productos"].iloc[0])
+    en_arti = df["en_arti"].fillna(False).astype(bool)
+    pedidas = {str(m).upper() for m in marcas}
+    de_marca = df["marca"].astype("string").str.upper().isin(pedidas).fillna(False)
+    marcas_vistas = df.loc[en_arti, "marca"].dropna().astype(str).value_counts().head(3)
+    ej = ", ".join(df["codigo_crudo"].dropna().astype(str).head(4))
+    txt = f"{donde}: {total:,} productos con {que}"
+    if not en_arti.any():
+        txt += " y NINGUNO de los primeros 25 códigos está en ARTI (códigos en otro formato o de otro maestro)"
+    else:
+        txt += (
+            f"; de los primeros 25, {int(en_arti.sum())} están en ARTI y {int(de_marca.sum())} "
+            f"con la marca {', '.join(sorted(pedidas))}"
+        )
+        if len(marcas_vistas):
+            txt += f" (marcas en ARTI: {', '.join(f'{m} {n}' for m, n in marcas_vistas.items())})"
+    return txt + f". Ejemplos de código: {ej}."
+
+
 def sql_cortes(tabla: str, mapa: Mapping[str, str]) -> str:
     """Fechas de corte del último año (sólo lee la columna de fecha).
 

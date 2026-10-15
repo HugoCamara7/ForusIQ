@@ -139,6 +139,9 @@ class EngineResult:
     tiendas: pd.DataFrame | None = None
     #: Productos con la temporada comercial del maestro (la que filtró la corrida).
     productos: pd.DataFrame | None = None
+    #: SKU activos de TODO el retail (base del velocímetro de disponibilidad): permite bajar
+    #: la disponibilidad por tienda aunque la tienda no reponga hoy.
+    disponibilidad: pd.DataFrame | None = None
 
     @property
     def propuesta(self) -> pd.DataFrame:
@@ -263,11 +266,11 @@ def ejecutar(
     # Disponibilidad de TODO el retail (todas las tiendas, antes de quedarse con las de hoy).
     from forusight.engine import disponibilidad as DISP
 
-    disp_retail = DISP.kpis(
-        det.rename(
-            columns={"stock_disponible": "stock_tienda", "cd_disponible": "stock_cd_disponible"}
-        )
+    det_retail = det.rename(
+        columns={"stock_disponible": "stock_tienda", "cd_disponible": "stock_cd_disponible"}
     )
+    disp_retail = DISP.kpis(det_retail)
+    disp_sku = DISP.sku_activos(det_retail.assign(demanda_semanal=det_retail["demanda_sku"]))
     if "recibe_hoy" in base.tiendas:  # el resultado sólo lista las tiendas que reponen hoy
         hoy = set(
             base.tiendas.loc[base.tiendas["recibe_hoy"].fillna(True).astype(bool), "tienda_id"]
@@ -322,4 +325,5 @@ def ejecutar(
         resumen=resumen,
         tiendas=base.tiendas,
         productos=inp.dim_producto,
+        disponibilidad=disp_sku,
     )
