@@ -37,9 +37,11 @@ def _excel(run_id: str, aprob: str, _res, _entradas, _params, cd_id: str, _canti
 def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
     if getattr(entradas, "reporte", None) is not None:  # corrida sobre el reporte del día
         from app.components.estado import bloqueos_de, clave_bloqueos
-        from forusight.data.bloqueos import fuera_de_surtido
+        from forusight.data.bloqueos import fuera_de_surtido, regla_temporadas
         from forusight.data.reporte import tabla_para_archivo
 
+        # los parámetros de la corrida: traen la temporada mínima por tienda que se usó
+        params = getattr(res, "params", None) or params
         rep = entradas.reporte
         mc = rep["Código Modelo"].astype("string") + "-" + rep["Código Color"].astype("string")
         bloq, fuera = fuera_de_surtido(
@@ -49,6 +51,11 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
             bloqueos_de(clave_bloqueos()),
             params.surtido.temporadas_reponer,
             params.surtido.temporada_desde,
+            **regla_temporadas(
+                params.surtido,
+                getattr(entradas, "dim_tienda", None),
+                params.prioridad_tiendas.cadenas_liquidadoras,
+            ),
         )
         return tabla_para_archivo(rep, res.detalle, cantidad, (bloq | fuera).to_numpy())
     # El detalle del tránsito (en CD / despachado) sale de los pedidos, como en el motor: las

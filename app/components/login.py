@@ -26,7 +26,31 @@ def rol_actual() -> str:
 def puede(accion: str) -> bool:
     if st.session_state.get("sin_login") and accion == "conexion":
         return False  # el modo demo nunca toca BigQuery
+    if accion in auth.RESTRINGIDOS:
+        return acceso_modulo(accion)
     return auth.puede(rol_actual(), accion)
+
+
+def acceso_modulo(modulo: str) -> bool:
+    """Módulo restringido a la lista de [app_auth.permisos] (p. ej. Parámetros).
+
+    Se valida el usuario autenticado de la sesión contra los secrets en cada llamada: quitar
+    a alguien de la lista le corta el acceso en la siguiente interacción. El modo demo (sin
+    usuarios configurados, datos sintéticos y sin GitHub) puede usarlo: no hay nada real que
+    cambiar."""
+    ss = st.session_state
+    if not ss.get("authenticated"):
+        return False
+    if ss.get("sin_login"):
+        return True
+    return auth.acceso_restringido(usuario_actual(), modulo, leer_st_secrets() or {})
+
+
+def exigir(modulo: str) -> None:
+    """Corta la página si el usuario no tiene acceso (además de no listarla en el menú)."""
+    if not acceso_modulo(modulo):
+        st.error("No tienes acceso a este módulo.")
+        st.stop()
 
 
 def requerir_login(modo_demo: bool, al_ingresar=None) -> bool:

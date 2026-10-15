@@ -11,8 +11,7 @@ PAGINAS = [
     "1_Dashboard",
     "10_Descargas",
     "8_Bloqueos",
-    "11_Manual",
-    "12_Comparar",
+    "13_Temporadas_Tienda",
     "9_Rutas",
     "5_Parametros",
 ]  # vista única + configuración
@@ -198,4 +197,78 @@ def test_parametros_mantenedores_buscar_y_guardar(monkeypatch):
     from forusight.data import mantenedores as MT
 
     assert estado._MANT[MT.RUTA_STOCK_MINIMO]["sku"].tolist() == ["123456"]
+    estado._MANT.clear()
+
+
+PERMISOS = {
+    "app_auth": {
+        "users": {"ana@forus.pe": "clave-ana", "luis@forus.pe": "clave-luis"},
+        "roles": {"ana@forus.pe": "admin", "luis@forus.pe": "analista"},
+        "permisos": {"parametros": ["luis@forus.pe"]},
+    }
+}
+
+
+def _ingresar(monkeypatch, usuario, clave):
+    app = _app(monkeypatch, PERMISOS)
+    app.text_input[0].input(usuario)
+    app.text_input[1].input(clave)
+    app.button[0].click().run()
+    assert not app.exception, app.exception
+    return app
+
+
+def _menu(app) -> list[str]:
+    return [p.proto.label for p in app.get("page_link")]
+
+
+def test_parametros_solo_para_usuarios_autorizados(monkeypatch):
+    """Ni un admin entra a Parámetros si no está en [app_auth.permisos] parametros: la página
+    no se registra (tampoco por URL) y no aparece en el menú."""
+    app = _ingresar(monkeypatch, "ana@forus.pe", "clave-ana")
+    assert "Parámetros" not in _menu(app)
+    with pytest.raises(ValueError, match="Could not find a navigation page"):
+        app.switch_page("app/vistas/5_Parametros.py")
+    app = _ingresar(monkeypatch, "luis@forus.pe", "clave-luis")
+    assert "Parámetros" in _menu(app)
+    app.switch_page("app/vistas/5_Parametros.py").run()
+    assert not app.exception, app.exception
+    assert not app.error
+
+
+def test_menu_sin_manual_ni_comparar(monkeypatch):
+    app = _app(monkeypatch)
+    menu = _menu(app)
+    assert "Manual" not in menu and "Comparar con Neogística" not in menu
+    assert menu[:2] == ["Inicio", "Descargas"]
+    assert {"Bloqueos", "Temporadas por tienda", "Rutas"} <= set(menu)
+    secciones = [m.value for m in app.sidebar.markdown if 'class="sb-sec"' in m.value]
+    assert any("Mantenedores" in s for s in secciones)
+
+
+def test_corrida_usa_la_temporada_minima_por_tienda(monkeypatch):
+    """Lo guardado en «Temporadas por tienda» llega a los parámetros de la corrida."""
+    from app.components import estado
+
+    from forusight.config.settings import EngineParams
+    from forusight.data import mantenedores as MT
+
+    estado._MANT.clear()
+    app = _app(monkeypatch)
+    app.switch_page("app/vistas/13_Temporadas_Tienda.py").run()
+    assert not app.exception, app.exception
+    cambios = pd.DataFrame({"tienda_id": ["8"], "temporada_minima": ["INVIERNO 2026"]})
+    estado._MANT[MT.RUTA_TEMPORADA_TIENDA] = MT.nuevos_temporada_tienda(
+        cambios, MT.ASIGNAR, "demo", "2026-10-15"
+    )
+    p = EngineParams.model_validate_json(
+        estado.con_temporadas_tienda(EngineParams().model_dump_json())
+    )
+    assert p.surtido.temporada_desde_tienda == {"8": "INVIERNO 2026"}
+    app.switch_page("app/vistas/1_Dashboard.py").run()
+    app.button(key="btn_ejecutar").click().run()
+    assert not app.exception, app.exception
+    assert app.session_state.resultado.params.surtido.temporada_desde_tienda == {
+        "8": "INVIERNO 2026"
+    }
     estado._MANT.clear()

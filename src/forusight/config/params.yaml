@@ -139,6 +139,12 @@ surtido:                        # qué se puede reponer
   # INVIERNO 2026 y anteriores no se reponen. Sin temporada conocida (modelo nuevo): se repone.
   temporada_desde: "VERANO 2026"
   temporadas_reponer: ["ESCOLAR 2026", "FUTURA"]   # además de las anteriores
+  # Liquidadoras (DH, SE, FB): reposición por jerarquía, sólo temporadas hasta INVIERNO 2026
+  # inclusive (no VERANO 2026, ESCOLAR 2026, posteriores ni FUTURA). Manda sobre todo lo demás.
+  temporada_hasta_liquidadoras: "INVIERNO 2026"
+  # Temporada mínima por tienda: la carga el módulo «Temporadas por tienda» (Excel) en cada
+  # corrida. Una tienda que no está aquí usa temporada_desde.
+  temporada_desde_tienda: {}
   temporadas_en_bigquery: false # usar ARTI si el modelo-color no está en el maestro de temporadas
 
 referencia:                     # niveles del último reporte de distribución de cada tienda

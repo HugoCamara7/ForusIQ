@@ -10,7 +10,14 @@ password = "..."
 
 [app_auth.roles]              # opcional: admin | aprobador | analista
 "nombre.apellido@forus.pe" = "aprobador"
+
+[app_auth.permisos]           # módulos restringidos a una lista de usuarios
+parametros = ["nombre.apellido@forus.pe"]
 ```
+
+El módulo **Parámetros** sólo lo ven y usan los usuarios de ``[app_auth.permisos]
+parametros`` (además deben poder iniciar sesión). Sin esa lista nadie accede: los correos no
+se escriben en el código, viven en los secrets.
 
 No hay usuarios por defecto: tenerlos en el código sería publicarlos. Roles:
   - sin sección [app_auth.roles]: todos los usuarios son admin (igual que en Catálogo, así
@@ -47,9 +54,10 @@ _ALIAS_ROL = {
     "comercial": ROL_ANALISTA,
 }
 
-# Qué puede hacer cada rol.
+# Qué puede hacer cada rol. «parametros» no es de un rol: es de la lista de
+# [app_auth.permisos] parametros (ver acceso_restringido).
 PERMISOS = {
-    ROL_ADMIN: {"ver", "ejecutar", "aprobar", "parametros", "conexion"},
+    ROL_ADMIN: {"ver", "ejecutar", "aprobar", "conexion"},
     ROL_APROBADOR: {"ver", "ejecutar", "aprobar"},
     ROL_ANALISTA: {"ver", "ejecutar"},
 }
@@ -95,3 +103,31 @@ def verificar(usuario: str, clave: str, secrets: Mapping[str, Any] | None) -> bo
 
 def puede(rol_usuario: str, accion: str) -> bool:
     return accion in PERMISOS.get(rol_usuario, set())
+
+
+#: Módulos que no dependen del rol sino de una lista explícita de usuarios en los secrets.
+RESTRINGIDOS = {"parametros"}
+
+
+def autorizados(modulo: str, secrets: Mapping[str, Any] | None) -> set[str]:
+    """Usuarios (normalizados) de ``[app_auth.permisos] <modulo>``. Vacío = nadie."""
+    try:
+        permisos = dict(_seccion(secrets).get("permisos", {}) or {})
+    except Exception:
+        return set()
+    lista = permisos.get(modulo) or []
+    if isinstance(lista, str):  # «a@x, b@x» también vale
+        lista = lista.split(",")
+    return {normalizar(u) for u in lista if normalizar(u)}
+
+
+def acceso_restringido(usuario: str, modulo: str, secrets: Mapping[str, Any] | None) -> bool:
+    """True sólo si ``usuario`` es un usuario con login configurado y está en la lista del
+    módulo. Comparación en tiempo constante, sin revelar quién está en la lista."""
+    u = normalizar(usuario)
+    if not u or u not in usuarios(secrets):
+        return False
+    ok = False
+    for autorizado in autorizados(modulo, secrets):
+        ok |= hmac.compare_digest(u.encode(), autorizado.encode())
+    return ok

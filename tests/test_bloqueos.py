@@ -240,7 +240,9 @@ def test_temporadas_desde_verano_2026_y_escolar_2026():
 
     assert orden_temporada("INVIERNO 2026") < orden_temporada("VERANO 2026")
     assert orden_temporada("VERANO 2026") < orden_temporada("INVIERNO 2027")
-    assert orden_temporada("ESCOLAR 2026") is None
+    # ESCOLAR va con el VERANO del mismo año (antes no tenía orden y sólo entraba por la lista)
+    assert orden_temporada("ESCOLAR 2026") == orden_temporada("VERANO 2026")
+    assert orden_temporada("FUTURA") is None
     temps = pd.Series(
         [
             "VERANO 2026",

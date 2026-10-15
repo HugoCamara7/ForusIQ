@@ -394,6 +394,25 @@ def _correr_motor(
     return res, diag
 
 
+def con_temporadas_tienda(params_json: str) -> str:
+    """Parámetros de la corrida con la temporada mínima de cada tienda (módulo Temporadas por
+    tienda). Va dentro de los parámetros: cambia la caché de la corrida y queda en
+    ``EngineResult.params``, así el archivo usa la misma regla que el motor."""
+    from forusight.data import mantenedores as MT
+
+    vigente = MT.temporada_tienda_vigente(
+        mantenedor(MT.RUTA_TEMPORADA_TIENDA, MT.COLS_TEMPORADA_TIENDA)
+    )
+    if not vigente:
+        return params_json
+    p = EngineParams.model_validate_json(params_json)
+    # lo del módulo manda sobre lo que traiga params.yaml para esa tienda
+    surtido = p.surtido.model_copy(
+        update={"temporada_desde_tienda": {**p.surtido.temporada_desde_tienda, **vigente}}
+    )
+    return p.model_copy(update={"surtido": surtido}).model_dump_json()
+
+
 def correr_motor(
     fuente: str,
     fecha_corte: str,
@@ -409,7 +428,7 @@ def correr_motor(
         fuente,
         huella_config(),
         fecha_corte,
-        params_json,
+        con_temporadas_tienda(params_json),
         cd_bytes,
         cd_nombre,
         marcas,
@@ -428,9 +447,11 @@ def correr_motor(
 _BLOQUEOS: dict[str, pd.DataFrame] = {}
 
 
-@st.cache_data(max_entries=16, show_spinner="Leyendo reporte de bloqueos…")
 def clave_bloqueos() -> str:
-    """Clave de bloqueos para la corrida: archivo base + huella del mantenedor."""
+    """Clave de bloqueos para la corrida: archivo base + huella del mantenedor.
+
+    Sin caché: depende de la sesión (lo cargado por Excel) y en caché quedaba fija en el
+    proceso, así que una corrida podía reutilizarse con los bloqueos de antes de la carga."""
     base = st.session_state.get("bloq_clave", "defecto") or "defecto"
     h = huella_manuales()
     return f"{base}|{h}" if h else base
@@ -513,6 +534,9 @@ def bloqueos_de(clave: str) -> pd.DataFrame | None:
 def _store_bloqueos():
     from forusight.data.github_store import GitHubStore, config_github
 
+    with contextlib.suppress(Exception):  # fuera de Streamlit (corrida diaria) no hay sesión
+        if st.session_state.get("sin_login"):
+            return None  # el modo demo (sin usuarios) nunca escribe en el repositorio
     cfg = config_github(secretos())
     if cfg is None:
         return None
@@ -545,6 +569,14 @@ def guardar_mantenedor(
     """Agrega cambios al historial y lo guarda. Devuelve dónde quedó guardado."""
     from forusight.data import mantenedores as MT
 
+    # La pantalla ya oculta el botón; esto impide guardar aunque se llegue por otra vía.
+    permiso = {
+        MT.RUTA_TEMPORADAS: "parametros",
+        MT.RUTA_STOCK_MINIMO: "parametros",
+        MT.RUTA_TEMPORADA_TIENDA: "aprobar",
+    }.get(ruta, "aprobar")
+    if not puede(permiso):
+        raise PermissionError("Tu usuario no tiene permiso para cambiar este mantenedor.")
     todo = pd.concat([mantenedor(ruta, cols), nuevos], ignore_index=True)[cols]
     _MANT[ruta] = todo
     store = _store_bloqueos()
@@ -561,6 +593,7 @@ def huella_mantenedores() -> str:
     for ruta, cols in (
         (MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS),
         (MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
+        (MT.RUTA_TEMPORADA_TIENDA, MT.COLS_TEMPORADA_TIENDA),
     ):
         h.update(MT.a_csv(mantenedor(ruta, cols)))
     return h.hexdigest()[:10]
@@ -592,6 +625,8 @@ def guardar_bloqueos_manuales(nuevos: pd.DataFrame, usuario: str) -> str:
     """Agrega movimientos al historial y lo guarda. Devuelve dónde quedó guardado."""
     from forusight.data import bloqueos as B
 
+    if not puede("aprobar"):
+        raise PermissionError("Tu rol permite ver los bloqueos, no cambiarlos.")
     ss = st.session_state
     todo = pd.concat([bloqueos_manuales(), nuevos], ignore_index=True)
     ss.bloqueos_manuales = todo
@@ -715,11 +750,16 @@ def _correr_reporte(
     params = EngineParams.model_validate_json(params_json)
     inp, diag = _entradas_reporte(contenido, marcas)
     # El tránsito es el que trae el reporte (Stock Trán. Int. + Prov.).
+    from forusight.data.bloqueos import regla_temporadas
+
     base, n_bloq = R.aplicar_surtido(
         inp.reporte,
         bloqueos_de(bloq_clave),
         params.surtido.temporadas_reponer,
         params.surtido.temporada_desde,
+        **regla_temporadas(
+            params.surtido, inp.dim_tienda, params.prioridad_tiendas.cadenas_liquidadoras
+        ),
     )
     diag = {**diag, "bloqueadas": n_bloq}
     dist = R.distribuir(
@@ -785,7 +825,7 @@ def ejecutar_corrida(avance=None) -> EngineResult:
             ss.reporte[0],
             marcas,
             ss.criterio,
-            ss.params.model_dump_json(),
+            con_temporadas_tienda(ss.params.model_dump_json()),
             clave_bloqueos(),
         )
         if ss.resultado is None or ss.resultado.run_id != res.run_id:
@@ -913,12 +953,12 @@ def _semana_a_lunes() -> None:
 
 
 def _nombre_de_correo(correo: str) -> str:
-    """hugo.camara@forus.pe → Hugo Camara."""
+    """nombre.apellido@forus.pe → Nombre Apellido."""
     local = (correo or "").split("@")[0]
     return " ".join(p.capitalize() for p in local.replace("_", ".").split(".") if p) or correo
 
 
-def barra_lateral(paginas: list | None = None, actual=None) -> None:
+def barra_lateral(paginas: list | None = None, actual=None, secciones: dict | None = None) -> None:
     """Barra lateral oscura (como Catálogo Control Center): usuario, menú, marcas y acciones.
     La corrida (marca, fechas y «Ejecutar») vive en Inicio: ``panel_corrida``."""
     from app.components.ui import logos_marcas
@@ -950,11 +990,15 @@ def barra_lateral(paginas: list | None = None, actual=None) -> None:
         elif st.button("Cerrar sesión", icon=":material/logout:", key="sb_salir"):
             cerrar_sesion()
 
-        html('<div class="sb-sec">Menú</div>', sidebar=True)
-        for i, pg in enumerate(paginas or []):
-            activa = actual is not None and pg.title == actual.title
-            with st.container(key=f"sb_nav_{i}" + ("_on" if activa else "")):
-                st.page_link(pg)
+        grupos = secciones or {"Menú": list(paginas or [])}
+        i = 0
+        for titulo, grupo in grupos.items():
+            html(f'<div class="sb-sec">{escape(titulo)}</div>', sidebar=True)
+            for pg in grupo:
+                activa = actual is not None and pg.title == actual.title
+                with st.container(key=f"sb_nav_{i}" + ("_on" if activa else "")):
+                    st.page_link(pg)
+                i += 1
 
         if ss.fuente == "bigquery" and ss.get("marcas"):
             html('<div class="sb-sec">Marca(s) de la corrida</div>', sidebar=True)

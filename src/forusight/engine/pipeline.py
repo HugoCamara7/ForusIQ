@@ -145,9 +145,12 @@ class EngineResult:
         return self.detalle.loc[self.detalle["cantidad"] > 0]
 
 
-def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams):
-    """Bloqueos por tienda y temporadas a reponer: necesidad 0 (manda sobre reponer lo vendido)."""
-    from forusight.data.bloqueos import fuera_de_surtido
+def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams, tiendas=None):
+    """Bloqueos por tienda y temporadas a reponer: necesidad 0 (manda sobre reponer lo vendido).
+
+    ``tiendas`` (con ``tienda_liquidadora``) aplica la reposición por jerarquía de las
+    liquidadoras y la temporada mínima de cada tienda (data.bloqueos.fuera_de_surtido)."""
+    from forusight.data.bloqueos import fuera_de_surtido, regla_temporadas
 
     temp = None
     if "temporada_comercial" in dim_producto:  # maestro de temporadas (data/temporadas.py)
@@ -161,6 +164,7 @@ def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams):
         bloqueos,
         params.surtido.temporadas_reponer,
         params.surtido.temporada_desde,
+        **regla_temporadas(params.surtido, tiendas, params.prioridad_tiendas.cadenas_liquidadoras),
     )
     if not (bloq.any() or fuera.any()):
         return sku
@@ -245,7 +249,7 @@ def ejecutar(
             how="left",
         )
     sku = calcular_necesidad(sku, mc, params)
-    sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params)
+    sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params, base.tiendas)
 
     disp = dict(zip(base.cd["sku"], base.cd["disponible"], strict=True))
     res = asignar(sku, disp, topes_por_tienda(base.tiendas, params), params)
