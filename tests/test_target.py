@@ -115,3 +115,52 @@ def test_curva_rota_da_bonificacion_de_prioridad():
     assert d.loc[("T1", "38"), "talla_core_faltante"]
     assert d.loc[("T1", "38"), "cantidad"] == 1
     assert d.loc[("T2", "38"), "cantidad"] == 0
+
+
+def _talla_con_stock_sin_venta(venta_semana_actual: float = 0.0):
+    """HP1-NEG: la 39 vende; la 38 tiene 1 par y no vendió nada en 12 semanas. El nivel del
+    reporte (stock mínimo 2) le pide subir a 2."""
+    import pandas as pd
+
+    from forusight.engine.pipeline import ejecutar
+    from tests.builders import CORTE, Escenario, params
+
+    e = Escenario()
+    s38, s39 = e.modelo("HP1-NEG", tallas=("38", "39"))
+    e.tienda("8", nombre="HP JOCKEY")
+    e.venta_constante("8", [s39], unidades=1)
+    e.exposicion("8", s38, range(1, 13))
+    if venta_semana_actual:
+        e.venta("8", s38, 0, venta_semana_actual)
+    e.stock_tienda("8", s38, 1)
+    e.stock_tienda("8", s39, 0)
+    e.stock_cd(s38, 20)
+    e.stock_cd(s39, 20)
+    inp = e.inputs()
+    inp.niveles_ref = pd.DataFrame(
+        {"tienda_id": ["8", "8"], "sku": [s38, s39], "nivel_ref": [2.0, 2.0], "rop_ref": [1.0, 1.0]}
+    )
+    p = params(calendario={"aplicar": False}, nivel_neo={"activo": False})
+    return ejecutar(inp, p, CORTE).detalle.set_index("sku"), s38, s39
+
+
+def test_talla_con_stock_y_sin_venta_no_se_repone():
+    """Crítico: una talla con stock que no vendió nada no se repone aunque el stock mínimo
+    (nivel 2, punto de reorden 1) lo pida. La talla que sí vende se repone igual."""
+    d, s38, s39 = _talla_con_stock_sin_venta()
+    assert d.loc[s38, "cantidad"] == 0
+    assert d.loc[s38, "motivo_codigo"] == "NO_CON_STOCK_SIN_VENTA"
+    assert "no vendió nada" in d.loc[s38, "motivo_texto"]
+    assert d.loc[s39, "cantidad"] > 0
+
+
+def test_talla_con_stock_que_vendio_esta_semana_si_se_repone():
+    """Vendió en la semana en curso (fuera de las 12 semanas cerradas): sí se repone."""
+    d, s38, _ = _talla_con_stock_sin_venta(venta_semana_actual=1)
+    assert d.loc[s38, "cantidad"] == 1
+
+
+def test_regla_sin_venta_se_puede_apagar():
+    from forusight.config.settings import EngineParams
+
+    assert EngineParams().reposicion_venta.no_reponer_con_stock_sin_venta

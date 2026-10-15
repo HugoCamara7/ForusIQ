@@ -33,6 +33,7 @@ NO_AFINIDAD_BAJA = "NO_AFINIDAD_BAJA"
 NO_INTRODUCCION = "NO_INTRODUCCION"
 NO_TALLA_NUNCA_TUVO = "NO_TALLA_NUNCA_TUVO"
 NO_MODELO_AGOTADO = "NO_MODELO_AGOTADO"
+NO_CON_STOCK_SIN_VENTA = "NO_CON_STOCK_SIN_VENTA"
 NO_SOBRESTOCK = "NO_SOBRESTOCK"
 NO_SIN_NECESIDAD = "NO_SIN_NECESIDAD"
 
@@ -248,6 +249,18 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
             piso = np.where(ref & ~pide, 0, piso)
     else:
         piso = np.zeros(len(out), dtype="int64")
+    # Talla con stock (o tránsito) que no vendió nada: no se repone, aunque el nivel o el stock
+    # mínimo pidan más (sin venta no hay nada que reponer; el stock que tiene alcanza).
+    sin_venta = np.zeros(len(out), dtype=bool)
+    if params.reposicion_venta.no_reponer_con_stock_sin_venta:
+        vendio = out["venta_12s"].fillna(0).gt(0)
+        for c in ("venta_semana_actual", "venta_desde_ruta", "venta_post_corte"):
+            if c in out:
+                vendio |= out[c].fillna(0).gt(0)
+        sin_venta = (pos.gt(0) & ~vendio).to_numpy() & (np.maximum(normal, piso) > 0)
+        normal = np.where(sin_venta, 0, normal)
+        piso = np.where(sin_venta, 0, piso)
+        bruta = np.where(sin_venta, 0, bruta)
     out["piso_venta"] = piso
     out["repone_venta_ruta"] = piso > normal
     out["necesidad_bruta"] = np.maximum(bruta, piso)
@@ -262,7 +275,13 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
             np.where(
                 talla_nueva,
                 NO_TALLA_NUNCA_TUVO,
-                np.where(agotado, NO_MODELO_AGOTADO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")),
+                np.where(
+                    sin_venta,
+                    NO_CON_STOCK_SIN_VENTA,
+                    np.where(
+                        agotado, NO_MODELO_AGOTADO, np.where(bruta == 0, NO_SIN_NECESIDAD, "")
+                    ),
+                ),
             ),
         ),
     )

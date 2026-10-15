@@ -124,6 +124,9 @@ def construir_base(
     # --- venta semanal en la ventana, sólo tiendas activas y SKUs conocidos
     v = ventas.loc[ventas["tienda_id"].isin(activas)].copy()
     v["rel"] = semana_relativa(v["semana_inicio"], fecha_corte)
+    # venta de la semana en curso (rel 0): no entra en el pronóstico, pero dice si la talla
+    # vendió hace poco (una talla con stock que no vendió nada no se repone)
+    venta_actual = v.loc[v["rel"] == 0].groupby(["tienda_id", "sku"], sort=False)["unidades"].sum()
     v = v.loc[(v["rel"] >= 1) & (v["rel"] <= n_sem)]
     # venta neta: las notas de crédito (semanas negativas) restan, como en el reporte
     v["bloque"] = bloque_semana(v["rel"], params)
@@ -180,6 +183,10 @@ def construir_base(
     sku[["venta_12s", "dias_12s", "venta_4s"]] = sku[["venta_12s", "dias_12s", "venta_4s"]].fillna(
         0
     )
+    sku = sku.merge(
+        venta_actual.rename("venta_semana_actual").reset_index(), on=KEY_SKU, how="left"
+    )
+    sku["venta_semana_actual"] = sku["venta_semana_actual"].fillna(0.0)
 
     # stock CD
     sku = sku.merge(

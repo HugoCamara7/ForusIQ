@@ -132,7 +132,8 @@ reposicion_venta:               # reponer lo vendido desde la ruta anterior del 
   reponer_venta_desde_ruta: true  # necesidad = max(nivel máximo − posición, venta desde la ruta anterior)
   dias_venta_diaria: 14
   solo_bajo_punto_reorden: true # como el reporte: lo vendido se repone cuando la talla llega a su punto de reorden
-  descontar_venta_post_corte: true  # resta la venta neta posterior al corte de stock_bi (fecha F = cierre de F) hasta ayer
+  descontar_venta_post_corte: true
+  no_reponer_con_stock_sin_venta: true   # talla con stock que no vendió nada (12 sem + semana en curso + desde la ruta): no se repone  # resta la venta neta posterior al corte de stock_bi (fecha F = cierre de F) hasta ayer
 
 surtido:                        # qué se puede reponer
   # VERANO/INVIERNO desde esta temporada en adelante (VERANO 2026, INVIERNO 2027, VERANO 2027…);

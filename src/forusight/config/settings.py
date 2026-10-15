@@ -284,6 +284,9 @@ class ReposicionVentaParams(_Section):
     #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden
     #: (el reporte nunca envía con posición > punto de reorden; 7 reportes, 12.106 u).
     solo_bajo_punto_reorden: bool = False
+    #: Una talla con stock (o tránsito) que no vendió nada (12 semanas, semana en curso, desde
+    #: la ruta anterior ni después del corte) no se repone, aunque el nivel/stock mínimo pida más.
+    no_reponer_con_stock_sin_venta: bool = True
 
 
 class ReferenciaParams(_Section):
