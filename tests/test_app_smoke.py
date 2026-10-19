@@ -274,3 +274,25 @@ def test_corrida_usa_la_temporada_minima_por_tienda(monkeypatch):
         "8": "INVIERNO 2026"
     }
     estado._MANT.clear()
+
+
+def test_corrida_usa_el_ultimo_reporte_de_colecciones(monkeypatch):
+    """Un reporte 1037 subido en «Temporadas por tienda» reemplaza al de config en la corrida."""
+    from app.components import estado
+
+    from forusight.config.settings import EngineParams
+    from forusight.data import colecciones as COL
+
+    estado._MANT.clear()
+    app = _app(monkeypatch)
+    app.switch_page("app/vistas/13_Temporadas_Tienda.py").run()
+    assert not app.exception, app.exception
+    tabla = COL.a_tabla({"TODO|CALZADO|KEDS": ["VERANO 2024"]})
+    estado._MANT[COL.RUTA] = COL.nuevos(tabla, "20/10/2026", "demo", "2026-10-20")
+    p = EngineParams.model_validate_json(
+        estado.con_temporadas_tienda(EngineParams().model_dump_json())
+    )
+    assert p.surtido.colecciones_activas == {"TODO|CALZADO|KEDS": ["VERANO 2024"]}
+    app.switch_page("app/vistas/13_Temporadas_Tienda.py").run()
+    assert not app.exception, app.exception
+    estado._MANT.clear()
