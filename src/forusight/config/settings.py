@@ -35,8 +35,9 @@ class AppSettings(BaseSettings):
     cd_por_marca: dict[str, str] = Field(default_factory=lambda: {"AZALEIA": "380"})
     cache_ttl_seconds: int = 3600
     params_path: Path = DEFAULT_PARAMS_PATH
-    #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas). PENDIENTE confirmar.
-    marcas: list[str] = Field(default_factory=lambda: ["AZALEIA"])
+    #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas): las que salen en la
+    #: corrida diaria y las elegidas por defecto en la pantalla. [forusight] marcas manda.
+    marcas: list[str] = Field(default_factory=lambda: ["HUSH PUPPIES", "AZALEIA"])
     #: Códigos de tienda/bodega que nunca reciben (bodegas eComm, outlets…). PENDIENTE (j).
     tiendas_excluidas: list[str] = Field(default_factory=list)
     #: Semanas de historia a leer (12 de análisis + 1 de margen).
@@ -284,6 +285,9 @@ class ReposicionVentaParams(_Section):
     #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden
     #: (el reporte nunca envía con posición > punto de reorden; 7 reportes, 12.106 u).
     solo_bajo_punto_reorden: bool = False
+    #: Marcas nuevas sin stock mínimo ni planificación (p. ej. AZALEIA): lo vendido desde la
+    #: ruta anterior se repone siempre, aunque la talla no llegue a su punto de reorden.
+    marcas_reponer_vendido: list[str] = Field(default_factory=lambda: ["AZALEIA"])
     #: Una talla con stock (o tránsito) que no vendió nada (12 semanas, semana en curso, desde
     #: la ruta anterior ni después del corte) no se repone, aunque el nivel/stock mínimo pida más.
     no_reponer_con_stock_sin_venta: bool = True

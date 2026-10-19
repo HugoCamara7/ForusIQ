@@ -1110,7 +1110,8 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
             "cod_modelo": "AZ100",
             "cod_color": "NEG",
             "talla": ["35", "36", "37", "38"],
-            "marca": "AZALEIA",
+            # la venta no siempre trae la marca: igual son de AZALEIA y salen de la 380
+            "marca": ["AZALEIA", "AZALEIA", None, "AZALEA"],
             "categoria": "CALZADO",
             "genero": "MUJER",
             "descripcion": "SANDALIA AZ",
@@ -1129,7 +1130,7 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
     fake.datos["stock_foto"] = pd.DataFrame(
         [
             {"tienda_cod": tc, "id_producto": s, "tienda_nombre": nom, "stock_tienda": st}
-            | {"stock_bodega": sb}
+            | {"stock_bodega": sb, "disponible": 0.0}  # la 380 sin «disponible» cargado
             for s in skus
             for tc, nom, st, sb in (
                 ("380", "1-380", 0.0, 20.0),
@@ -1157,6 +1158,9 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
     assert set(inp.dim_producto["sku"]) == set(descritos)
     assert set(inp.dim_producto["modelo_color_id"]) == {"AZ100-NEG"}
     assert inp.stock_cd["fisico"].eq(20).all()  # bodega 380
+    assert inp.stock_cd["cd_stock_disponible"].eq(20).all()  # físico menos reservas
+    assert set(inp.dim_producto["marca"]) == {"AZALEIA"}
+    assert set(inp.dim_producto["cd_origen"]) == {"380"}
     consultas = {c[0]: c for c in fake.consultas}
     for nombre in ("stock_foto", "ventas", "venta_diaria"):
         assert "UNNEST(@skus_sin_arti)" in consultas[nombre][1], nombre
@@ -1166,7 +1170,48 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
     assert pv_p["bodegas_marca"] == ["380"] and pv_p["patrones_tienda"] == ["%AZALEIA%"]
     notas = " ".join(repo.ultimo_diagnostico.notas)
     assert "5 productos de AZALEIA" in notas and "nunca se vendieron" in notas
-    assert "5590000" in notas
-    r = ejecutar(inp, params(), CORTE, run_id="R")
+    assert "5590000" in notas and "Bodega 380: «disponible» en 0" in notas
+    r = ejecutar(inp, params(stock_cd={"componentes": "disponible"}), CORTE, run_id="R")
     env = r.detalle.loc[r.detalle["cantidad"] > 0]
     assert len(env) and set(env["tienda_id"]) == {"501"}
+
+
+def test_corrida_hush_puppies_y_azaleia_juntas():
+    """HUSH PUPPIES (de ARTI, CD 320) y AZALEIA (fuera de ARTI, bodega 380) en una corrida:
+    el producto que la venta trae sin marca pero vino por la 380 es AZALEIA y sale de la 380."""
+
+    class Fake(_FakeBQ):
+        def columnas(self, tabla):
+            if tabla == VENTAS_T:
+                return pd.DataFrame({"column_name": F.COLUMNAS_CONOCIDAS[F.TABLA_VENTA_RETAIL]})
+            return super().columnas(tabla)
+
+    fake = Fake()
+    fake.datos["productos_venta"] = pd.DataFrame(
+        {
+            "id_producto": ["5598435", "5598436"],
+            "cod_modelo": "AZ100",
+            "cod_color": "NEG",
+            "talla": ["35", "36"],
+            "marca": ["AZALEIA", None],
+        }
+    )
+    foto = fake.datos["stock_foto"]
+    az = pd.DataFrame(
+        {
+            "tienda_cod": "380",
+            "id_producto": ["5598435", "5598436"],
+            "tienda_nombre": "1-380",
+            "stock_tienda": 0.0,
+            "stock_bodega": 9.0,
+        }
+    )
+    fake.datos["stock_foto"] = pd.concat([foto, az], ignore_index=True)
+    inp = FuentesRepository(client=fake, secrets=SECRETS).cargar_entradas(
+        CORTE, marcas=["HUSH PUPPIES", "AZALEIA"]
+    )
+    dp = inp.dim_producto.set_index("sku")
+    assert dp.loc["5598436", "marca"] == "AZALEIA" and dp.loc["5598436", "cd_origen"] == "380"
+    assert set(dp.loc[dp["marca"].eq("HUSH PUPPIES"), "cd_origen"]) == {"320"}
+    cd = inp.stock_cd.set_index("sku")
+    assert cd.loc["5598436", "fisico"] == 9 and cd.loc["HP1360", "fisico"] == 8
