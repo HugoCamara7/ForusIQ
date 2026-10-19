@@ -20,7 +20,24 @@ from forusight.data.corridas import hoy_lima
 
 ss = st.session_state
 base, excepciones = rutas_vigentes()
-tiendas = RU.tiendas_por_mall(base)
+
+
+def _tiendas_corrida() -> pd.DataFrame | None:
+    """Tiendas de la última corrida que aún no están en el catálogo (p. ej. AZALEIA)."""
+    res = ss.get("resultado")
+    t = getattr(res, "tiendas", None) if res is not None else None
+    if t is None or not len(t):
+        return None
+    return pd.DataFrame(
+        {
+            "codigo_tienda": t["tienda_id"].astype(str),
+            "nombre_tienda": t.get("nombre", t["tienda_id"]).astype(str),
+            **{c: t[c].astype(str) for c in ("centro_comercial", "zona") if c in t},
+        }
+    )
+
+
+tiendas = RU.tiendas_por_mall(base, _tiendas_corrida())
 hoy = hoy_lima()
 ss.setdefault("rt_fecha", RU.fechas_semana(hoy)[0].date())
 editable = puede("aprobar")

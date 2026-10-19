@@ -160,3 +160,20 @@ def test_tienda_cerrada_no_aparece_ni_recibe():
 
     assert "39" in CAD.tiendas_cerradas()
     assert "RKF SAN BORJA" not in set(RU.tiendas_por_mall(BASE)["nombre_tienda"])
+
+
+def test_azaleia_primavera_va_con_angamos_y_chacarilla():
+    """Las tiendas AZALEIA reponen por ruta como las demás: Primavera sale el martes (el día de
+    Angamos y Chacarilla) y Jockey LU/MI/VI. Las nuevas (fuera del catálogo) se ven en Rutas."""
+    t = pd.DataFrame(
+        {"tienda_id": ["901", "902"], "nombre": ["AZALEIA PRIMAVERA", "AZALEIA JOCKEY"]}
+    )
+    lunes = CAL.aplicar(t, "2026-10-19", EngineParams(), None, BASE, RU.excepciones_vacio())
+    martes = CAL.aplicar(t, "2026-10-20", EngineParams(), None, BASE, RU.excepciones_vacio())
+    assert lunes["mall"].tolist() == ["Primavera", "Jockey Plaza"]
+    assert lunes["dias_reposicion"].tolist() == ["MA", "LU,MI,VI"]
+    assert lunes["recibe_hoy"].tolist() == [False, True]
+    assert martes["recibe_hoy"].tolist() == [True, False]
+    extra = pd.DataFrame({"codigo_tienda": ["901"], "nombre_tienda": ["AZALEIA PRIMAVERA"]})
+    r = RU.tiendas_por_mall(BASE, extra).set_index("codigo_tienda")
+    assert r.loc["901", "mall"] == "Primavera"
