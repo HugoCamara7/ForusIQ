@@ -83,6 +83,11 @@ ALIAS_VENTAS: dict[str, list[str]] = {
     "cod_color": ["cod_color", "codigo_color", "color_cod"],
     "talla": ["talla", "talla_numero", "tallanumero", "size", "cod_talla", "talla_desc"],
     "marca": ["marca", "desc_marca", "nombre_marca"],
+    # clase, género y color (ft_pe_venta_retail): describen los productos que aún no están en
+    # ARTI (p. ej. AZALEIA), junto con cod_modelo, cod_color y talla
+    "categoria": ["clase", "desc_clase"],
+    "genero": ["genero", "desc_genero"],
+    "color": ["color", "desc_color", "nombre_color"],
     # nombre del modelo (ft_pe_venta_retail · modelo): respaldo si ARTI no trae descripción
     "nombre_modelo": ["modelo", "nombre_modelo", "desc_modelo", "descripcion_modelo"],
     # tienda y cadena (ft_pe_venta_retail · nombre_tienda, cadena_sitio): identifican las

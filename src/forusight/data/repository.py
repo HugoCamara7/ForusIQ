@@ -180,6 +180,8 @@ class BigQueryRepository:
 
 #: Días máximos entre la última venta y el corte de stock para que el sugerido tenga sentido.
 DIAS_MAX_SIN_VENTA = 7
+#: Días de venta en los que se buscan productos de la marca que no están en ARTI.
+DIAS_PRODUCTOS_VENTA = 180
 
 
 def corte_por_venta(ventas: pd.DataFrame, foto: dt.date, diag) -> dt.date | None:
@@ -399,11 +401,6 @@ class FuentesRepository(BigQueryRepository):
             return df
 
         arti = q("arti", F.sql_arti(tablas["arti"], m_a, con_marcas))
-        if arti.empty:
-            raise ValueError(
-                f"ARTI no devolvió productos para las marcas {marcas}. Elige la "
-                "marca en Inicio (se listan las que existen en ARTI)."
-            )
         cortes = q("cortes", F.sql_cortes(tablas["stock"], m_s))
         # Último corte = cierre de ayer de este año (el del año pasado queda fuera).
         foto = pd.to_datetime(cortes["fecha_corte"]).max().date() if len(cortes) else None
@@ -413,12 +410,47 @@ class FuentesRepository(BigQueryRepository):
                 + (f" (el último es {foto:%d/%m/%Y})." if foto else ".")
             )
         diag.fecha_foto = foto.isoformat()
+        # Productos de la marca que se venden pero no están en ARTI de BigQuery (p. ej.
+        # AZALEIA, cuyos códigos nuevos aún no cargan en ARTI): se describen con la venta.
+        base["skus_sin_arti"] = []
+        sql_pv = F.sql_productos_venta(tablas["ventas"], m_v, tablas["arti"], m_a)
+        if con_marcas and sql_pv:
+            try:
+                pv = q(
+                    "productos_venta",
+                    sql_pv,
+                    {"desde_maestro": foto - dt.timedelta(days=DIAS_PRODUCTOS_VENTA)},
+                )
+            except Exception as exc:
+                pv = None
+                diag.notas.append(
+                    f"No se pudieron leer los productos de la venta: {explicar_error(exc)}"
+                )
+            if pv is not None and len(pv):
+                pv = pv.dropna(subset=["id_producto"])
+                base["skus_sin_arti"] = sorted(set(pv["id_producto"].astype(str)))
+                arti = pd.concat([arti, pv], ignore_index=True)
+                diag.filas["productos_sin_arti"] = len(base["skus_sin_arti"])
+                diag.notas.append(
+                    f"{len(base['skus_sin_arti']):,} productos de {', '.join(marcas)} se "
+                    "venden pero no están en ARTI de BigQuery: se tomaron de la venta "
+                    "(modelo, color, talla, clase). Ejemplos: "
+                    + ", ".join(base["skus_sin_arti"][:4])
+                    + "."
+                )
+        if arti.empty:
+            raise ValueError(
+                f"ARTI no devolvió productos para las marcas {marcas} ni hay venta de esa marca "
+                "en los últimos 180 días. Elige la marca en Inicio (se listan las que existen "
+                "en ARTI)."
+            )
+        extra = bool(base["skus_sin_arti"])
         stock = q(
             "stock_foto",
-            F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas),
+            F.sql_stock_foto(tablas["stock"], m_s, tablas["arti"], m_a, con_marcas, extra),
             {"fecha_foto": foto},
         )
-        sql_v = F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas)
+        sql_v = F.sql_ventas(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra)
         ventas = q("ventas", sql_v)
         corte_v = corte_por_venta(ventas, foto, diag)
         if corte_v is not None:  # venta atrasada: 12 semanas completas hasta la última venta
@@ -518,7 +550,9 @@ class FuentesRepository(BigQueryRepository):
             try:
                 nm = q(
                     "nombres_modelo",
-                    F.sql_nombres_modelo(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                    F.sql_nombres_modelo(
+                        tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra
+                    ),
                 )
                 nombres = pd.Series(
                     F.texto(nm["nombre_modelo"]).str.upper().to_numpy(),
@@ -537,7 +571,9 @@ class FuentesRepository(BigQueryRepository):
                 dias = 14
                 vd = q(
                     "venta_diaria",
-                    F.sql_venta_diaria(tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas),
+                    F.sql_venta_diaria(
+                        tablas["ventas"], m_v, tablas["arti"], m_a, con_marcas, extra
+                    ),
                     {"desde_diaria": foto - dt.timedelta(days=dias)},
                 )
                 entradas.venta_diaria = F.a_venta_diaria(
@@ -550,7 +586,7 @@ class FuentesRepository(BigQueryRepository):
         # Pedidos (cabecera + detalle): el tránsito hacia cada tienda sale de aquí.
         if tablas["pedidos"] or tablas["pedidos_detalle"]:
             entradas.pedidos = self._leer_pedidos(
-                q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag
+                q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag, extra
             )
         else:
             diag.notas.append(
@@ -615,7 +651,9 @@ class FuentesRepository(BigQueryRepository):
         partes = [p for p in partes if p]
         return (" DIAGNÓSTICO: " + " ".join(partes)) if partes else ""
 
-    def _leer_pedidos(self, q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag):
+    def _leer_pedidos(
+        self, q, tablas, mapas, m_a, con_marcas, foto, entradas, excl, diag, extra=False
+    ):
         """Pedidos por tienda destino × SKU × estado × clasificación (None si no se pudo)."""
         from forusight.data import fuentes as F
         from forusight.data import mapeo
@@ -649,6 +687,7 @@ class FuentesRepository(BigQueryRepository):
                     tablas["arti"],
                     m_a,
                     con_marcas,
+                    extra,
                 ),
                 {"fecha_foto": foto},
             )
