@@ -35,8 +35,9 @@ class AppSettings(BaseSettings):
     cd_por_marca: dict[str, str] = Field(default_factory=lambda: {"AZALEIA": "380"})
     cache_ttl_seconds: int = 3600
     params_path: Path = DEFAULT_PARAMS_PATH
-    #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas). PENDIENTE confirmar.
-    marcas: list[str] = Field(default_factory=lambda: ["AZALEIA"])
+    #: Marcas a distribuir (valor de la marca en ARTI, en mayúsculas): las que salen en la
+    #: corrida diaria y las elegidas por defecto en la pantalla. [forusight] marcas manda.
+    marcas: list[str] = Field(default_factory=lambda: ["HUSH PUPPIES", "AZALEIA"])
     #: Códigos de tienda/bodega que nunca reciben (bodegas eComm, outlets…). PENDIENTE (j).
     tiendas_excluidas: list[str] = Field(default_factory=list)
     #: Semanas de historia a leer (12 de análisis + 1 de margen).

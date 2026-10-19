@@ -447,8 +447,20 @@ class FuentesRepository(BigQueryRepository):
                 descrito = pv[["cod_modelo", "cod_color", "talla"]].notna().all(axis=1)
                 sin_desc = sorted(set(pv.loc[~descrito, "id_producto"].astype(str)))
                 pv = pv.loc[descrito]
-                if len(marcas) == 1:  # son de la marca pedida: así salen de su bodega (380)
-                    pv = pv.assign(marca=marcas[0])
+                # Son de una marca pedida: así salen de su bodega (380). Si la venta no trae
+                # una marca pedida, el producto vino por las tiendas o la bodega de la marca
+                # con bodega propia (AZALEIA), o es de la única marca pedida.
+                propias = [
+                    m
+                    for m in marcas
+                    if m in {str(k).strip().upper() for k in self.settings.cd_por_marca or {}}
+                ]
+                destino = marcas[0] if len(marcas) == 1 else (propias[0] if propias else None)
+                marca_v = pv["marca"].astype("string").str.strip().str.upper()
+                otra = ~marca_v.isin(marcas).fillna(False)
+                pv = pv.assign(marca=marca_v)
+                if destino:
+                    pv.loc[otra.to_numpy(), "marca"] = destino
                 base["skus_sin_arti"] = sorted(set(pv["id_producto"].astype(str)))
                 arti = pd.concat([arti, pv], ignore_index=True)
                 diag.filas["productos_sin_arti"] = len(base["skus_sin_arti"])
