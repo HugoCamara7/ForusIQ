@@ -410,38 +410,66 @@ class FuentesRepository(BigQueryRepository):
                 + (f" (el último es {foto:%d/%m/%Y})." if foto else ".")
             )
         diag.fecha_foto = foto.isoformat()
-        # Productos de la marca que se venden pero no están en ARTI de BigQuery (p. ej.
-        # AZALEIA, cuyos códigos nuevos aún no cargan en ARTI): se describen con la venta.
+        # Productos de la marca que no están en ARTI de BigQuery (p. ej. AZALEIA, cuyos
+        # códigos nuevos aún no cargan en ARTI): los que vende la marca, los que venden y tienen
+        # en stock sus tiendas (nombre «AZALEIA …») y los de su bodega (380), descritos con la
+        # venta (modelo, color, talla, clase).
         base["skus_sin_arti"] = []
-        sql_pv = F.sql_productos_venta(tablas["ventas"], m_v, tablas["arti"], m_a)
+        sql_pv = F.sql_productos_venta(
+            tablas["ventas"], m_v, tablas["arti"], m_a, tablas["stock"], m_s
+        )
         if con_marcas and sql_pv:
+            bodegas_marca = sorted(
+                {
+                    F.codigo_tienda(c)
+                    for m, c in (self.settings.cd_por_marca or {}).items()
+                    if str(m).strip().upper() in marcas
+                }
+            )
             try:
                 pv = q(
                     "productos_venta",
                     sql_pv,
-                    {"desde_maestro": foto - dt.timedelta(days=DIAS_PRODUCTOS_VENTA)},
+                    {
+                        "desde_maestro": foto - dt.timedelta(days=DIAS_PRODUCTOS_VENTA),
+                        "fecha_foto": foto,
+                        "bodegas_marca": bodegas_marca,
+                        "patrones_tienda": [f"%{m}%" for m in marcas],
+                    },
                 )
             except Exception as exc:
                 pv = None
                 diag.notas.append(
-                    f"No se pudieron leer los productos de la venta: {explicar_error(exc)}"
+                    f"No se pudieron leer los productos que no están en ARTI: {explicar_error(exc)}"
                 )
             if pv is not None and len(pv):
                 pv = pv.dropna(subset=["id_producto"])
+                descrito = pv[["cod_modelo", "cod_color", "talla"]].notna().all(axis=1)
+                sin_desc = sorted(set(pv.loc[~descrito, "id_producto"].astype(str)))
+                pv = pv.loc[descrito]
                 base["skus_sin_arti"] = sorted(set(pv["id_producto"].astype(str)))
                 arti = pd.concat([arti, pv], ignore_index=True)
                 diag.filas["productos_sin_arti"] = len(base["skus_sin_arti"])
-                diag.notas.append(
-                    f"{len(base['skus_sin_arti']):,} productos de {', '.join(marcas)} se "
-                    "venden pero no están en ARTI de BigQuery: se tomaron de la venta "
-                    "(modelo, color, talla, clase). Ejemplos: "
-                    + ", ".join(base["skus_sin_arti"][:4])
-                    + "."
-                )
+                diag.filas["productos_sin_arti_sin_describir"] = len(sin_desc)
+                nombres = ", ".join(marcas)
+                if base["skus_sin_arti"]:
+                    diag.notas.append(
+                        f"{len(base['skus_sin_arti']):,} productos de {nombres} (venta, stock de "
+                        "sus tiendas y de su bodega) no están en ARTI de BigQuery: se tomaron "
+                        "de la venta (modelo, color, talla, clase). Ejemplos: "
+                        + ", ".join(base["skus_sin_arti"][:4])
+                        + "."
+                    )
+                if sin_desc:
+                    diag.notas.append(
+                        f"{len(sin_desc):,} productos con stock de {nombres} no están en ARTI "
+                        "y nunca se vendieron en 180 días: sin modelo, color ni talla no "
+                        "entran a la corrida. Ejemplos: " + ", ".join(sin_desc[:4]) + "."
+                    )
         if arti.empty:
             raise ValueError(
-                f"ARTI no devolvió productos para las marcas {marcas} ni hay venta de esa marca "
-                "en los últimos 180 días. Elige la marca en Inicio (se listan las que existen "
+                f"ARTI no devolvió productos para las marcas {marcas} ni hay venta ni stock "
+                "de esa marca en sus tiendas o su bodega. Elige la marca en Inicio (se listan las que existen "
                 "en ARTI)."
             )
         extra = bool(base["skus_sin_arti"])

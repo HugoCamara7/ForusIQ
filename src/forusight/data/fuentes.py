@@ -294,30 +294,72 @@ CAMPOS_PRODUCTO_VENTA = ("cod_modelo", "cod_color", "talla", "marca", "categoria
 
 
 def sql_productos_venta(
-    tabla: str, mapa: Mapping[str, str], arti: str, mapa_arti: Mapping[str, str]
+    tabla: str,
+    mapa: Mapping[str, str],
+    arti: str,
+    mapa_arti: Mapping[str, str],
+    stock: str | None = None,
+    mapa_stock: Mapping[str, str] | None = None,
 ) -> str | None:
-    """Productos de las marcas pedidas que se venden pero NO están en ARTI (p. ej. AZALEIA,
-    marca nueva cuyos códigos aún no cargan en ARTI), con modelo, color, talla, marca, clase y
-    género de la propia venta. None si la venta no trae esos campos."""
+    """Productos de las marcas pedidas que NO están en ARTI (p. ej. AZALEIA, marca nueva cuyos
+    códigos aún no cargan en ARTI de BigQuery). Son de la marca si:
+
+    - se vendieron con esa marca (venta, desde @desde_maestro);
+    - se vendieron en una tienda de la marca (nombre o cadena LIKE @patrones_tienda, p. ej.
+      «%AZALEIA%»), aunque la venta no traiga la marca;
+    - tienen stock en la foto (@fecha_foto) en la bodega de la marca (@bodegas_marca, p. ej.
+      380) o en una tienda de la marca (nombre LIKE @patrones_tienda).
+
+    Modelo, color, talla, clase y género salen de la venta (de cualquier tienda). Un producto
+    que nunca se vendió viene con esos campos vacíos (no se puede describir). None si la venta
+    no trae los campos para describirlos."""
     if not {"id_producto", "marca", "cod_modelo", "cod_color", "talla"} <= set(mapa):
         return None
     f = _c(mapa, "fecha")
-    sku = sku_sql(_c(mapa, "id_producto"))
-    sel = [f"{sku} AS id_producto"]
-    sel += [
-        f"ANY_VALUE(TRIM(CAST({_c(mapa, c)} AS STRING))) AS {c}"
-        for c in CAMPOS_PRODUCTO_VENTA
+    attrs = [c for c in CAMPOS_PRODUCTO_VENTA if c in mapa]
+    if "nombre_modelo" in mapa:
+        attrs.append("nombre_modelo")
+    if "color" in mapa:
+        attrs.append("color")
+    nombre = [
+        f"IFNULL(CAST({_c(mapa, c)} AS STRING), '')"
+        for c in ("tienda_nombre", "cadena")
         if c in mapa
     ]
-    if "nombre_modelo" in mapa:
-        sel.append(f"ANY_VALUE(TRIM(CAST({_c(mapa, 'nombre_modelo')} AS STRING))) AS descripcion")
-    if "color" in mapa:
-        sel.append(f"ANY_VALUE(TRIM(CAST({_c(mapa, 'color')} AS STRING))) AS color")
+    tienda_txt = "UPPER(CONCAT(" + ", ' ', ".join(nombre) + "))" if nombre else "''"
+    de_tienda = "EXISTS(SELECT 1 FROM UNNEST(@patrones_tienda) p WHERE {} LIKE p)"
+    v = (
+        f"SELECT {sku_sql(_c(mapa, 'id_producto'))} AS id_producto, "
+        + "".join(f"TRIM(CAST({_c(mapa, c)} AS STRING)) AS {c}, " for c in attrs)
+        + f"{_marca_sql(mapa)} AS marca_venta, {tienda_txt} AS tienda_txt\n"
+        f"  FROM {_t(tabla)} WHERE DATE({f}) >= @desde_maestro AND DATE({f}) < @hasta_foto "
+        f"AND {_c(mapa, 'id_producto')} IS NOT NULL"
+    )
+    cand = [
+        "SELECT id_producto FROM v WHERE marca_venta IN UNNEST(@marcas) OR "
+        + de_tienda.format("tienda_txt")
+    ]
+    if stock and mapa_stock and {"fecha", "tienda_cod", "id_producto"} <= set(mapa_stock):
+        cond = [
+            f"REGEXP_REPLACE({tienda_sql(mapa_stock)}, r'^0+([0-9])', r'\\1') IN UNNEST(@bodegas_marca)"
+        ]
+        if "tienda_nombre" in mapa_stock:
+            cond.append(
+                de_tienda.format(f"UPPER(CAST({_c(mapa_stock, 'tienda_nombre')} AS STRING))")
+            )
+        cand.append(
+            f"SELECT {sku_sql(_c(mapa_stock, 'id_producto'))} FROM {_t(stock)} "
+            f"WHERE DATE({_c(mapa_stock, 'fecha')}) = @fecha_foto AND ({' OR '.join(cond)})"
+        )
+    sel = ["c.id_producto"] + [
+        f"ANY_VALUE(v.{c}) AS {'descripcion' if c == 'nombre_modelo' else c}" for c in attrs
+    ]
     return (
-        f"SELECT {', '.join(sel)}\nFROM {_t(tabla)}\n"
-        f"WHERE DATE({f}) >= @desde_maestro AND DATE({f}) < @hasta_foto "
-        f"AND {_marca_sql(mapa)} IN UNNEST(@marcas) AND {_c(mapa, 'id_producto')} IS NOT NULL "
-        f"AND {sku} NOT IN (SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} FROM {_t(arti)} "
+        f"WITH v AS ({v}),\n"
+        f"c AS ({' UNION DISTINCT '.join(cand)})\n"
+        f"SELECT {', '.join(sel)}\nFROM c LEFT JOIN v USING (id_producto)\n"
+        f"WHERE c.id_producto IS NOT NULL AND c.id_producto NOT IN "
+        f"(SELECT {sku_sql(_c(mapa_arti, 'id_producto'))} FROM {_t(arti)} "
         f"WHERE {_c(mapa_arti, 'id_producto')} IS NOT NULL)\nGROUP BY 1"
     )
 

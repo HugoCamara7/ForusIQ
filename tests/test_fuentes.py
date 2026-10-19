@@ -1117,6 +1117,15 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
             "color": "NEGRO",
         }
     )
+    # talla 39: sólo stock en la tienda (vendida en otra); 5590000: sólo en la 380, sin venta
+    fake.datos["productos_venta"] = pd.concat(
+        [
+            fake.datos["productos_venta"],
+            fake.datos["productos_venta"].iloc[[0]].assign(id_producto="5598439", talla="39"),
+            pd.DataFrame({"id_producto": ["5590000"]}),
+        ],
+        ignore_index=True,
+    )
     fake.datos["stock_foto"] = pd.DataFrame(
         [
             {"tienda_cod": tc, "id_producto": s, "tienda_nombre": nom, "stock_tienda": st}
@@ -1144,15 +1153,20 @@ def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
     )
     repo = FuentesRepository(client=fake, secrets=SECRETS)
     inp = repo.cargar_entradas(CORTE, marcas=["AZALEIA"])
-    assert set(inp.dim_producto["sku"]) == set(skus)
+    descritos = [*skus, "5598439"]
+    assert set(inp.dim_producto["sku"]) == set(descritos)
     assert set(inp.dim_producto["modelo_color_id"]) == {"AZ100-NEG"}
     assert inp.stock_cd["fisico"].eq(20).all()  # bodega 380
     consultas = {c[0]: c for c in fake.consultas}
     for nombre in ("stock_foto", "ventas", "venta_diaria"):
         assert "UNNEST(@skus_sin_arti)" in consultas[nombre][1], nombre
-        assert consultas[nombre][2]["skus_sin_arti"] == sorted(skus), nombre
-    assert "NOT IN (SELECT" in consultas["productos_venta"][1]
-    assert any("no están en ARTI" in n for n in repo.ultimo_diagnostico.notas)
+        assert consultas[nombre][2]["skus_sin_arti"] == sorted(descritos), nombre
+    pv_sql, pv_p = consultas["productos_venta"][1:]
+    assert "NOT IN (SELECT" in pv_sql and "UNNEST(@bodegas_marca)" in pv_sql
+    assert pv_p["bodegas_marca"] == ["380"] and pv_p["patrones_tienda"] == ["%AZALEIA%"]
+    notas = " ".join(repo.ultimo_diagnostico.notas)
+    assert "5 productos de AZALEIA" in notas and "nunca se vendieron" in notas
+    assert "5590000" in notas
     r = ejecutar(inp, params(), CORTE, run_id="R")
     env = r.detalle.loc[r.detalle["cantidad"] > 0]
     assert len(env) and set(env["tienda_id"]) == {"501"}

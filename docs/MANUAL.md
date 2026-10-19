@@ -30,7 +30,7 @@ del stock), así que se usa **el primer archivo del día**.
 | Stock de tiendas y del CD | `stock_bi` (último corte) | Stock con fecha de corte 12/10 = stock al cierre del 12/10. |
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
-| Producto | ARTI (BigQuery) | SKU, modelo, color, talla, marca, clase, género. Un producto de la marca que se vende (últimos 180 días) pero aún no está en ARTI (p. ej. códigos nuevos de AZALEIA) se toma de la venta (`ft_pe_venta_retail`: modelo, color, talla, clase) y se repone igual; Inicio lo avisa en las notas. |
+| Producto | ARTI (BigQuery) | SKU, modelo, color, talla, marca, clase, género. Un producto de la marca que aún no está en ARTI (p. ej. códigos nuevos de AZALEIA) entra igual si se vendió con esa marca, si se vendió o tiene stock en una tienda de la marca (nombre «AZALEIA …») o si tiene stock en su bodega (380). Modelo, color, talla y clase se toman de la venta (`ft_pe_venta_retail`, 180 días); un producto que nunca se vendió no se puede describir y queda fuera. Inicio lo avisa en las notas. |
 | Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
 | Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
 | Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
