@@ -1081,3 +1081,92 @@ def test_venta_de_la_semana_en_curso_hasta_el_cierre_de_ayer():
     _, sql, p = next(c for c in fake.consultas if c[0] == "ventas")
     assert "< @hasta_venta" in sql
     assert p["hasta_venta"] == hoy_lima().date()
+
+
+def test_mapeo_de_venta_retail_describe_productos():
+    m = M.mapear(F.COLUMNAS_CONOCIDAS[F.TABLA_VENTA_RETAIL], M.ALIAS_VENTAS)
+    assert m["cod_modelo"] == "cod_modelo" and m["cod_color"] == "cod_color"
+    assert m["color"] == "color" and m["categoria"] == "clase" and m["genero"] == "genero"
+    assert m["talla"] == "talla" and m["nombre_modelo"] == "modelo"
+
+
+def test_azaleia_sin_codigos_en_arti_repone_con_la_venta():
+    """ARTI de BigQuery no trae los códigos nuevos de AZALEIA (sí su bodega 380 y la venta de
+    sus tiendas, abiertas hace 2 semanas): los productos se toman de la venta y se repone lo
+    vendido. Antes: «Ninguna tienda puede recibir AZALEIA … NINGUNO está en ARTI»."""
+
+    class Fake(_FakeBQ):
+        def columnas(self, tabla):
+            if tabla == VENTAS_T:
+                return pd.DataFrame({"column_name": F.COLUMNAS_CONOCIDAS[F.TABLA_VENTA_RETAIL]})
+            return super().columnas(tabla)
+
+    fake = Fake()
+    skus = [f"55984{t}" for t in ("35", "36", "37", "38")]
+    fake.datos["arti"] = fake.datos["arti"].iloc[0:0]  # ARTI sin AZALEIA
+    fake.datos["productos_venta"] = pd.DataFrame(
+        {
+            "id_producto": skus,
+            "cod_modelo": "AZ100",
+            "cod_color": "NEG",
+            "talla": ["35", "36", "37", "38"],
+            "marca": "AZALEIA",
+            "categoria": "CALZADO",
+            "genero": "MUJER",
+            "descripcion": "SANDALIA AZ",
+            "color": "NEGRO",
+        }
+    )
+    # talla 39: sólo stock en la tienda (vendida en otra); 5590000: sólo en la 380, sin venta
+    fake.datos["productos_venta"] = pd.concat(
+        [
+            fake.datos["productos_venta"],
+            fake.datos["productos_venta"].iloc[[0]].assign(id_producto="5598439", talla="39"),
+            pd.DataFrame({"id_producto": ["5590000"]}),
+        ],
+        ignore_index=True,
+    )
+    fake.datos["stock_foto"] = pd.DataFrame(
+        [
+            {"tienda_cod": tc, "id_producto": s, "tienda_nombre": nom, "stock_tienda": st}
+            | {"stock_bodega": sb}
+            for s in skus
+            for tc, nom, st, sb in (
+                ("380", "1-380", 0.0, 20.0),
+                ("501", "AZALEIA JOCKEY", 0.0, 0.0),
+            )
+        ]
+    )
+    semanas = [CORTE - pd.Timedelta(weeks=k) for k in (0, 1)]  # abrió hace 2 semanas
+    fake.datos["ventas"] = pd.DataFrame(
+        [
+            {"semana_inicio": w.date(), "tienda_cod": "501", "id_producto": s, "unidades": 2.0}
+            for w in semanas
+            for s in skus
+        ]
+    )
+    fake.datos["venta_diaria"] = fake.datos["venta_diaria"].assign(
+        tienda_cod="501", id_producto=skus[0]
+    )
+    fake.datos["tiendas_venta"] = pd.DataFrame(
+        {"tienda_cod": ["501"], "tienda_nombre": ["AZALEIA JOCKEY"], "cadena": ["AZALEIA"]}
+    )
+    repo = FuentesRepository(client=fake, secrets=SECRETS)
+    inp = repo.cargar_entradas(CORTE, marcas=["AZALEIA"])
+    descritos = [*skus, "5598439"]
+    assert set(inp.dim_producto["sku"]) == set(descritos)
+    assert set(inp.dim_producto["modelo_color_id"]) == {"AZ100-NEG"}
+    assert inp.stock_cd["fisico"].eq(20).all()  # bodega 380
+    consultas = {c[0]: c for c in fake.consultas}
+    for nombre in ("stock_foto", "ventas", "venta_diaria"):
+        assert "UNNEST(@skus_sin_arti)" in consultas[nombre][1], nombre
+        assert consultas[nombre][2]["skus_sin_arti"] == sorted(descritos), nombre
+    pv_sql, pv_p = consultas["productos_venta"][1:]
+    assert "NOT IN (SELECT" in pv_sql and "UNNEST(@bodegas_marca)" in pv_sql
+    assert pv_p["bodegas_marca"] == ["380"] and pv_p["patrones_tienda"] == ["%AZALEIA%"]
+    notas = " ".join(repo.ultimo_diagnostico.notas)
+    assert "5 productos de AZALEIA" in notas and "nunca se vendieron" in notas
+    assert "5590000" in notas
+    r = ejecutar(inp, params(), CORTE, run_id="R")
+    env = r.detalle.loc[r.detalle["cantidad"] > 0]
+    assert len(env) and set(env["tienda_id"]) == {"501"}

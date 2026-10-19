@@ -395,21 +395,25 @@ def _correr_motor(
 
 
 def con_temporadas_tienda(params_json: str) -> str:
-    """Parámetros de la corrida con la temporada mínima de cada tienda (módulo Temporadas por
-    tienda). Va dentro de los parámetros: cambia la caché de la corrida y queda en
-    ``EngineResult.params``, así el archivo usa la misma regla que el motor."""
+    """Parámetros de la corrida con la temporada mínima de cada tienda y las colecciones
+    activas por marca (módulo Temporadas por tienda). Va dentro de los parámetros: cambia la
+    caché de la corrida y queda en ``EngineResult.params``, así el archivo usa la misma regla
+    que el motor."""
+    from forusight.data import colecciones as COL
     from forusight.data import mantenedores as MT
 
     vigente = MT.temporada_tienda_vigente(
         mantenedor(MT.RUTA_TEMPORADA_TIENDA, MT.COLS_TEMPORADA_TIENDA)
     )
-    if not vigente:
+    reporte = COL.vigente(mantenedor(COL.RUTA, COL.COLS_HIST))
+    if not vigente and reporte is None:
         return params_json
     p = EngineParams.model_validate_json(params_json)
     # lo del módulo manda sobre lo que traiga params.yaml para esa tienda
-    surtido = p.surtido.model_copy(
-        update={"temporada_desde_tienda": {**p.surtido.temporada_desde_tienda, **vigente}}
-    )
+    cambios: dict = {"temporada_desde_tienda": {**p.surtido.temporada_desde_tienda, **vigente}}
+    if reporte is not None:  # el último reporte 1037 subido reemplaza al de config
+        cambios["colecciones_activas"] = COL.a_mapa(reporte)
+    surtido = p.surtido.model_copy(update=cambios)
     return p.model_copy(update={"surtido": surtido}).model_dump_json()
 
 
@@ -587,6 +591,7 @@ def guardar_mantenedor(
 
 
 def huella_mantenedores() -> str:
+    from forusight.data import colecciones as COL
     from forusight.data import mantenedores as MT
 
     h = hashlib.sha1()
@@ -594,6 +599,7 @@ def huella_mantenedores() -> str:
         (MT.RUTA_TEMPORADAS, MT.COLS_TEMPORADAS),
         (MT.RUTA_STOCK_MINIMO, MT.COLS_STOCK_MINIMO),
         (MT.RUTA_TEMPORADA_TIENDA, MT.COLS_TEMPORADA_TIENDA),
+        (COL.RUTA, COL.COLS_HIST),
     ):
         h.update(MT.a_csv(mantenedor(ruta, cols)))
     return h.hexdigest()[:10]

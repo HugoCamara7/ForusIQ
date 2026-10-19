@@ -30,7 +30,7 @@ del stock), así que se usa **el primer archivo del día**.
 | Stock de tiendas y del CD | `stock_bi` (último corte) | Stock con fecha de corte 12/10 = stock al cierre del 12/10. |
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
-| Producto | ARTI | SKU, modelo, color, talla, marca, clase, género. |
+| Producto | ARTI (BigQuery) | SKU, modelo, color, talla, marca, clase, género. Un producto de la marca que aún no está en ARTI (p. ej. códigos nuevos de AZALEIA) entra igual si se vendió con esa marca, si se vendió o tiene stock en una tienda de la marca (nombre «AZALEIA …») o si tiene stock en su bodega (380). Modelo, color, talla y clase se toman de la venta (`ft_pe_venta_retail`, 180 días); un producto que nunca se vendió no se puede describir y queda fuera. Inicio lo avisa en las notas. |
 | Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
 | Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
 | Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
@@ -129,6 +129,7 @@ Lo enviado **nunca supera** el Stock en CD.
 - **Temporadas**, en el orden comercial (INVIERNO = marzo a septiembre, VERANO = septiembre a marzo del año siguiente; **ESCOLAR** va con el VERANO del mismo año): INVIERNO 2026 → VERANO 2026 = ESCOLAR 2026 → INVIERNO 2027 → VERANO 2027…
   - **Liquidadoras (DH, SE, FB): reposición por jerarquía.** Sólo temporadas **hasta INVIERNO 2026 inclusive** (todo lo anterior a VERANO 2026 y ESCOLAR 2026). No reciben VERANO 2026, ESCOLAR 2026, temporadas posteriores ni FUTURA. Nada de lo de abajo cambia esta regla (`surtido.temporada_hasta_liquidadoras`).
   - **Tiendas fuera de parámetros** (página **Temporadas por tienda**): esa temporada mínima y las posteriores.
+  - **Colecciones activas por marca** (reporte SAP **1037 – Colecciones Activas Marca**, página **Temporadas por tienda**): las tiendas de línea reponen **además** las colecciones activas de la marca × clase del producto: las de `TODO` (todas las tiendas) **más** las propias de la tienda (Código centro). Ej.: KEDS calzado repone VERANO 2025 e INVIERNO 2026 en todas las tiendas de línea; RKF CAYMA (147) repone además INVIERNO 2026 de ROCKFORD calzado y vestuario, sin perder VERANO 2026. No quita nada de lo de arriba ni cambia a las liquidadoras.
   - **Resto de tiendas (parámetro general):** **VERANO 2026 en adelante** y **ESCOLAR 2026** (más FUTURA); INVIERNO 2026 y anteriores no.
   - Un modelo nuevo sin temporada conocida se repone en todas. La temporada de cada modelo-color se corrige en **Parámetros → Temporadas**.
 
@@ -195,7 +196,7 @@ El menú lateral se divide en **Operación**, **Mantenedores** y **Configuració
 | Operación | **Inicio** | Nueva corrida, resultado, indicadores, **Aprobar y descargar**. |
 | Operación | **Descargas** | Archivos de las corridas automáticas de las 6:30. |
 | Mantenedores | **Bloqueos** | En una sola pantalla: elegir **Bloquear** o **Desbloquear**, subir el Excel (COD MOD COL, Cod Tienda; vacío = todas las tiendas), revisar la validación (OK / omitidas / rechazadas) y confirmar. Descarga del **maestro completo de bloqueos** (reporte del 14/10/2026 + cargas por Excel) y consulta por tienda o modelo. |
-| Mantenedores | **Temporadas por tienda** | Temporada mínima de reposición por tienda (temporadas fuera de parámetros) por Excel (Cod Tienda, Temporada minima): asignar o volver al parámetro general, con validación, consulta y descarga. |
+| Mantenedores | **Temporadas por tienda** | Temporada mínima de reposición por tienda (temporadas fuera de parámetros) por Excel (Cod Tienda, Temporada minima): asignar o volver al parámetro general, con validación, consulta y descarga. Además, **colecciones activas por marca** (reporte SAP 1037): consulta del mapeo vigente y carga de un reporte nuevo, que reemplaza al anterior completo. |
 | Mantenedores | **Rutas** | Qué días sale el camión a cada mall, y las excepciones de la semana. |
 | Configuración | **Parámetros** (acceso restringido) | Reglas del motor (formulario o YAML) y los mantenedores **Temporadas** y **Stock mínimo**. Sólo la ven y usan los usuarios autorizados en los secrets (`[app_auth.permisos] parametros`). |
 | Configuración | **Conexión** (admin) | Tablas y mapeo, plazos de entrega, revisar tránsito y venta, prueba de lectura. |
@@ -260,6 +261,7 @@ Sigue este orden:
 | `surtido.temporada_desde` / `temporadas_reponer` | VERANO 2026 / ESCOLAR 2026, FUTURA | Temporadas que se reponen (parámetro general). |
 | `surtido.temporada_hasta_liquidadoras` | INVIERNO 2026 | Liquidadoras DH, SE, FB: sólo hasta esta temporada (jerarquía). |
 | `surtido.temporada_desde_tienda` | {} | Temporada mínima por tienda: la llena **Temporadas por tienda** en cada corrida. |
+| `surtido.colecciones_activas` | reporte 1037 del 15/10/2026 | Colecciones activas por tienda × clase × marca (`TODO` = todas): se suman a lo anterior en las tiendas de línea. El último reporte subido en **Temporadas por tienda** lo reemplaza. |
 | `recepcion.dias_transito_recientes` | 7 | Plazo si la tienda no tiene datos. |
 | `recepcion.solo_hasta_cierre_stock` | true | Tránsito en la misma foto que el stock. |
 | `stock_cd.componentes` | disponible | Qué parte del CD se reparte. |

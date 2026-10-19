@@ -595,13 +595,21 @@ def aplicar_surtido(
 ) -> tuple[pd.DataFrame, int]:
     """Marca «Reposición Bloqueada = SI» en modelos bloqueados para la tienda y en temporadas
     comerciales que no se reponen (la necesidad de esas filas pasa a 0). ``regla``: temporada
-    mínima por tienda y liquidadoras (data.bloqueos.regla_temporadas)."""
+    mínima por tienda, colecciones activas y liquidadoras (data.bloqueos.regla_temporadas)."""
     from forusight.data.bloqueos import fuera_de_surtido
 
     mc = df["Código Modelo"].astype("string") + "-" + df["Código Color"].astype("string")
     temp = df.get("Temporada comercial", None)
     bloq, fuera = fuera_de_surtido(
-        df[CENTRO].astype(str).str.lstrip("0"), mc, temp, bloqueos, temporadas, desde, **regla
+        df[CENTRO].astype(str).str.lstrip("0"),
+        mc,
+        temp,
+        bloqueos,
+        temporadas,
+        desde,
+        marca=df.get("Marca"),
+        clase=df.get("Clase"),
+        **regla,
     )
     corta = (bloq | fuera).to_numpy()
     if not corta.any():

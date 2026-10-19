@@ -82,8 +82,9 @@ DICCIONARIO: dict[str, tuple[str, str, str, str, str]] = {
         PRODUCTO,
         "Temporada comercial del modelo-color (p. ej. VERANO 2026). Se repone VERANO 2026 en "
         "adelante (INVIERNO 2027, VERANO 2027…) y ESCOLAR 2026; INVIERNO 2026 y anteriores no "
-        "(Parámetros → surtido), salvo la temporada mínima propia de la tienda (Temporadas por "
-        "tienda). Las liquidadoras DH, SE y FB reponen por jerarquía: sólo INVIERNO 2026 hacia "
+        "(Parámetros → surtido), salvo la temporada mínima propia de la tienda y las colecciones "
+        "activas de su marca × clase (reporte SAP 1037; ambas en Temporadas por tienda). Las "
+        "liquidadoras DH, SE y FB reponen por jerarquía: sólo INVIERNO 2026 hacia "
         "atrás. Un modelo nuevo sin temporada conocida se repone.",
         "Maestro de temporadas guardado en Forusight (aprendido de reportes anteriores y del "
         "reporte de bloqueos; ARTI no trae la temporada comercial). Lo guardado en "

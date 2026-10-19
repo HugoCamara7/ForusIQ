@@ -532,9 +532,11 @@ def tiendas_liquidadoras(dim_tienda: pd.DataFrame | None, cadenas) -> set[str]:
 
 def regla_temporadas(surtido, dim_tienda: pd.DataFrame | None, cadenas) -> dict:
     """Argumentos de :func:`fuera_de_surtido` además del parámetro general: temporada mínima
-    por tienda (módulo Temporadas) y reposición por jerarquía de las liquidadoras."""
+    por tienda (módulo Temporadas), colecciones activas por marca × clase (reporte 1037) y
+    reposición por jerarquía de las liquidadoras."""
     return {
         "desde_por_tienda": dict(getattr(surtido, "temporada_desde_tienda", {}) or {}),
+        "colecciones": dict(getattr(surtido, "colecciones_activas", {}) or {}),
         "liquidadoras": tiendas_liquidadoras(dim_tienda, cadenas),
         "hasta_liquidadoras": getattr(surtido, "temporada_hasta_liquidadoras", None),
     }
@@ -551,6 +553,9 @@ def fuera_de_surtido(
     desde_por_tienda: dict[str, str] | None = None,
     liquidadoras=None,
     hasta_liquidadoras: str | None = None,
+    colecciones: dict[str, list[str]] | None = None,
+    marca: pd.Series | None = None,
+    clase: pd.Series | None = None,
 ) -> tuple[pd.Series, pd.Series]:
     """(bloqueado, fuera_de_temporada) por fila.
 
@@ -565,6 +570,9 @@ def fuera_de_surtido(
        tienen orden comercial (p. ej. FUTURA) o no son anteriores a la mínima.
     3. **Parámetro general**: las de ``temporadas`` y, con ``desde``, toda temporada de esa en
        adelante. Sin ninguna de las dos = todas.
+
+    A 2 y 3 se suman las **colecciones activas** de la marca × clase (``colecciones``, reporte
+    SAP 1037; necesita ``marca`` y ``clase`` por fila): las de TODO y las propias de la tienda.
 
     Sin temporada conocida (modelo nuevo): se repone en todas las tiendas."""
     mc = modelo_color.astype("string").str.upper()
@@ -584,7 +592,7 @@ def fuera_de_surtido(
     }
     tope_liq = orden_temporada(hasta_liquidadoras) if hasta_liquidadoras else None
     liq = {str(x) for x in liquidadoras or []} if tope_liq is not None else set()
-    hay_regla = activas or minimo is not None or por_tienda or liq
+    hay_regla = activas or minimo is not None or por_tienda or liq or colecciones
     if not hay_regla or temporada is None:
         fuera = pd.Series(False, index=tienda.index)
         return bloqueado.fillna(False).astype(bool), fuera
@@ -606,6 +614,11 @@ def fuera_de_surtido(
         extra = t.isin(activas).fillna(False) & (orden.isna() | orden.ge(min_t))
         ok_t = orden.ge(min_t).fillna(False) | extra.fillna(False)
         ok = ok.where(~con_min, ok_t)
+    # colecciones activas de la marca × clase en la tienda (se suman)
+    if colecciones:
+        from forusight.data.colecciones import activa
+
+        ok |= activa(tienda_txt, clase, marca, t, colecciones).to_numpy()
     # 1. liquidadoras: reposición por jerarquía (hasta INVIERNO 2026)
     if liq:
         es_liq = tienda_txt.isin(liq)

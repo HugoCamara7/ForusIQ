@@ -30,8 +30,8 @@ def tab_temporadas() -> None:
 
     st.caption(
         "La temporada comercial decide qué se repone: VERANO 2026 en adelante y ESCOLAR 2026 "
-        "(Formulario → surtido), la temporada mínima de cada tienda (página Temporadas por "
-        "tienda) y, en las liquidadoras DH, SE y FB, INVIERNO 2026 hacia atrás. Aquí asignas o "
+        "(Formulario → surtido), la temporada mínima de cada tienda y las colecciones activas "
+        "por marca × clase (página Temporadas por tienda) y, en las liquidadoras DH, SE y FB, INVIERNO 2026 hacia atrás. Aquí asignas o "
         "corriges la temporada de un modelo-color; manda sobre el maestro guardado y vale "
         "desde la próxima corrida."
     )

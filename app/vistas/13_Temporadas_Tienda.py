@@ -3,7 +3,10 @@
 Se gestiona por Excel (Cod Tienda, Temporada minima), como los bloqueos: elegir la acción,
 subir, revisar la validación y confirmar. Una tienda sin configuración usa el parámetro general
 (``surtido.temporada_desde``). Las liquidadoras (DH, SE, FB) no se configuran aquí: reponen por
-jerarquía las temporadas hasta INVIERNO 2026."""
+jerarquía las temporadas hasta INVIERNO 2026.
+
+Además, las colecciones activas por tienda × clase × marca (reporte SAP 1037): las tiendas de
+línea reponen también esas colecciones (las de TODO más las propias de la tienda)."""
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +16,7 @@ from app.components.ui import hero, kpi_row, section
 
 from forusight.data import bloqueos as B
 from forusight.data import cadenas as CAD
+from forusight.data import colecciones as COL
 from forusight.data import mantenedores as MT
 from forusight.data.corridas import hoy_lima
 
@@ -50,6 +54,22 @@ def _liquidadoras(tiendas: pd.DataFrame) -> set[str]:
     liq = B.tiendas_liquidadoras(dim, cadenas)
     marca = tiendas["cadena"].str.upper().isin([str(c).upper() for c in cadenas])
     return liq | set(tiendas.loc[marca, "codigo_tienda"])
+
+
+def _guardar_colecciones(tabla: pd.DataFrame, fecha_reporte: str, nombre: str) -> None:
+    try:
+        nuevos = COL.nuevos(tabla, fecha_reporte, usuario_actual(), hoy_lima().date())
+        donde = guardar_mantenedor(
+            COL.RUTA,
+            COL.COLS_HIST,
+            nuevos,
+            usuario_actual(),
+            f"colecciones activas por marca ({nombre})",
+        )
+        ss.flash_col = ("ok", f"Reporte cargado: {len(nuevos):,} filas. Guardado en {donde}.")
+        ss.col_excel_n = ss.get("col_excel_n", 0) + 1  # vacía el archivo subido
+    except Exception as exc:
+        ss.flash_col = ("error", f"No se pudo guardar: {exc}")
 
 
 def _guardar(carga: pd.DataFrame, accion: str, validas: set[str], liq: set[str]) -> None:
@@ -283,3 +303,92 @@ with st.expander(f"Historial de cambios ({len(hist):,})", icon=":material/histor
         st.caption("Todavía no hay tiendas fuera de parámetros.")
     else:
         st.dataframe(hist.iloc[::-1], hide_index=True, width="stretch")
+
+# ---------------------------------------------------------------- colecciones activas (1037)
+hist_col = mantenedor(COL.RUTA, COL.COLS_HIST)
+ult_col = COL.vigente(hist_col)
+mapa_col = params.surtido.colecciones_activas if ult_col is None else COL.a_mapa(ult_col)
+origen_col = (
+    "reporte del 15/10/2026 (incluido en la app)"
+    if ult_col is None
+    else f"reporte del {ult_col['fecha_reporte'].iloc[0] or '¿?'}, subido por "
+    f"{ult_col['usuario'].iloc[0]} el {ult_col['fecha'].iloc[0]}"
+)
+with st.container(key="card_tt_colecciones"):
+    section(
+        "Colecciones activas por marca",
+        "Reporte SAP 1037: las tiendas de línea reponen además estas colecciones de cada marca "
+        "× clase (las de TODO y las propias de la tienda se suman). Las liquidadoras siguen "
+        "por jerarquía",
+        "layers",
+    )
+    st.caption(f"Vigente: {origen_col}.")
+    if flash := ss.pop("flash_col", None):
+        (st.success if flash[0] == "ok" else st.error)(flash[1])
+    res_col = COL.resumen(mapa_col)
+    nombre_t = dict(zip(tiendas["codigo_tienda"], tiendas["nombre_tienda"], strict=True))
+    res_col.insert(
+        1,
+        "tienda",
+        res_col["tienda_id"].map(lambda c: "Todas" if c == COL.TODAS else nombre_t.get(c, "")),
+    )
+    st.dataframe(
+        res_col,
+        hide_index=True,
+        width="stretch",
+        height=320,
+        column_config={
+            "tienda_id": "Código centro",
+            "tienda": "Tienda",
+            "clase": "Clase",
+            "marca": "Marca",
+            "colecciones": "Colecciones activas",
+        },
+    )
+    sin_tienda = sorted(
+        set(res_col["tienda_id"]) - set(tiendas["codigo_tienda"]) - {COL.TODAS}, key=str
+    )
+    if sin_tienda:
+        st.warning(f"Centros del reporte que no están en el maestro de tiendas: {sin_tienda}.")
+    en_liq = sorted(set(res_col["tienda_id"]) & liquidadoras, key=str)
+    if en_liq:
+        st.caption(f"No se aplican en liquidadoras (reponen por jerarquía): {en_liq}.")
+    archivo_col = st.file_uploader(
+        "Subir un reporte 1037 nuevo (reemplaza al vigente completo)",
+        type=["xlsx", "xls", "csv"],
+        key=f"col_excel_{ss.get('col_excel_n', 0)}",
+        help="Excel «Colecciones Activas Marca» tal como sale de SAP: Código centro, Clase, "
+        "Marca y Coleccion activa (TODO = todas las tiendas).",
+    )
+    if archivo_col is not None:
+        try:
+            nueva, fecha_rep = COL.leer_reporte(archivo_col.getvalue(), archivo_col.name)
+        except Exception as exc:
+            st.error(f"No se pudo leer el archivo: {exc}")
+            nueva = None
+        if nueva is not None and nueva.empty:
+            st.warning("El reporte no tiene filas con datos.")
+        elif nueva is not None:
+            antes = {(k, c) for k, v in mapa_col.items() for c in v}
+            despues = {(k, c) for k, v in COL.a_mapa(nueva).items() for c in v}
+            kpi_row(
+                [
+                    ("Filas", f"{len(nueva):,}", fecha_rep or archivo_col.name, "file"),
+                    (
+                        "Nuevas",
+                        f"{len(despues - antes):,}",
+                        "colección × marca × tienda",
+                        "check-circle",
+                    ),
+                    ("Salen", f"{len(antes - despues):,}", "dejan de estar activas", "alert"),
+                ]
+            )
+            st.button(
+                "Reemplazar colecciones activas",
+                type="primary",
+                icon=":material/save:",
+                disabled=not editable,
+                key="col_guardar",
+                on_click=_guardar_colecciones,
+                args=(nueva, fecha_rep, archivo_col.name),
+            )

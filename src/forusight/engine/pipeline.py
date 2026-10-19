@@ -155,11 +155,12 @@ def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams, tiendas=N
     liquidadoras y la temporada mínima de cada tienda (data.bloqueos.fuera_de_surtido)."""
     from forusight.data.bloqueos import fuera_de_surtido, regla_temporadas
 
+    prod = dim_producto.drop_duplicates("sku").set_index("sku")
     temp = None
-    if "temporada_comercial" in dim_producto:  # maestro de temporadas (data/temporadas.py)
-        temp = sku["sku"].map(
-            dim_producto.drop_duplicates("sku").set_index("sku")["temporada_comercial"]
-        )
+    if "temporada_comercial" in prod:  # maestro de temporadas (data/temporadas.py)
+        temp = sku["sku"].map(prod["temporada_comercial"])
+    # colecciones activas por marca × clase (data/colecciones.py)
+    marca, clase = (sku["sku"].map(prod[c]) if c in prod else None for c in ("marca", "categoria"))
     bloq, fuera = fuera_de_surtido(
         sku["tienda_id"],
         sku["modelo_color_id"],
@@ -168,6 +169,8 @@ def aplicar_surtido(sku, dim_producto, bloqueos, params: EngineParams, tiendas=N
         params.surtido.temporadas_reponer,
         params.surtido.temporada_desde,
         **regla_temporadas(params.surtido, tiendas, params.prioridad_tiendas.cadenas_liquidadoras),
+        marca=marca,
+        clase=clase,
     )
     if not (bloq.any() or fuera.any()):
         return sku

@@ -56,6 +56,8 @@ def tabla_archivo(res, entradas, params, cd_id, cantidad) -> pd.DataFrame:
                 getattr(entradas, "dim_tienda", None),
                 params.prioridad_tiendas.cadenas_liquidadoras,
             ),
+            marca=rep.get("Marca"),
+            clase=rep.get("Clase"),
         )
         return tabla_para_archivo(rep, res.detalle, cantidad, (bloq | fuera).to_numpy())
     # El detalle del tránsito (en CD / despachado) sale de los pedidos, como en el motor: las

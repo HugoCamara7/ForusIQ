@@ -301,6 +301,12 @@ class ReferenciaParams(_Section):
     dias_maximos: int = Field(10, ge=1, le=60)
 
 
+def _colecciones_por_defecto() -> dict[str, list[str]]:
+    from forusight.data.colecciones import por_defecto
+
+    return por_defecto()
+
+
 class SurtidoParams(_Section):
     """Qué se puede reponer: temporadas comerciales activas y modelos bloqueados por tienda."""
 
@@ -317,6 +323,11 @@ class SurtidoParams(_Section):
     #: Temporada mínima por tienda (código → «VERANO 2026»): se reponen esa y las posteriores.
     #: La llena en cada corrida el módulo «Temporadas por tienda» (Excel); vacío = la general.
     temporada_desde_tienda: dict[str, str] = Field(default_factory=dict)
+    #: Colecciones activas por tienda × clase × marca (reporte SAP 1037; «TODO|CALZADO|KEDS» →
+    #: [«VERANO 2025», …]). Las tiendas de línea las reponen además de lo anterior: las de
+    #: TODO y las propias de la tienda se suman. No cambia a las liquidadoras (jerarquía).
+    #: Por defecto, config/colecciones_activas.csv; la página Temporadas por tienda lo reemplaza.
+    colecciones_activas: dict[str, list[str]] = Field(default_factory=_colecciones_por_defecto)
     #: Usar la temporada de ARTI cuando el modelo-color no está en el maestro de temporadas
     #: (ARTI no trae la temporada comercial: apagado).
     temporadas_en_bigquery: bool = False
