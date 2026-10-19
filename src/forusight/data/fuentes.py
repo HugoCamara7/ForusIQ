@@ -1364,6 +1364,19 @@ def construir_entradas(
             ).clip(lower=0)
         if "disponible" in g:
             stock_cd["cd_stock_disponible"] = g["disponible"].clip(lower=0)
+            # Bodega de marca (p. ej. 380 de AZALEIA) con stock pero sin «disponible» cargado:
+            # se reparte su físico menos reservas (si no, la marca no tendría nada que enviar).
+            origen = stock_cd["sku"].map(dict(zip(dim["sku"], dim["cd_origen"], strict=True)))
+            for bodega in sorted(set(por_marca.values()) - {cd}):
+                de_b = origen.eq(bodega).to_numpy()
+                disp = stock_cd.loc[de_b, "cd_stock_disponible"].sum()
+                if disp <= 0 and stock_cd.loc[de_b, "fisico"].sum() > 0:
+                    libre = stock_cd["fisico"] - stock_cd.get("cd_stock_reservas", 0.0)
+                    stock_cd.loc[de_b, "cd_stock_disponible"] = libre[de_b].clip(lower=0)
+                    diag.notas.append(
+                        f"Bodega {bodega}: «disponible» en 0 en la foto de stock; se reparte su "
+                        "stock físico menos reservas."
+                    )
         if stock_cd.empty:
             diag.notas.append(
                 "La foto de stock no trae filas de la bodega "

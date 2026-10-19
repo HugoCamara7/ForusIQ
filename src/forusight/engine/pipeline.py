@@ -254,6 +254,11 @@ def ejecutar(
             on=["tienda_id", "sku"],
             how="left",
         )
+    nuevas = {str(m).strip().upper() for m in params.reposicion_venta.marcas_reponer_vendido}
+    if nuevas and "marca" in inp.dim_producto:  # marca nueva: lo vendido se repone siempre
+        marca = inp.dim_producto.drop_duplicates("sku").set_index("sku")["marca"]
+        marca = sku["sku"].map(marca).astype("string").str.strip().str.upper()
+        sku["reponer_vendido"] = marca.isin(nuevas).fillna(False).to_numpy()
     sku = calcular_necesidad(sku, mc, params)
     sku = aplicar_surtido(sku, inp.dim_producto, inp.bloqueos, params, base.tiendas)
 

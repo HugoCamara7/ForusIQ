@@ -242,11 +242,18 @@ def calcular_necesidad(sku: pd.DataFrame, mc: pd.DataFrame, params: EngineParams
     # Sólo puede quedar sin enviar si el CD no tiene stock o no alcanza para todas las tiendas.
     if params.reposicion_venta.reponer_venta_desde_ruta and "venta_desde_ruta" in out:
         piso = np.ceil(out["venta_desde_ruta"].fillna(0).clip(lower=0).to_numpy()).astype("int64")
+        # Marca nueva sin stock mínimo (reposicion_venta.marcas_reponer_vendido): lo vendido
+        # se repone siempre, sin esperar el punto de reorden.
+        siempre = (
+            out["reponer_vendido"].fillna(False).astype(bool).to_numpy()
+            if "reponer_vendido" in out
+            else np.zeros(len(out), dtype=bool)
+        )
         if not params.referencia.reponer_venta_con_nivel_del_reporte:
-            piso = np.where(ref, 0, piso)  # con el nivel del reporte, manda su regla
+            piso = np.where(ref & ~siempre, 0, piso)  # con el nivel del reporte, manda su regla
         elif params.reposicion_venta.solo_bajo_punto_reorden:
             # Como el reporte: lo vendido se repone cuando la talla llegó a su punto de reorden.
-            piso = np.where(ref & ~pide, 0, piso)
+            piso = np.where(ref & ~pide & ~siempre, 0, piso)
     else:
         piso = np.zeros(len(out), dtype="int64")
     # Talla con stock (o tránsito) que no vendió nada: no se repone, aunque el nivel o el stock

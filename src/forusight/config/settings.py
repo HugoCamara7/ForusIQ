@@ -284,6 +284,9 @@ class ReposicionVentaParams(_Section):
     #: Como el reporte: lo vendido se repone sólo si la talla llegó a su punto de reorden
     #: (el reporte nunca envía con posición > punto de reorden; 7 reportes, 12.106 u).
     solo_bajo_punto_reorden: bool = False
+    #: Marcas nuevas sin stock mínimo ni planificación (p. ej. AZALEIA): lo vendido desde la
+    #: ruta anterior se repone siempre, aunque la talla no llegue a su punto de reorden.
+    marcas_reponer_vendido: list[str] = Field(default_factory=lambda: ["AZALEIA"])
     #: Una talla con stock (o tránsito) que no vendió nada (12 semanas, semana en curso, desde
     #: la ruta anterior ni después del corte) no se repone, aunque el nivel/stock mínimo pida más.
     no_reponer_con_stock_sin_venta: bool = True

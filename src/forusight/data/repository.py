@@ -447,6 +447,8 @@ class FuentesRepository(BigQueryRepository):
                 descrito = pv[["cod_modelo", "cod_color", "talla"]].notna().all(axis=1)
                 sin_desc = sorted(set(pv.loc[~descrito, "id_producto"].astype(str)))
                 pv = pv.loc[descrito]
+                if len(marcas) == 1:  # son de la marca pedida: así salen de su bodega (380)
+                    pv = pv.assign(marca=marcas[0])
                 base["skus_sin_arti"] = sorted(set(pv["id_producto"].astype(str)))
                 arti = pd.concat([arti, pv], ignore_index=True)
                 diag.filas["productos_sin_arti"] = len(base["skus_sin_arti"])

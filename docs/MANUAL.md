@@ -111,6 +111,10 @@ Si Posición ≤ Punto Reorden:
     redondeada a empaques completos (Unidad Empaque)
 Si no: 0
 ```
+**Marca nueva sin stock mínimo (AZALEIA):** lo vendido desde la ruta anterior se repone
+**siempre**, aunque la talla no haya llegado a su punto de reorden (sin Stock Mínimo ni
+planificación, su nivel queda en 1–2 y una tienda recién llenada casi nunca llega al reorden).
+Se configura en `reposicion_venta.marcas_reponer_vendido`.
 
 ### 3.7 Reparto del CD
 Por SKU, el **Stock en CD** (`disponible` de stock_bi) se reparte:
@@ -266,3 +270,4 @@ Sigue este orden:
 | `recepcion.solo_hasta_cierre_stock` | true | Tránsito en la misma foto que el stock. |
 | `stock_cd.componentes` | disponible | Qué parte del CD se reparte. |
 | `reposicion_venta.reponer_venta_desde_ruta` | true | Repone lo vendido desde la ruta anterior. |
+| `reposicion_venta.marcas_reponer_vendido` | ["AZALEIA"] | Marcas nuevas sin stock mínimo: lo vendido desde la ruta se repone siempre, sin esperar el punto de reorden. |

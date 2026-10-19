@@ -163,3 +163,30 @@ def test_espejos_configurados():
     assert {"7", "30"} <= ids
     assert not set(tabla["tienda_id"]) & ids
     assert set(tabla["espejo_id"]) <= ids
+
+
+def test_marca_nueva_repone_lo_vendido_aunque_no_llegue_al_reorden():
+    """AZALEIA (marca nueva, sin stock mínimo): lo vendido desde la ruta anterior se repone
+    siempre; otra marca sigue esperando el punto de reorden."""
+    from dataclasses import replace
+
+    inp, (s38, s39, _) = _escenario()
+    vr = pd.DataFrame(
+        {
+            "tienda_id": ["T1", "T1"],
+            "sku": [s38, s39],
+            "venta_desde_ruta": [3.0, 3.0],
+            "venta_post_corte": [0.0, 0.0],
+        }
+    )
+    az = replace(inp, venta_reciente=vr, dim_producto=inp.dim_producto.assign(marca="AZALEIA"))
+    d = _det(az, _params())
+    assert d.loc[s39, "cantidad"] == 3  # sobre el reorden, pero vendió 3: se reponen
+    assert d.loc[s38, "cantidad"] == 3
+    otra = replace(az, dim_producto=inp.dim_producto.assign(marca="HUSH PUPPIES"))
+    assert _det(otra, _params()).loc[s39, "cantidad"] == 0
+    p = params(
+        nivel_neo={"activo": True, "universo": "venta"},
+        reposicion_venta={"solo_bajo_punto_reorden": True, "marcas_reponer_vendido": []},
+    )
+    assert _det(az, p).loc[s39, "cantidad"] == 0  # sin la marca en la lista, como antes
