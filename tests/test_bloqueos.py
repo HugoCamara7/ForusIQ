@@ -268,3 +268,38 @@ def test_a_excel_carga_vuelve_a_leerse():
     carga = B.leer_carga(B.a_excel_carga(bloqueos), "x.xlsx")
     assert carga["tienda_id"].tolist() == ["8", B.TODAS]
     assert carga["modelo_color_id"].tolist() == ["HP1-N11", "HP2-645"]
+
+
+def test_retiro_de_tiendas_azaleia_se_acepta():
+    """RETIRO_TDA: modelos AZALEIA para Primavera (161), Huánuco (163), Cusco (164) y Plaza
+    Norte (169). Antes: «la tienda no existe en el maestro» (no estaban en el catálogo)."""
+    from forusight.data import cadenas as CAD
+
+    tiendas = set(CAD.catalogo_tiendas()["codigo_tienda"].astype(str))
+    d = pd.DataFrame(
+        {
+            "tienda_id": ["161", "163", "164", "169"],
+            "modelo_color_id": ["AZ2100112610-VM4"] * 4,
+        }
+    )
+    r = B.validar_carga(d, B.BLOQUEAR, None, tiendas)
+    assert r["resultado"].eq("OK: se bloquea").all()
+
+
+def test_cod_mod_col_sin_guion_se_corrige():
+    """El color son los 3 últimos caracteres: AZ2100112256211 → AZ2100112256-211 (también
+    con espacios en medio). Antes se rechazaba por formato."""
+    buf = io.BytesIO()
+    pd.DataFrame(
+        {
+            "Cod Mod Col": ["AZ2100112256211", "AZ2100112592   211", "AZ2100112447   -544"],
+            "Cod Tienda": ["161", "163", "169"],
+        }
+    ).to_excel(buf, index=False)
+    d = B.leer_carga_detalle(buf.getvalue(), "RETIRO_TDA.xlsx")
+    assert d["modelo_color_id"].tolist() == [
+        "AZ2100112256-211",
+        "AZ2100112592-211",
+        "AZ2100112447-544",
+    ]
+    assert B.validar_carga(d, B.BLOQUEAR, None)["resultado"].eq("OK: se bloquea").all()
