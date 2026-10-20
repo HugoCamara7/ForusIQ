@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from app.components.estado import ajustes, rutas_vigentes
+from app.components.estado import ajustes, catalogo_tiendas, rutas_vigentes
 from app.components.ui import chips, hero, html, kpi_row, section
 
 from forusight.config.settings import load_params
@@ -24,7 +24,7 @@ matriz = CAD.marcas_por_cadena(ajustes().marcas_por_cadena)
 tiendas = pd.DataFrame(diag.get("tiendas") or [])
 if tiendas.empty:
     tiendas = (
-        CAD.catalogo_tiendas()
+        catalogo_tiendas()
         .rename(columns={"codigo_tienda": "tienda_id", "nombre_tienda": "nombre"})
         .assign(origen_tienda="catálogo Forus", activa=True)
     )

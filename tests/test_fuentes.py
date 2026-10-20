@@ -1214,3 +1214,45 @@ def test_corrida_hush_puppies_y_azaleia_juntas():
     assert set(dp.loc[dp["marca"].eq("HUSH PUPPIES"), "cd_origen"]) == {"320"}
     cd = inp.stock_cd.set_index("sku")
     assert cd.loc["5598436", "fisico"] == 9 and cd.loc["HP1360", "fisico"] == 8
+
+
+LOCA = pd.DataFrame(  # pe_bronze.stg_pe_perucentral_loca (captura del 20/10)
+    {
+        "tienda_cod": ["159", "160", "161", "164", "172", "158", "300", "176"],
+        "tienda_nombre": [
+            "FB MINKA",
+            "CLB PREMIUM OUTLET JP",
+            "AZALEIA PRIMAVERA",
+            "AZALEIA CUSCO",
+            "AZALEIA JOCKEY PLAZA",
+            "PARFOIS SAN MIGUEL",
+            "BODEGA FORUS",
+            "OLYMPIKUS MEGA PLAZA",
+        ],
+        "cadena": ["9", "7", "20", "20", "20", "18", "100", "21"],
+        "zona": ["CALLAO", "LIMA", "LIMA", "CUSCO", "LIMA", "LIMA", "LIMA", "LIMA"],
+    }
+)
+
+
+def test_mapeo_del_maestro_de_locales_peru_central():
+    cols = ["CODEMP_LOC", "cadena_loc", "NLOCAL_LOC", "REGION_LOC", "NOMBRE_LOC"]
+    cols += ["DIRECC_LOC", "comuna_loc", "ciudad_loc"]
+    m = M.mapear(cols, M.ALIAS_TIENDAS)
+    assert m["tienda_cod"] == "NLOCAL_LOC" and m["tienda_nombre"] == "NOMBRE_LOC"
+    assert m["zona"] == "ciudad_loc" and m["cadena"] == "cadena_loc"
+    assert M.faltantes("tiendas", m) == []
+
+
+def test_maestro_de_bigquery_manda_y_normaliza():
+    from forusight.data import cadenas as CAD
+
+    n = CAD.normalizar_maestro(LOCA).set_index("codigo_tienda")
+    # cadena numérica → prefijo del nombre; bodegas y cadenas sin marcas quedan fuera
+    assert set(n.index) == {"159", "160", "161", "164", "172"}
+    assert n.loc["161", "cadena"] == "AZALEIA" and n.loc["160", "cadena"] == "CLB"
+    assert n.loc["164", "zona"] == "PROVINCIA" and n.loc["159", "zona"] == "LIMA"  # Callao
+    cat = CAD.con_maestro(n.reset_index()).set_index("codigo_tienda")
+    assert cat.loc["161", "nombre_tienda"] == "AZALEIA PRIMAVERA"
+    assert cat.loc["161", "centro_comercial"] == "PRIMAVERA"  # lo completa el repositorio
+    assert "8" in cat.index  # HP JOCKEY: no está en esta muestra, sigue del repositorio

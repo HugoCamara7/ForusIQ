@@ -113,6 +113,21 @@ def marcas_arti(fuente: str) -> pd.DataFrame:
     return _marcas_arti(fuente, huella_config())
 
 
+@st.cache_data(ttl=_TTL, show_spinner=False, max_entries=4)
+def _catalogo_tiendas(fuente: str, huella: str) -> pd.DataFrame:
+    from forusight.data import cadenas as CAD
+
+    repo = _repositorio(fuente, huella)
+    leer = getattr(repo, "catalogo_tiendas", None)
+    return leer() if leer is not None else CAD.catalogo_tiendas()
+
+
+def catalogo_tiendas() -> pd.DataFrame:
+    """Tiendas de Forus: maestro de BigQuery (`maestro_tiendas_table`, la fuente oficial) y, si
+    no está o no responde, el catálogo del repositorio (config/tiendas_forus.csv)."""
+    return _catalogo_tiendas(st.session_state.get("fuente", ""), huella_config())
+
+
 # cache_resource: los DataFrames se comparten sin copiarse (mucho más rápido que
 # cache_data, que los serializa en cada lectura). Las páginas nunca los modifican en sitio.
 @st.cache_data(ttl=300, show_spinner=False, max_entries=4)

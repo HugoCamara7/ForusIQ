@@ -113,9 +113,12 @@ ALIAS_ARTI: dict[str, list[str]] = {
     "temporada": ["temporada_comercial", "temporada_ma", "temporada", "temp_ma"],
 }
 
-#: Maestro tienda → nombre (`maestro_tiendas_table`).
+#: Maestro tienda → nombre (`maestro_tiendas_table`), p. ej. pe_bronze.stg_pe_perucentral_loca
+#: (NLOCAL_LOC, NOMBRE_LOC, cadena_loc numérico, ciudad_loc).
 ALIAS_TIENDAS: dict[str, list[str]] = {
     "tienda_cod": [
+        "nlocal_loc",
+        "nlocal",
         "codigo_tienda",
         "cod_tienda",
         "codigo_centro",
@@ -135,7 +138,8 @@ ALIAS_TIENDAS: dict[str, list[str]] = {
         "nombre",
     ],
     "centro_comercial": ["centro_comercial", "mall", "centro_comercial_nombre"],
-    "zona": ["zona_cc", "zona", "region", "ubicacion"],
+    # ciudad antes que region: REGION_LOC es un código (0/1), ciudad_loc dice LIMA o la ciudad
+    "zona": ["zona_cc", "zona", "ciudad_loc", "ciudad", "region", "ubicacion"],
     "cadena": ["cadena", "cod_cadena", "tipo_cadena", "desc_cadena", "nombre_cadena"],
 }
 

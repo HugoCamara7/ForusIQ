@@ -515,6 +515,12 @@ class FuentesRepository(BigQueryRepository):
                 continue
             try:
                 maestros[fuente] = q(f"maestro_{fuente}", F.sql_maestro(tablas[fuente], mapa))
+                if fuente == "tiendas":  # cadena numérica, ciudad, bodegas (normalizar_maestro)
+                    from forusight.data import cadenas as CAD
+
+                    maestros[fuente] = CAD.normalizar_maestro(maestros[fuente]).rename(
+                        columns={"codigo_tienda": "tienda_cod", "nombre_tienda": "tienda_nombre"}
+                    )
             except Exception as exc:
                 diag.notas.append(f"No se pudo leer el maestro de {fuente}: {explicar_error(exc)}")
 
@@ -923,9 +929,35 @@ class FuentesRepository(BigQueryRepository):
         return lineas, locales
 
     def _codigos_catalogo(self) -> list[str]:
+        return list(self.catalogo_tiendas()["codigo_tienda"].astype(str))
+
+    def maestro_tiendas(self) -> pd.DataFrame | None:
+        """Maestro de tiendas de BigQuery (`maestro_tiendas_table`, la fuente oficial) con las
+        columnas del catálogo; None si no está configurado o no se pudo leer."""
+        from forusight.data import cadenas as CAD
+        from forusight.data import fuentes as F
+        from forusight.data import mapeo
+
+        tabla = self.tablas().get("tiendas")
+        if not tabla:
+            return None
+        cols, _ = self.columnas(tabla)
+        mapa, _ = mapeo.resolver("tiendas", tabla, cols, self.secrets)
+        if mapeo.faltantes("tiendas", mapa):
+            return None
+        df = self.client.query_df(
+            F.sql_maestro(tabla, mapa), labels={"consulta": "maestro_tiendas"}
+        )
+        return CAD.normalizar_maestro(df)
+
+    def catalogo_tiendas(self) -> pd.DataFrame:
+        """Catálogo vigente: BigQuery primero; el archivo del repositorio sólo completa."""
         from forusight.data import cadenas as CAD
 
-        return list(CAD.catalogo_tiendas()["codigo_tienda"].astype(str))
+        try:
+            return CAD.con_maestro(self.maestro_tiendas())
+        except Exception:
+            return CAD.catalogo_tiendas()
 
     def explorar_tabla(self, tabla: str, n: int = 20) -> tuple[pd.DataFrame, pd.DataFrame]:
         """(columnas con tipo, muestra de filas) de cualquier tabla, sin costo de consulta."""
