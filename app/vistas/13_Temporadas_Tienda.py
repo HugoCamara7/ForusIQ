@@ -10,12 +10,11 @@ línea reponen también esas colecciones (las de TODO más las propias de la tie
 
 import pandas as pd
 import streamlit as st
-from app.components.estado import guardar_mantenedor, mantenedor
+from app.components.estado import catalogo_tiendas, guardar_mantenedor, mantenedor
 from app.components.login import puede, usuario_actual
 from app.components.ui import hero, kpi_row, section
 
 from forusight.data import bloqueos as B
-from forusight.data import cadenas as CAD
 from forusight.data import colecciones as COL
 from forusight.data import mantenedores as MT
 from forusight.data.corridas import hoy_lima
@@ -32,7 +31,7 @@ extras = ", ".join(params.surtido.temporadas_reponer) or "ninguna"
 
 def _tiendas() -> pd.DataFrame:
     """Catálogo de tiendas + las de la última corrida (maestro de BigQuery)."""
-    cat = CAD.catalogo_tiendas()[["codigo_tienda", "nombre_tienda", "cadena"]].astype(str)
+    cat = catalogo_tiendas()[["codigo_tienda", "nombre_tienda", "cadena"]].astype(str)
     res = ss.get("resultado")
     if res is not None and getattr(res, "tiendas", None) is not None:
         t = res.tiendas

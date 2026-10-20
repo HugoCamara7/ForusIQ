@@ -7,6 +7,7 @@ de las 6:30."""
 import pandas as pd
 import streamlit as st
 from app.components.estado import (
+    catalogo_tiendas,
     guardar_excepciones,
     guardar_ruta_semanal,
     rutas_vigentes,
@@ -37,7 +38,7 @@ def _tiendas_corrida() -> pd.DataFrame | None:
     )
 
 
-tiendas = RU.tiendas_por_mall(base, _tiendas_corrida())
+tiendas = RU.tiendas_por_mall(base, _tiendas_corrida(), catalogo_tiendas())
 hoy = hoy_lima()
 ss.setdefault("rt_fecha", RU.fechas_semana(hoy)[0].date())
 editable = puede("aprobar")

@@ -31,7 +31,8 @@ del stock), así que se usa **el primer archivo del día**.
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
 | Producto | ARTI (BigQuery) | SKU, modelo, color, talla, marca, clase, género. Un producto de la marca que aún no está en ARTI (p. ej. códigos nuevos de AZALEIA) entra igual si se vendió con esa marca, si se vendió o tiene stock en una tienda de la marca (nombre «AZALEIA …») o si tiene stock en su bodega (380). Modelo, color, talla y clase se toman de la venta (`ft_pe_venta_retail`, 180 días); un producto que nunca se vendió no se puede describir y queda fuera. Inicio lo avisa en las notas. |
-| Tiendas, cadenas, rutas | Maestros + `config/` | Las rutas se editan en **Rutas**. |
+| Tiendas | **BigQuery primero**: maestro de locales `pe_bronze.stg_pe_perucentral_loca` (`maestro_tiendas_table`) | Código (`NLOCAL_LOC`), nombre (`NOMBRE_LOC`) y ciudad. La cadena sale del nombre (AZALEIA PRIMAVERA → AZALEIA); bodegas y cadenas sin marcas quedan fuera. `config/tiendas_forus.csv` sólo completa el centro comercial y las tiendas que BigQuery no trae. Lo usan la corrida, Bloqueos, Rutas y Temporadas por tienda. |
+| Cadenas, rutas | `config/` | Las rutas se editan en **Rutas**. |
 | Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
 | Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
 | Bloqueos | Maestro (reporte de bloqueos del 14/10/2026) + cargas por Excel | Se editan y descargan en **Bloqueos**. |

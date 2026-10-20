@@ -18,6 +18,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -28,6 +29,55 @@ CONFIG = Path(__file__).resolve().parents[1] / "config"
 def catalogo_tiendas() -> pd.DataFrame:
     """Tiendas de los reportes de distribución: código, nombre, centro comercial, zona, cadena."""
     return pd.read_csv(CONFIG / "tiendas_forus.csv", dtype=str)
+
+
+_ZONA_LIMA = {"LIMA", "CALLAO"}
+
+
+def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
+    """Maestro de tiendas de BigQuery → columnas del catálogo (codigo_tienda, nombre_tienda,
+    centro_comercial, zona, cadena), sólo las tiendas de cadenas conocidas.
+
+    - cadena numérica (stg_pe_perucentral_loca: 20 = AZALEIA) → prefijo del nombre;
+    - zona que no es LIMA/PROVINCIA (ciudad: CUSCO, CALLAO…) → LIMA si es Lima o Callao;
+    - bodegas, oficinas y cadenas sin marcas (BODEGA FORUS, PARFOIS…) quedan fuera."""
+    from forusight.data.fuentes import codigo_tienda
+
+    vacio = pd.Series(pd.NA, index=m.index, dtype="string")
+    nombre = m["tienda_nombre"].astype("string").str.strip().str.upper()
+    cadena = m.get("cadena", vacio).astype("string").str.strip().str.upper()
+    cadena = cadena.where(~cadena.str.fullmatch(r"[0-9]+").fillna(True), prefijo(nombre))
+    zona = m.get("zona", vacio).astype("string").str.strip().str.upper()
+    zona = zona.where(
+        zona.isin(["LIMA", "PROVINCIA"]).fillna(False),
+        np.where(zona.isin(_ZONA_LIMA).fillna(False), "LIMA", "PROVINCIA"),
+    ).where(zona.notna() & ~zona.str.fullmatch(r"[0-9]+").fillna(True))
+    out = pd.DataFrame(
+        {
+            "codigo_tienda": m["tienda_cod"].map(codigo_tienda),
+            "nombre_tienda": nombre,
+            "centro_comercial": m.get("centro_comercial", vacio).astype("string").str.upper(),
+            "zona": zona,
+            "cadena": cadena,
+        }
+    )
+    conocidas = set(marcas_por_cadena()) | set(catalogo_tiendas()["cadena"].astype(str))
+    out = out.loc[out["cadena"].isin(conocidas).fillna(False) & out["codigo_tienda"].ne("")]
+    return out.drop_duplicates("codigo_tienda").reset_index(drop=True)
+
+
+def con_maestro(maestro: pd.DataFrame | None) -> pd.DataFrame:
+    """Catálogo vigente: BigQuery manda (nombre, zona, cadena) y el archivo del repositorio
+    completa lo que no trae (centro comercial) y las tiendas que no están en BigQuery."""
+    cat = catalogo_tiendas()
+    if maestro is None or not len(maestro):
+        return cat
+    m = maestro.set_index("codigo_tienda")
+    c = cat.set_index("codigo_tienda")
+    for col in ("centro_comercial", "zona", "cadena"):
+        m[col] = m[col].fillna(m.index.to_series().map(c[col]))
+    resto = c.loc[~c.index.isin(m.index)]
+    return pd.concat([m, resto]).reset_index()[list(cat.columns)]
 
 
 def tiendas_cerradas() -> set[str]:

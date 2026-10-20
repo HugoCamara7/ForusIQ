@@ -211,15 +211,18 @@ def semana(base: pd.DataFrame, excepciones: pd.DataFrame, desde, dias: int = 14)
     return pd.DataFrame(filas)
 
 
-def tiendas_por_mall(base: pd.DataFrame, extra: pd.DataFrame | None = None) -> pd.DataFrame:
+def tiendas_por_mall(
+    base: pd.DataFrame, extra: pd.DataFrame | None = None, catalogo: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """codigo_tienda, nombre_tienda, mall: el del calendario de tiendas o, si no tiene, el que
     se reconoce en su centro comercial, zona o nombre (como la corrida).
 
     ``extra``: tiendas que aún no están en el catálogo (p. ej. las AZALEIA nuevas, de la última
-    corrida) con codigo_tienda, nombre_tienda y, si los hay, centro_comercial y zona."""
+    corrida) con codigo_tienda, nombre_tienda y, si los hay, centro_comercial y zona.
+    ``catalogo``: el vigente (BigQuery primero); sin él, el del repositorio."""
     from forusight.data import cadenas as CAD
 
-    cat = CAD.catalogo_tiendas().copy()
+    cat = (CAD.catalogo_tiendas() if catalogo is None else catalogo).copy()
     if extra is not None and len(extra):
         cat = pd.concat([cat, extra], ignore_index=True).drop_duplicates("codigo_tienda")
         cat = cat.fillna("").reset_index(drop=True)

@@ -7,6 +7,7 @@ import streamlit as st
 from app.components.estado import (
     bloqueos_de,
     bloqueos_manuales,
+    catalogo_tiendas,
     clave_bloqueos,
     guardar_bloqueos_manuales,
 )
@@ -14,7 +15,6 @@ from app.components.login import puede, usuario_actual
 from app.components.ui import hero, kpi_row, section
 
 from forusight.data import bloqueos as B
-from forusight.data import cadenas as CAD
 from forusight.data import temporadas as TEMP
 from forusight.data.corridas import hoy_lima
 
@@ -75,7 +75,7 @@ hero(
     eyebrow="Mantenedor",
 )
 
-catalogo = CAD.catalogo_tiendas()[["codigo_tienda", "nombre_tienda", "cadena"]].drop_duplicates(
+catalogo = catalogo_tiendas()[["codigo_tienda", "nombre_tienda", "cadena"]].drop_duplicates(
     "codigo_tienda"
 )
 nombre = dict(zip(catalogo["codigo_tienda"], catalogo["nombre_tienda"], strict=True))
