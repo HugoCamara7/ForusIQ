@@ -1256,3 +1256,22 @@ def test_maestro_de_bigquery_manda_y_normaliza():
     assert cat.loc["161", "nombre_tienda"] == "AZALEIA PRIMAVERA"
     assert cat.loc["161", "centro_comercial"] == "PRIMAVERA"  # lo completa el repositorio
     assert "8" in cat.index  # HP JOCKEY: no está en esta muestra, sigue del repositorio
+
+
+def test_nombre_completo_del_catalogo_manda_sobre_el_resumido():
+    """BigQuery trae el nombre resumido: sale el completo del catálogo; la cadena del catálogo
+    cubre un nombre resumido sin prefijo conocido (AZ …)."""
+    from forusight.data import cadenas as CAD
+
+    m = pd.DataFrame(
+        {
+            "tienda_cod": ["175", "163", "999"],
+            "tienda_nombre": ["AZ LAMB", "AZALEIA HUANUCO", "AZALEIA NUEVA"],
+            "cadena": ["20", "20", "20"],
+        }
+    )
+    n = CAD.normalizar_maestro(m).set_index("codigo_tienda")
+    assert n.loc["175", "nombre_tienda"] == "AZALEIA LAMBRAMANI AREQUIPA"
+    assert n.loc["175", "cadena"] == "AZALEIA"
+    assert n.loc["163", "nombre_tienda"] == "AZALEIA HUÁNUCO"
+    assert n.loc["999", "nombre_tienda"] == "AZALEIA NUEVA"  # fuera del catálogo: el de BigQuery

@@ -122,25 +122,6 @@ elif motivo := [n for n in diag.get("notas") or [] if str(n).startswith("Tránsi
         + " La posición de stock no descuenta lo que ya va en camino: revisa antes de aprobar.",
     )
 
-sin_plan = diag.get("tiendas_sin_planificacion") or []
-if sin_plan:
-    issue_box(
-        "info",
-        f"{len(sin_plan)} tienda(s) sin stock mínimo propio: {', '.join(sin_plan)}",
-        "Su stock mínimo se estima con el del mismo SKU en otras tiendas y el nivel sale de su "
-        "propia venta. Para fijarlo, asígnales una tienda espejo en config/tiendas_espejo.csv.",
-    )
-
-con_espejo = diag.get("tiendas_con_espejo") or []
-if con_espejo:
-    issue_box(
-        "info",
-        f"{len(con_espejo)} tienda(s) sin stock mínimo propio, con tienda espejo: "
-        f"{', '.join(con_espejo)}",
-        "Toman el stock mínimo, la unidad de empaque y la categoría de su espejo; el pronóstico "
-        "sale de su propia venta. Se cambia en config/tiendas_espejo.csv.",
-    )
-
 # --- acción única: aprobar y descargar el archivo Forusight
 with st.container(key="accion_archivo"):
     boton_archivo("archivo_dashboard")

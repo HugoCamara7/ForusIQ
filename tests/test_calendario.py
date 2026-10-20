@@ -297,7 +297,15 @@ def test_hpk_jockey_es_A_como_dice_el_maestro_de_centros():
 def test_jockey_siempre_primero_luego_lima_luego_provincia():
     """Dentro de cada letra: Jockey Plaza 1, el resto de Lima 2, provincia 3. Todas las tiendas
     del Jockey son A y la primera de las A."""
-    cen = CAL.prioridad_centros()
+    todas = CAL.prioridad_centros()
+    assert not todas["codigo_tienda"].duplicated().any()
+    # AZALEIA tiene su propio orden (lista de la marca, 10/2026): Jockey A·1 también
+    az = todas["cadena"].eq("AZALEIA")
+    assert az.sum() == 13
+    assert todas.loc[
+        az & todas["codigo_tienda"].eq("172"), ["prioridad", "orden"]
+    ].values.tolist() == [["A", 1]]
+    cen = todas.loc[~az]
     jockey = cen["centro_comercial"].str.upper().eq("JOCKEY")
     lima = cen["zona_cc"].str.upper().eq("LIMA")
     assert jockey.sum() == 6  # HP, HPK, CLB, BSOUL, VANS y RKF (BBG ya no es de Forus)

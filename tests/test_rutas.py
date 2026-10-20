@@ -185,3 +185,39 @@ def test_tiendas_azaleia_del_catalogo_caen_en_su_ruta():
     assert t["164"] == "Provincia" and t["175"] == "Provincia" and t["171"] == "Plaza San Miguel"
     az = [str(c) for c in range(161, 176)]
     assert t.reindex(az).ne("").all()
+
+
+def test_tiendas_azaleia_con_ruta_propia():
+    """Ruta de AZALEIA por tienda: manda sobre la de su mall (Jockey y San Miguel sólo MI,
+    Pucallpa LU/MI); Plaza Norte y Primavera siguen la de su mall."""
+    t = pd.DataFrame(
+        {
+            "tienda_id": ["172", "171", "162", "169", "161", "8"],
+            "nombre": [
+                "AZALEIA JOCKEY PLAZA",
+                "AZALEIA SAN MIGUEL",
+                "AZALEIA PUCALLPA",
+                "AZALEIA PLAZA NORTE",
+                "AZALEIA PRIMAVERA",
+                "HP JOCKEY",
+            ],
+        }
+    )
+    lunes = CAL.aplicar(t, "2026-10-19", EngineParams(), None, BASE, RU.excepciones_vacio())
+    miercoles = CAL.aplicar(t, "2026-10-21", EngineParams(), None, BASE, RU.excepciones_vacio())
+    viernes = CAL.aplicar(t, "2026-10-23", EngineParams(), None, BASE, RU.excepciones_vacio())
+    assert lunes["dias_reposicion"].tolist() == ["MI", "MI", "LU,MI", "MA,JU", "MA", "LU,MI,VI"]
+    assert lunes["recibe_hoy"].tolist() == [False, False, True, False, False, True]
+    assert miercoles["recibe_hoy"].tolist() == [True, True, True, False, False, True]
+    assert viernes["recibe_hoy"].tolist() == [False, False, False, False, False, True]
+    # el feriado del mall le sigue aplicando
+    feriado = RU.nuevas_excepciones(["2026-10-21"], ["Jockey Plaza"], RU.SIN_DESPACHO, "", "x")
+    mi = CAL.aplicar(t, "2026-10-21", EngineParams(), None, BASE, feriado)
+    assert not mi.set_index("tienda_id").loc["172", "recibe_hoy"]
+
+
+def test_prioridad_y_orden_de_las_tiendas_azaleia():
+    t = pd.DataFrame({"tienda_id": ["172", "171", "170", "164", "175", "173"], "nombre": "x"})
+    r = CAL.aplicar(t, "2026-10-21", EngineParams(), ["AZALEIA"], BASE, RU.excepciones_vacio())
+    assert r["prioridad"].tolist() == ["A", "A", "B", "B", "C", "C"]
+    assert r["orden_prioridad"].tolist() == [1, 5, 1, 6, 1, 2]

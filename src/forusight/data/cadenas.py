@@ -40,6 +40,7 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
 
     - cadena numérica (stg_pe_perucentral_loca: 20 = AZALEIA) → prefijo del nombre;
     - zona que no es LIMA/PROVINCIA (ciudad: CUSCO, CALLAO…) → LIMA si es Lima o Callao;
+    - nombre: el completo del catálogo (config/tiendas_forus.csv) si la tienda está en él;
     - bodegas, oficinas y cadenas sin marcas (BODEGA FORUS, PARFOIS…) quedan fuera."""
     from forusight.data.fuentes import codigo_tienda
 
@@ -61,13 +62,22 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
             "cadena": cadena,
         }
     )
-    conocidas = set(marcas_por_cadena()) | set(catalogo_tiendas()["cadena"].astype(str))
+    # Nombre completo: el del catálogo (AZALEIA LAMBRAMANI AREQUIPA) manda sobre el de BigQuery,
+    # que viene resumido; y la cadena del catálogo cubre un nombre resumido sin prefijo conocido.
+    cat = catalogo_tiendas().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    del_cat = out["codigo_tienda"].map(cat["nombre_tienda"]).astype("string")
+    out["nombre_tienda"] = del_cat.where(del_cat.notna(), out["nombre_tienda"])
+    conocidas = set(marcas_por_cadena()) | set(cat["cadena"].astype(str))
+    cad_cat = out["codigo_tienda"].map(cat["cadena"]).astype("string")
+    out["cadena"] = out["cadena"].where(
+        out["cadena"].isin(conocidas).fillna(False) | cad_cat.isna(), cad_cat
+    )
     out = out.loc[out["cadena"].isin(conocidas).fillna(False) & out["codigo_tienda"].ne("")]
     return out.drop_duplicates("codigo_tienda").reset_index(drop=True)
 
 
 def con_maestro(maestro: pd.DataFrame | None) -> pd.DataFrame:
-    """Catálogo vigente: BigQuery manda (nombre, zona, cadena) y el archivo del repositorio
+    """Catálogo vigente: BigQuery manda (zona, cadena) y el archivo del repositorio
     completa lo que no trae (centro comercial) y las tiendas que no están en BigQuery."""
     cat = catalogo_tiendas()
     if maestro is None or not len(maestro):

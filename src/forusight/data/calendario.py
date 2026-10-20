@@ -7,6 +7,9 @@
 * ``config/calendario_tiendas.csv`` — por tienda: su mall, lead time y período de revisión
   (días). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
   de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
+* ``config/rutas_tiendas.csv`` — ruta propia de una tienda (``LU,MI``): manda sobre los días de
+  su mall (p. ej. AZALEIA Jockey sólo MI aunque Jockey Plaza salga LU/MI/VI). Las excepciones
+  del mall (feriados, despachos extra) le siguen aplicando.
 * ``config/prioridad_centros.csv`` — prioridad (A, B, C) de TODAS las tiendas, de cualquier
   cadena (maestro «Atributos centros Forus Perú»), y su orden dentro de la letra: 1 = Jockey
   Plaza (siempre la primera), 2 = el resto de Lima, 3 = provincia. Es el que manda.
@@ -43,6 +46,16 @@ def prioridades() -> pd.DataFrame:
 @lru_cache(maxsize=1)
 def prioridad_centros() -> pd.DataFrame:
     return pd.read_csv(CONFIG / "prioridad_centros.csv", dtype={"codigo_tienda": str})
+
+
+@lru_cache(maxsize=1)
+def rutas_tiendas() -> pd.Series:
+    """codigo_tienda → días de su ruta propia ('LU,MI'), para las tiendas que la tienen."""
+    from forusight.data.rutas import normalizar_dias
+
+    t = pd.read_csv(CONFIG / "rutas_tiendas.csv", dtype=str, keep_default_na=False)
+    dias = t["dias"].map(normalizar_dias)
+    return pd.Series(dias.to_numpy(), index=t["codigo_tienda"].str.strip()).loc[lambda s: s.ne("")]
 
 
 @lru_cache(maxsize=1)
@@ -109,6 +122,8 @@ def aplicar(
         )
     ]
     dias = out["mall"].map(lambda m: dias_de_mall(m, tabla_rutas))
+    propia = ids.map(rutas_tiendas())  # ruta propia de la tienda: manda sobre la de su mall
+    dias = propia.where(propia.notna(), dias).astype(str)
     out["dias_reposicion"] = dias
     # Revisión de una tienda fuera del calendario: 7 días / despachos por semana de su mall.
     sin_cal = ~ids.isin(cal.index) & dias.ne("")

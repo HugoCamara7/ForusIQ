@@ -31,7 +31,7 @@ del stock), así que se usa **el primer archivo del día**.
 | Venta | `ft_pe_venta_retail` | 12 semanas cerradas + semana en curso + venta diaria. |
 | Tránsito | Tablas de pedidos (cabecera + detalle) | Ver sección 4. |
 | Producto | ARTI (BigQuery) | SKU, modelo, color, talla, marca, clase, género. Un producto de la marca que aún no está en ARTI (p. ej. códigos nuevos de AZALEIA) entra igual si se vendió con esa marca, si se vendió o tiene stock en una tienda de la marca (nombre «AZALEIA …») o si tiene stock en su bodega (380). Modelo, color, talla y clase se toman de la venta (`ft_pe_venta_retail`, 180 días); un producto que nunca se vendió no se puede describir y queda fuera. Inicio lo avisa en las notas. |
-| Tiendas | **BigQuery primero**: maestro de locales `pe_bronze.stg_pe_perucentral_loca` (`maestro_tiendas_table`) | Código (`NLOCAL_LOC`), nombre (`NOMBRE_LOC`) y ciudad. La cadena sale del nombre (AZALEIA PRIMAVERA → AZALEIA); bodegas y cadenas sin marcas quedan fuera. `config/tiendas_forus.csv` sólo completa el centro comercial y las tiendas que BigQuery no trae. Lo usan la corrida, Bloqueos, Rutas y Temporadas por tienda. |
+| Tiendas | **BigQuery primero**: maestro de locales `pe_bronze.stg_pe_perucentral_loca` (`maestro_tiendas_table`) | Código (`NLOCAL_LOC`), nombre (`NOMBRE_LOC`) y ciudad. La cadena sale del nombre (AZALEIA PRIMAVERA → AZALEIA); bodegas y cadenas sin marcas quedan fuera. `config/tiendas_forus.csv` pone el **nombre completo** (BigQuery lo trae resumido) y completa el centro comercial y las tiendas que BigQuery no trae. Lo usan la corrida, Bloqueos, Rutas y Temporadas por tienda. |
 | Cadenas, rutas | `config/` | Las rutas se editan en **Rutas**. |
 | Stock mínimo, empaque, k | Maestro de planificación guardado (de Forus) + **Parámetros → Stock mínimo** | No vence (sección 3.4). |
 | Temporada comercial | Maestro de temporadas guardado + **Parámetros → Temporadas** | Decide qué se repone (sección 3.8). |
@@ -124,12 +124,15 @@ Por SKU, el **Stock en CD** (`disponible` de stock_bi) se reparte:
   1. lo vendido;
   2. los quiebres;
   3. por prioridad: riesgo de quiebre, venta, prioridad A/B/C de la tienda, curva rota.
-  Las tiendas JOCKEY tienen prioridad máxima.
+  Las tiendas JOCKEY tienen prioridad máxima. Letra y orden de cada tienda (también las
+  AZALEIA) en `config/prioridad_centros.csv`.
 
 Lo enviado **nunca supera** el Stock en CD.
 
 ### 3.8 Filtros finales
-- Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**).
+- Sólo reciben las tiendas cuyo mall tiene **ruta ese día** (página **Rutas**). Una tienda con
+  **ruta propia** (`config/rutas_tiendas.csv`, p. ej. las AZALEIA: Jockey y San Miguel sólo MI,
+  Pucallpa LU/MI) recibe esos días aunque su mall salga otros.
 - Un modelo-color **bloqueado** para la tienda no se envía (página **Bloqueos**).
 - **Temporadas**, en el orden comercial (INVIERNO = marzo a septiembre, VERANO = septiembre a marzo del año siguiente; **ESCOLAR** va con el VERANO del mismo año): INVIERNO 2026 → VERANO 2026 = ESCOLAR 2026 → INVIERNO 2027 → VERANO 2027…
   - **Liquidadoras (DH, SE, FB): reposición por jerarquía.** Sólo temporadas **hasta INVIERNO 2026 inclusive** (todo lo anterior a VERANO 2026 y ESCOLAR 2026). No reciben VERANO 2026, ESCOLAR 2026, temporadas posteriores ni FUTURA. Nada de lo de abajo cambia esta regla (`surtido.temporada_hasta_liquidadoras`).
@@ -186,7 +189,6 @@ por qué.
 Recuadros de aviso:
 - **Tránsito de pedidos:** total, en CD, despachado, y lo que quedó fuera por ser posterior al
   cierre.
-- **Tiendas sin stock mínimo propio:** se estima con otras tiendas, o con su tienda espejo.
 
 ---
 

@@ -54,6 +54,14 @@ if flash := ss.pop("flash_rutas", None):
     (st.success if flash[0] == "ok" else st.error)(flash[1])
 if not editable:
     st.info("Tu rol permite ver las rutas, no cambiarlas (rol `aprobador` o `admin`).")
+if len(propias := CAL.rutas_tiendas()):
+    nombre_de = dict(zip(tiendas["codigo_tienda"], tiendas["nombre_tienda"], strict=False))
+    st.info(
+        "Tiendas con ruta propia (mandan sobre los días de su mall; feriados del mall sí "
+        "aplican): "
+        + " · ".join(f"{nombre_de.get(t, t)}: {d}" for t, d in propias.items())
+        + ". Se cambia en config/rutas_tiendas.csv."
+    )
 
 
 def _mover_semana(dias: int) -> None:

@@ -324,22 +324,6 @@ def _correr_motor(
         dia,
     )
     plan_vig = PLAN.con_espejos(PLAN.vigente(plan, dia, params.nivel_neo.dias_maximos))
-    # Tiendas que reponen hoy sin claves de planificación: su nivel sale de otras tiendas.
-    hoy = dt.loc[dt["activa"] & dt["recibe_hoy"]]
-    con_plan = set(plan_vig.claves["tienda_id"].astype(str))
-    sin_plan = hoy.loc[~hoy["tienda_id"].astype(str).isin(con_plan)]
-    cl = plan_vig.claves
-    de_espejo = (
-        cl.loc[cl["espejo"].notna()].drop_duplicates("tienda_id").set_index("tienda_id")["espejo"]
-        if "espejo" in cl
-        else pd.Series(dtype=str)
-    )
-    nombre = dict(zip(dt["tienda_id"].astype(str), dt["nombre"], strict=False))
-    con_espejo = [
-        f"{t} {nombre.get(t, '')} → {e} {nombre.get(e, '')}".strip()
-        for t, e in de_espejo.items()
-        if t in set(hoy["tienda_id"].astype(str))
-    ]
     niveles = None
     inputs = replace(
         inputs,
@@ -379,10 +363,6 @@ def _correr_motor(
         "bloqueos": int(len(bloq)) if bloq is not None else 0,
         "niveles_ref": 0,
         "planificacion": resumen_planificacion(plan, dia),
-        "tiendas_con_espejo": con_espejo,
-        "tiendas_sin_planificacion": [
-            f"{t} {n}" for t, n in zip(sin_plan["tienda_id"], sin_plan["nombre"], strict=True)
-        ],
     }
     firma = hashlib.sha1(
         "|".join(
