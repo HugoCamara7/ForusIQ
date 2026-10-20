@@ -242,7 +242,11 @@ def leer_carga_detalle(contenido: bytes, nombre: str = "") -> pd.DataFrame:
             "fila": range(2, len(df) + 2),  # fila de Excel (1 = cabecera)
             "mod_col": crudo_mc,
             "tienda": crudo_t,
-            "modelo_color_id": crudo_mc.str.upper().str.replace(r"\s+", "", regex=True),
+            # código de modelo numérico sin guion (AZ2100112256211, o con espacios): el color son
+            # los 3 últimos caracteres
+            "modelo_color_id": crudo_mc.str.upper()
+            .str.replace(r"\s+", "", regex=True)
+            .str.replace(r"^([A-Z]{0,4}[0-9]{6,})([A-Z0-9]{3})$", r"\1-\2", regex=True),
             "tienda_id": [TODAS if _es_tienda_todas(x) else codigo_tienda(x) for x in crudo_t],
         }
     )

@@ -177,3 +177,11 @@ def test_azaleia_primavera_va_con_angamos_y_chacarilla():
     extra = pd.DataFrame({"codigo_tienda": ["901"], "nombre_tienda": ["AZALEIA PRIMAVERA"]})
     r = RU.tiendas_por_mall(BASE, extra).set_index("codigo_tienda")
     assert r.loc["901", "mall"] == "Primavera"
+
+
+def test_tiendas_azaleia_del_catalogo_caen_en_su_ruta():
+    t = RU.tiendas_por_mall(BASE).set_index("codigo_tienda")["mall"]
+    assert t["161"] == "Primavera" and t["172"] == "Jockey Plaza" and t["169"] == "Plaza Norte"
+    assert t["164"] == "Provincia" and t["175"] == "Provincia" and t["171"] == "Plaza San Miguel"
+    az = [str(c) for c in range(161, 176)]
+    assert t.reindex(az).ne("").all()

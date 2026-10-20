@@ -380,11 +380,10 @@ def test_matriz_marca_cadena_de_neogistica():
     assert "HUSH PUPPIES" not in m["RKF"] and m["CLB"] == {"COLUMBIA"} and m["VANS"] == {"VANS"}
     cat = CAD.catalogo_tiendas()
     assert (
-        len(cat) == 70
-        and cat["codigo_tienda"].is_unique
-        and set(cat["cadena"])
-        == set(m) - {"AZALEIA"}  # Azaleia: tiendas nuevas, aún no en el catálogo
-    )  # 71 menos RKF SAN BORJA (cerró)
+        len(cat) == 85 and cat["codigo_tienda"].is_unique and set(cat["cadena"]) == set(m)
+    )  # 71 menos RKF SAN BORJA (cerró) + 15 AZALEIA (161–175)
+    az = cat.loc[cat["cadena"].eq("AZALEIA")].set_index("codigo_tienda")["nombre_tienda"]
+    assert az["161"] == "AZALEIA PRIMAVERA" and az["172"] == "AZALEIA JOCKEY PLAZA"
     assert CAD.marcas_por_cadena({"AZ": ["azaleia"]}) == {"AZ": {"AZALEIA"}}
 
 
