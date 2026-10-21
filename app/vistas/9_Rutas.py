@@ -42,6 +42,13 @@ tiendas = RU.tiendas_por_mall(base, _tiendas_corrida(), catalogo_tiendas())
 hoy = hoy_lima()
 ss.setdefault("rt_fecha", RU.fechas_semana(hoy)[0].date())
 editable = puede("aprobar")
+# Una tienda con días propios (calendario_tiendas.csv, columna «dias») lo muestra a su lado.
+propios = tiendas["codigo_tienda"].astype(str).map(CAL.dias_propios()).fillna("")
+tiendas = tiendas.assign(
+    nombre_tienda=tiendas["nombre_tienda"].where(
+        propios.eq(""), tiendas["nombre_tienda"] + " (sólo " + propios + ")"
+    )
+)
 nombres_tienda = tiendas.groupby("mall")["nombre_tienda"].apply(lambda s: ", ".join(sorted(s)))
 
 hero(

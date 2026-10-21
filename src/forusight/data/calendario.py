@@ -5,7 +5,7 @@
   días. Jockey Plaza LU/MI/VI, Larcomar y Plaza San Miguel LU/JU, Plaza Norte y Mega Plaza
   MA/JU, Salaverry MA/VI, provincia LU/MI/VI, etc.
 * ``config/calendario_tiendas.csv`` — por tienda: su mall, lead time y período de revisión
-  (días). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
+  (días) y, si no repone todos los días de su mall, los suyos (``dias``: AZALEIA Jockey MI). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
   de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
 * ``config/prioridad_centros.csv`` — prioridad (A, B, C) de TODAS las tiendas, de cualquier
   cadena (maestro «Atributos centros Forus Perú»), y su orden dentro de la letra: 1 = Jockey
@@ -69,6 +69,15 @@ def dias_de_mall(mall: str, tabla: pd.DataFrame | None = None) -> str:
     return str(d.get(mall, "")) if mall else ""
 
 
+def dias_propios() -> pd.Series:
+    """codigo_tienda → sus días de despacho ('MI') cuando no son los de su mall."""
+    cal = calendario().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    if "dias" not in cal:
+        return pd.Series(dtype=str)
+    d = cal["dias"].fillna("").astype(str).str.upper().str.replace(" ", "")
+    return d.map(lambda t: ",".join(x for x in DIAS if x in t.split(",")))
+
+
 def dia_semana(fecha) -> str:
     return DIAS[pd.Timestamp(fecha).weekday()]
 
@@ -109,6 +118,10 @@ def aplicar(
         )
     ]
     dias = out["mall"].map(lambda m: dias_de_mall(m, tabla_rutas))
+    # Días propios de la tienda (columna «dias» del calendario) mandan sobre los de su mall:
+    # AZALEIA Jockey sólo MI aunque el camión vaya a Jockey LU, MI y VI.
+    propios = ids.map(dias_propios()).fillna("")
+    dias = propios.where(propios.ne(""), dias)
     out["dias_reposicion"] = dias
     # Revisión de una tienda fuera del calendario: 7 días / despachos por semana de su mall.
     sin_cal = ~ids.isin(cal.index) & dias.ne("")

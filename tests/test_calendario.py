@@ -296,11 +296,18 @@ def test_hpk_jockey_es_A_como_dice_el_maestro_de_centros():
 
 def test_jockey_siempre_primero_luego_lima_luego_provincia():
     """Dentro de cada letra: Jockey Plaza 1, el resto de Lima 2, provincia 3. Todas las tiendas
-    del Jockey son A y la primera de las A."""
-    cen = CAL.prioridad_centros()
+    del Jockey son A y la primera de las A. AZALEIA trae su propio orden por venta (1-6)."""
+    todas = CAL.prioridad_centros()
+    assert not todas["codigo_tienda"].duplicated().any()
+    cen = todas.loc[todas["cadena"].ne("AZ")]
     jockey = cen["centro_comercial"].str.upper().eq("JOCKEY")
     lima = cen["zona_cc"].str.upper().eq("LIMA")
     assert jockey.sum() == 6  # HP, HPK, CLB, BSOUL, VANS y RKF (BBG ya no es de Forus)
+    assert todas.loc[todas["cadena"].eq("AZ"), "prioridad"].value_counts().to_dict() == {
+        "A": 5,
+        "B": 6,
+        "C": 2,
+    }
     assert cen.loc[jockey, "prioridad"].eq("A").all() and cen.loc[jockey, "orden"].eq(1).all()
     assert cen.loc[~jockey & lima, "orden"].eq(2).all()
     assert cen.loc[~lima, "orden"].eq(3).all()
@@ -354,3 +361,29 @@ def test_una_liquidadora_sigue_siendo_outlet_aunque_tenga_letra():
     m = marcar_prioridad(CAL.aplicar(t, "2026-10-05", params(), ["COLUMBIA"]), params()).iloc[0]
     assert m["tienda_liquidadora"] and not m["tienda_prioritaria"]
     assert m["importancia_comercial"] == 0.0 and m["factor_cobertura_tienda"] == 0.75
+
+
+def test_azaleia_dias_propios_y_prioridad():
+    # PRIORIDAD_AZALEIA 21/10: Jockey y San Miguel sólo MI, Pucallpa LU y MI, el resto su mall.
+    dim = pd.DataFrame(
+        {
+            "tienda_id": ["172", "171", "162", "169", "8"],
+            "nombre": [
+                "AZALEIA JOCKEY PLAZA",
+                "AZALEIA SAN MIGUEL",
+                "AZALEIA PUCALLPA",
+                "AZALEIA PLAZA NORTE",
+                "HP JOCKEY",
+            ],
+        }
+    )
+    lu = CAL.aplicar(dim, "2026-10-19", params(), ["AZALEIA"]).set_index("tienda_id")
+    mi = CAL.aplicar(dim, "2026-10-21", params(), ["AZALEIA"]).set_index("tienda_id")
+    assert lu.loc["172", "dias_reposicion"] == "MI" and not lu.loc["172", "recibe_hoy"]
+    assert lu.loc["8", "recibe_hoy"]  # HP Jockey sigue con la ruta del mall (LU, MI, VI)
+    assert mi.loc["172", "recibe_hoy"] and mi.loc["171", "recibe_hoy"]
+    assert lu.loc["162", "dias_reposicion"] == "LU,MI" and lu.loc["162", "recibe_hoy"]
+    assert lu.loc["169", "dias_reposicion"] == "MA,JU"
+    assert lu.loc["172", "revision_dias"] == 7 and lu.loc["162", "revision_dias"] == 3.5
+    assert mi.loc["172", "prioridad"] == "A" and mi.loc["162", "prioridad"] == "B"
+    assert mi.loc["172", "orden_prioridad"] == 1 and mi.loc["171", "orden_prioridad"] == 5
