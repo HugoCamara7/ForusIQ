@@ -128,7 +128,9 @@ ALIAS_TIENDAS: dict[str, list[str]] = {
         "id_tienda",
         "tienda",
     ],
+    # NOMBRE_LOC es el nombre completo (HP TRUJILLO); NOMBRE_CORTO (HP TRU) nunca es el nombre.
     "tienda_nombre": [
+        "nombre_loc",
         "nombre_tienda",
         "nombre_centro",
         "desc_tienda",
@@ -138,9 +140,10 @@ ALIAS_TIENDAS: dict[str, list[str]] = {
         "nombre",
     ],
     "centro_comercial": ["centro_comercial", "mall", "centro_comercial_nombre"],
-    # ciudad antes que region: REGION_LOC es un código (0/1), ciudad_loc dice LIMA o la ciudad
-    "zona": ["zona_cc", "zona", "ciudad_loc", "ciudad", "region", "ubicacion"],
+    # zona_loc dice LIMA o PROVINCIA; si no, la ciudad (REGION_LOC es un código: 3, 7)
+    "zona": ["zona_cc", "zona_loc", "zona", "ciudad_loc", "ciudad", "region", "ubicacion"],
     "cadena": ["cadena", "cod_cadena", "tipo_cadena", "desc_cadena", "nombre_cadena"],
+    "estado": ["estado_loc"],  # 1 = abierta, 0 = cerrada
 }
 
 #: Maestro código/modelo → cadena (`maestro_cadena_table`).

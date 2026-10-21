@@ -541,6 +541,16 @@ class FuentesRepository(BigQueryRepository):
 
         excl = {F.codigo_tienda(t) for t in self.settings.tiendas_excluidas}
         excl |= {F.codigo_tienda(t) for t in tiendas_cerradas()}
+        # Cerradas en el maestro de locales (ESTADO_LOC = 0): tampoco reciben.
+        t_m = maestros.get("tiendas")
+        if t_m is not None and "abierta" in t_m:
+            cerradas_bq = set(t_m.loc[~t_m["abierta"].astype(bool), "tienda_cod"].astype(str))
+            if cerradas_bq:
+                excl |= cerradas_bq
+                diag.notas.append(
+                    f"{len(cerradas_bq)} tiendas cerradas en el maestro de locales (ESTADO_LOC = 0) "
+                    "no reciben."
+                )
         entradas = F.construir_entradas(
             arti,
             ventas,

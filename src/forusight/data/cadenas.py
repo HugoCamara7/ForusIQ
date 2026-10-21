@@ -40,7 +40,8 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
 
     - cadena numérica (stg_pe_perucentral_loca: 20 = AZALEIA) → prefijo del nombre;
     - zona que no es LIMA/PROVINCIA (ciudad: CUSCO, CALLAO…) → LIMA si es Lima o Callao;
-    - bodegas, oficinas y cadenas sin marcas (BODEGA FORUS, PARFOIS…) quedan fuera."""
+    - bodegas, oficinas y cadenas sin marcas (BODEGA FORUS, PARFOIS…) quedan fuera;
+    - ``abierta``: False si ESTADO_LOC = 0 (cerrada)."""
     from forusight.data.fuentes import codigo_tienda
 
     vacio = pd.Series(pd.NA, index=m.index, dtype="string")
@@ -52,6 +53,7 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
         zona.isin(["LIMA", "PROVINCIA"]).fillna(False),
         np.where(zona.isin(_ZONA_LIMA).fillna(False), "LIMA", "PROVINCIA"),
     ).where(zona.notna() & ~zona.str.fullmatch(r"[0-9]+").fillna(True))
+    estado = m.get("estado", vacio).astype("string").str.strip()
     out = pd.DataFrame(
         {
             "codigo_tienda": m["tienda_cod"].map(codigo_tienda),
@@ -59,11 +61,20 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
             "centro_comercial": m.get("centro_comercial", vacio).astype("string").str.upper(),
             "zona": zona,
             "cadena": cadena,
+            # ESTADO_LOC: 0 = cerrada, 1 = abierta; sin estado se toma abierta.
+            "abierta": ~estado.isin(["0", "0.0"]).fillna(False),
         }
     )
     conocidas = set(marcas_por_cadena()) | set(catalogo_tiendas()["cadena"].astype(str))
     out = out.loc[out["cadena"].isin(conocidas).fillna(False) & out["codigo_tienda"].ne("")]
-    return out.drop_duplicates("codigo_tienda").reset_index(drop=True)
+    # Un código repetido (otra empresa) con una fila abierta cuenta como abierta.
+    out = out.sort_values("abierta", ascending=False, kind="stable")
+    out = out.drop_duplicates("codigo_tienda").sort_index().reset_index(drop=True)
+    # El maestro no trae centro comercial: lo completa el catálogo del repositorio.
+    cat = catalogo_tiendas().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    del_cat = out["codigo_tienda"].map(cat["centro_comercial"]).astype("string")
+    out["centro_comercial"] = out["centro_comercial"].fillna(del_cat)
+    return out
 
 
 def con_maestro(maestro: pd.DataFrame | None) -> pd.DataFrame:

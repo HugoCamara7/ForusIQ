@@ -1256,3 +1256,29 @@ def test_maestro_de_bigquery_manda_y_normaliza():
     assert cat.loc["161", "nombre_tienda"] == "AZALEIA PRIMAVERA"
     assert cat.loc["161", "centro_comercial"] == "PRIMAVERA"  # lo completa el repositorio
     assert "8" in cat.index  # HP JOCKEY: no está en esta muestra, sigue del repositorio
+
+
+def test_maestro_de_locales_nombre_completo_y_zona():
+    """stg_pe_perucentral_loca: NOMBRE_LOC (HP TRUJILLO), no NOMBRE_CORTO (HP TRU); zona_loc."""
+    cols = ["CODEMP_LOC", "cadena_loc", "NLOCAL_LOC", "REGION_LOC", "NOMBRE_LOC", "DIRECC_LOC"]
+    cols += ["comuna_loc", "ciudad_loc", "ESTADO_LOC", "FANTAS_LOC", "ccosto_loc"]
+    cols += ["NOMBRE_CORTO", "GRUPO1", "PRIORI_LOC", "zona_loc", "tipotienda_loc", "tiempo_loc"]
+    m = M.mapear(cols, M.ALIAS_TIENDAS)
+    assert m["tienda_nombre"] == "NOMBRE_LOC" and m["zona"] == "zona_loc"
+    assert m["tienda_cod"] == "NLOCAL_LOC" and m["cadena"] == "cadena_loc"
+    from forusight.data import cadenas as CAD
+
+    loca = pd.DataFrame(
+        {
+            "tienda_cod": ["22", "129", "14"],
+            "tienda_nombre": ["HP TRUJILLO", "HP LA MOLINA", "HP TACNA"],
+            "cadena": ["1", "1", "1"],
+            "zona": ["PROVINCIA", "LIMA", "PROVINCIA"],
+            "estado": ["1", "1", "0"],
+        }
+    )
+    n = CAD.normalizar_maestro(loca).set_index("codigo_tienda")
+    assert n.loc["22", "nombre_tienda"] == "HP TRUJILLO" and n.loc["22", "zona"] == "PROVINCIA"
+    assert n.loc["129", "centro_comercial"] == "LA MOLINA"  # lo completa el repositorio
+    assert n.loc["22", "abierta"] and not n.loc["14", "abierta"]  # ESTADO_LOC 0 = cerrada
+    assert M.mapear(cols, M.ALIAS_TIENDAS)["estado"] == "ESTADO_LOC"
