@@ -238,8 +238,8 @@ def test_toda_tienda_del_calendario_y_prioridades_esta_en_el_catalogo():
 
 
 def test_orden_de_prioridad_dentro_de_la_letra():
-    """HP Jockey (A, Jockey) va antes que HP San Miguel 2 (A, resto de Lima); toda A va antes
-    que una B (HP Chiclayo, B de provincia)."""
+    """Orden de la marca (prioridad_tiendas.csv): HP Jockey (A 1) antes que HP San Miguel 2
+    (A 3); toda A va antes que una B (HP Chiclayo, B 2)."""
     from forusight.engine.universe import marcar_prioridad
 
     t = pd.DataFrame(
@@ -251,7 +251,7 @@ def test_orden_de_prioridad_dentro_de_la_letra():
     )
     t = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"])
     imp = marcar_prioridad(t, params()).set_index("tienda_id")["importancia_comercial"]
-    assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.97 and round(imp["12"], 2) == 0.54
+    assert imp["8"] == 1.0 and round(imp["43"], 2) == 0.94 and round(imp["12"], 2) == 0.57
 
 
 def test_venta_post_corte_solo_despues_del_corte_y_neta():
@@ -273,9 +273,10 @@ def test_venta_post_corte_solo_despues_del_corte_y_neta():
     assert vr.loc["9", "venta_post_corte"] == -1
 
 
-def test_hpk_jockey_es_A_como_dice_el_maestro_de_centros():
-    """El maestro de centros manda sobre el de la marca: HPK JOCKEY es A (antes B en el de
-    HUSH PUPPIES) y reparte igual que HP JOCKEY; HP PLAZA NORTE baja a B."""
+def test_manda_la_prioridad_de_la_marca():
+    """La prioridad de HUSH PUPPIES (prioridad_tiendas.csv, la que envía el negocio) manda
+    sobre el maestro de centros: HP PLAZA NORTE es A y HPK JOCKEY B. Una marca sin archivo
+    propio (COLUMBIA) toma la letra del maestro de centros."""
     from forusight.engine.universe import marcar_prioridad
 
     t = pd.DataFrame(
@@ -285,13 +286,17 @@ def test_hpk_jockey_es_A_como_dice_el_maestro_de_centros():
             "importancia_comercial": [0.5] * 4,
         }
     )
-    for marca in ("HUSH PUPPIES", "HUSH PUPPIES KIDS", "COLUMBIA"):
-        a = CAL.aplicar(t, "2026-10-05", params(), [marca]).set_index("tienda_id")
-        assert a["prioridad"].to_dict() == {"8": "A", "18": "A", "44": "B", "22": "A"}, marca
-        m = marcar_prioridad(a.reset_index(), params()).set_index("tienda_id")
-        imp = m["importancia_comercial"]
-        assert imp["18"] == imp["8"] == 1.0, marca
-        assert imp["8"] > imp["22"] > imp["44"], marca  # Jockey > provincia A > Lima B
+    a = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES"]).set_index("tienda_id")
+    assert a["prioridad"].to_dict() == {"8": "A", "18": "B", "44": "A", "22": "B"}
+    imp = marcar_prioridad(a.reset_index(), params()).set_index("tienda_id")[
+        "importancia_comercial"
+    ]
+    assert imp["8"] == 1.0 and imp["8"] > imp["44"] > imp["22"] > imp["18"]
+    # KIDS sólo trae 18 y 46: las demás tiendas toman la letra del maestro de centros
+    k = CAL.aplicar(t, "2026-10-05", params(), ["HUSH PUPPIES KIDS"]).set_index("tienda_id")
+    assert k["prioridad"].to_dict() == {"8": "A", "18": "B", "44": "B", "22": "A"}
+    c = CAL.aplicar(t, "2026-10-05", params(), ["COLUMBIA"]).set_index("tienda_id")
+    assert c["prioridad"].to_dict() == {"8": "A", "18": "A", "44": "B", "22": "A"}
 
 
 def test_jockey_siempre_primero_luego_lima_luego_provincia():

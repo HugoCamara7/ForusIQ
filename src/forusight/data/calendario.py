@@ -7,11 +7,10 @@
 * ``config/calendario_tiendas.csv`` — por tienda: su mall, lead time y período de revisión
   (días) y, si no repone todos los días de su mall, los suyos (``dias``: AZALEIA Jockey MI). Una tienda nueva sin fila toma el mall de su centro comercial (maestro de tiendas),
   de su zona (provincia) o de su nombre, y su revisión = 7 / despachos por semana.
-* ``config/prioridad_centros.csv`` — prioridad (A, B, C) de TODAS las tiendas, de cualquier
-  cadena (maestro «Atributos centros Forus Perú»), y su orden dentro de la letra: 1 = Jockey
-  Plaza (siempre la primera), 2 = el resto de Lima, 3 = provincia. Es el que manda.
-* ``config/prioridad_tiendas.csv`` — prioridad por marca y orden: sólo para una tienda que
-  todavía no esté en el maestro de centros.
+* ``config/prioridad_tiendas.csv`` — prioridad por marca (A, B, C) y orden dentro de la letra:
+  la que envía el negocio (HUSH PUPPIES, AZALEIA). Es la que manda.
+* ``config/prioridad_centros.csv`` — prioridad de todas las tiendas de cualquier cadena
+  (1 = Jockey, 2 = resto de Lima, 3 = provincia): sólo para una tienda que la marca no tenga.
 
 En un día dado sólo reciben las tiendas cuyo mall tiene ruta ese día; la cobertura de cada
 tienda es su lead time + su período de revisión (como el reporte), no un valor fijo.
@@ -143,13 +142,14 @@ def aplicar(
     if pedidas:
         pr = pr[pr["marca"].str.upper().isin(pedidas)]
     pr = pr.drop_duplicates("codigo_tienda").set_index("codigo_tienda")
-    # Manda el maestro de centros (letra y orden); el de la marca sólo cubre a una tienda que
-    # aún no esté en él. Sin ninguno de los dos, el patrón de nombre de params (universe).
+    # Manda la prioridad de la marca (prioridad_tiendas.csv: la que envía el negocio, letra y
+    # orden); el maestro de centros sólo cubre a una tienda que la marca no tenga. Sin ninguno
+    # de los dos, el patrón de nombre de params (universe).
     cen = prioridad_centros().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
-    en_cen = ids.isin(cen.index)
-    out["prioridad"] = ids.map(cen["prioridad"]).where(en_cen, ids.map(pr["prioridad"]))
+    en_marca = ids.isin(pr.index)
+    out["prioridad"] = ids.map(pr["prioridad"]).where(en_marca, ids.map(cen["prioridad"]))
     orden_marca = ids.map(pr["orden"]) if "orden" in pr else pd.Series(np.nan, index=out.index)
     out["orden_prioridad"] = pd.to_numeric(
-        ids.map(cen["orden"]).where(en_cen, orden_marca), errors="coerce"
+        orden_marca.where(en_marca, ids.map(cen["orden"])), errors="coerce"
     )
     return out
