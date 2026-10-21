@@ -63,7 +63,14 @@ def normalizar_maestro(m: pd.DataFrame) -> pd.DataFrame:
     )
     conocidas = set(marcas_por_cadena()) | set(catalogo_tiendas()["cadena"].astype(str))
     out = out.loc[out["cadena"].isin(conocidas).fillna(False) & out["codigo_tienda"].ne("")]
-    return out.drop_duplicates("codigo_tienda").reset_index(drop=True)
+    out = out.drop_duplicates("codigo_tienda").reset_index(drop=True)
+    # NOMBRE_LOC viene abreviado (HP LMO, HP TRU): el nombre completo y el centro comercial
+    # salen del catálogo del repositorio; BigQuery sólo nombra a las tiendas que no están.
+    cat = catalogo_tiendas().drop_duplicates("codigo_tienda").set_index("codigo_tienda")
+    for col in ("nombre_tienda", "centro_comercial"):
+        del_cat = out["codigo_tienda"].map(cat[col]).astype("string")
+        out[col] = del_cat.where(del_cat.notna() & del_cat.ne(""), out[col])
+    return out
 
 
 def con_maestro(maestro: pd.DataFrame | None) -> pd.DataFrame:

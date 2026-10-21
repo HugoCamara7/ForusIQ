@@ -1256,3 +1256,22 @@ def test_maestro_de_bigquery_manda_y_normaliza():
     assert cat.loc["161", "nombre_tienda"] == "AZALEIA PRIMAVERA"
     assert cat.loc["161", "centro_comercial"] == "PRIMAVERA"  # lo completa el repositorio
     assert "8" in cat.index  # HP JOCKEY: no está en esta muestra, sigue del repositorio
+
+
+def test_nombre_abreviado_de_bigquery_sale_completo_del_catalogo():
+    """NOMBRE_LOC trae «HP LMO»: la corrida y las pantallas muestran «HP LA MOLINA»."""
+    from forusight.data import cadenas as CAD
+
+    loca = pd.DataFrame(
+        {
+            "tienda_cod": ["129", "8", "61", "999"],
+            "tienda_nombre": ["HP LMO", "HP JOCKEY", "HP CUS", "HP NUEVA"],
+            "cadena": ["1", "1", "1", "1"],
+            "zona": ["LIMA", "LIMA", "CUSCO", "LIMA"],
+        }
+    )
+    n = CAD.normalizar_maestro(loca).set_index("codigo_tienda")
+    assert n.loc["129", "nombre_tienda"] == "HP LA MOLINA"
+    assert n.loc["61", "nombre_tienda"] == "HP CUSCO" and n.loc["61", "zona"] == "PROVINCIA"
+    assert n.loc["129", "centro_comercial"] == "LA MOLINA"
+    assert n.loc["999", "nombre_tienda"] == "HP NUEVA"  # no está en el catálogo: el de BigQuery
