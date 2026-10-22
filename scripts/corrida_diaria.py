@@ -140,6 +140,13 @@ def con_reintentos(intento, reloj, dormir, al_reintentar=lambda: None) -> dict:
         al_reintentar()
 
 
+def codigo_http(exc: BaseException) -> str:
+    """Sólo el código HTTP de un error de GitHub (401 token inválido, 403 sin permiso): el
+    log es público, así que nunca el repositorio, la rama ni el mensaje."""
+    codigo = getattr(exc.__cause__, "code", None)
+    return f", GitHub respondió {codigo}" if isinstance(codigo, int) else ""
+
+
 def main() -> int:
     from app.components import estado as E
 
@@ -166,15 +173,18 @@ def main() -> int:
             lambda t: correr(t, store, fuente, forzar), C.ahora_lima, time.sleep, releer
         )
     except Exception as exc:  # el detalle va al repo privado; el log es público
-        print(f"La corrida falló ({type(exc).__name__}). Detalle en el repositorio de datos.")
+        print(
+            f"La corrida falló ({type(exc).__name__}{codigo_http(exc)}). "
+            "Detalle en el repositorio de datos."
+        )
         try:
             store.guardar(
                 f"{C.carpeta_del_mes(ahora)}/{ahora:%Y-%m-%d_%H%M}_ERROR.txt",
                 traceback.format_exc().encode("utf-8"),
                 f"forusight: error en la corrida diaria del {ahora:%d/%m/%Y %H:%M}",
             )
-        except Exception:
-            print("Tampoco se pudo guardar el detalle del error.")
+        except Exception as exc2:
+            print(f"Tampoco se pudo guardar el detalle del error{codigo_http(exc2)}.")
         return 1
     try:
         r["borradas de semanas anteriores"] = limpiar(store, ahora.date())

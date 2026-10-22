@@ -190,6 +190,23 @@ def test_el_script_solo_imprime_en_main():
             assert not prints, f.name
 
 
+def test_codigo_http_solo_el_numero():
+    """El log público dice si el token falla (401/403) sin el repositorio ni el mensaje."""
+    from urllib.error import HTTPError
+
+    from forusight.data.github_store import GitHubError
+
+    s = _script()
+    try:
+        try:
+            raise HTTPError("https://api.github.com/x", 403, "Forbidden", {}, io.BytesIO())
+        except HTTPError as http:
+            raise GitHubError("GitHub respondió 403 (GET) en org/datos-privados") from http
+    except GitHubError as exc:
+        assert s.codigo_http(exc) == ", GitHub respondió 403"
+    assert s.codigo_http(RuntimeError("otra cosa")) == ""
+
+
 # ------------------------------------------------------------------ la corrida de verdad
 
 
