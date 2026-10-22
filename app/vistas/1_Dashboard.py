@@ -9,7 +9,23 @@ from app.components.ui import hero, html, issue_box, kpi_row, ranking, section, 
 ss = st.session_state
 # Arriba el recuadro azul y debajo la consulta. El recuadro muestra la corrida que se acaba de
 # ejecutar, así que se reserva su lugar y se llena después de la consulta.
-cabecera = st.container()
+cabecera = st.empty()
+
+
+def _hero_inicio() -> None:
+    with cabecera:
+        hero(
+            "Forusight",
+            "Reposición del CD 320 (y la bodega 380 de Azaleia) a tiendas por modelo, talla y "
+            "cantidad, con el motivo de cada envío.",
+            eyebrow="Reposición",
+        )
+
+
+# Sin corrida, el recuadro va antes de la consulta (que tarda leyendo BigQuery): al ingresar,
+# la pantalla de acceso no queda a la vista mientras tanto.
+if ss.get("resultado") is None:
+    _hero_inicio()
 panel_corrida()  # marca, fechas y «Ejecutar corrida»
 res = ss.get("resultado")
 diag = ss.get("diagnostico") or {}
@@ -33,13 +49,7 @@ def _fecha(x) -> str:
 
 
 if res is None:
-    with cabecera:
-        hero(
-            "Forusight",
-            "Reposición del CD 320 (y la bodega 380 de Azaleia) a tiendas por modelo, talla y "
-            "cantidad, con el motivo de cada envío.",
-            eyebrow="Reposición",
-        )
+    _hero_inicio()
     issue_box(
         "info",
         "Empieza aquí",

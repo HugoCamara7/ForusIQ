@@ -204,8 +204,12 @@ def app_styles() -> None:
              --text-main:#0F172A; --text-muted:#64748B; }}
     .stApp {{ background:var(--bg-main); color:var(--text-main); }}
     /* Tras ingresar, el login de la corrida anterior sigue en pantalla (elementos «stale»)
-       hasta que la página lo reemplaza, pero ya sin sus estilos: logos a tamaño natural. */
-    .st-key-login_card, .st-key-login_foot {{ display:none !important; }}
+       hasta que la página lo reemplaza, pero ya sin sus estilos: logos a tamaño natural. Si
+       el Inicio ocupa antes el lugar de la tarjeta (su cabecera), la clave de la tarjeta se
+       pierde y sus hijos siguen visibles: se ocultan también por su propia clase. */
+    .st-key-login_card, .st-key-login_foot, .st-key-login_form_area,
+    [data-testid="stElementContainer"]:has(.login-head, .login-brands, .login-note, .login-foot) {{
+        display:none !important; }}
     header[data-testid="stHeader"] {{ background:transparent; }}
     div[data-testid="stDecoration"], footer {{ display:none !important; }}
     .block-container, [data-testid="stMainBlockContainer"] {{
