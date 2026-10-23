@@ -179,10 +179,14 @@ def construir_base(
     )
     v4 = semanal.loc[semanal["rel"] <= b].groupby(KEY_SKU, sort=False)["unidades"].sum()
     agg["venta_4s"] = v4
-    sku = sku.merge(agg.reset_index(), on=KEY_SKU, how="left")
-    sku[["venta_12s", "dias_12s", "venta_4s"]] = sku[["venta_12s", "dias_12s", "venta_4s"]].fillna(
-        0
+    # venta de las últimas N semanas: define el SKU activo del velocímetro de disponibilidad
+    n_disp = params.disponibilidad.semanas_venta_activo
+    agg["venta_8s"] = (
+        semanal.loc[semanal["rel"] <= n_disp].groupby(KEY_SKU, sort=False)["unidades"].sum()
     )
+    sku = sku.merge(agg.reset_index(), on=KEY_SKU, how="left")
+    cols_v = ["venta_12s", "dias_12s", "venta_4s", "venta_8s"]
+    sku[cols_v] = sku[cols_v].fillna(0)
     sku = sku.merge(
         venta_actual.rename("venta_semana_actual").reset_index(), on=KEY_SKU, how="left"
     )

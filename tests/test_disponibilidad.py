@@ -1,72 +1,82 @@
-"""Disponibilidad como la mide Forus: la talla quebrada que el CD no tiene no resta."""
+"""Disponibilidad como la mide Forus: SKU con venta en 8 semanas que tienen stock en la tienda."""
 
 import pandas as pd
 
 from forusight.engine import disponibilidad as D
 
+#: Ejemplo de Forus (22/10): venta total de 8 semanas, stock en tienda y stock del CD por SKU.
+EJEMPLO = [
+    (17, 1, 100),
+    (10, 0, 50),
+    (12, 0, 50),
+    (16, 0, 1),
+    (0, 1, 0),  # sin venta: no se mide aunque tenga stock
+    (15, 0, 0),  # vendió y no hay en ningún lado: es quiebre aunque el CD no tenga
+    (11, 1, 250),
+    (0, 0, 1),
+    (9, 1, 600),
+    (17, 1, 125),
+    (10, 0, 2316),
+    (11, 1, 545),
+]
 
-def _modelo(tienda, quebradas, en_cd, cantidad=0, venta=10, tallas=12):
-    filas = []
-    for i in range(tallas):
-        rota = i < quebradas
-        filas.append(
+
+def _detalle(filas, cantidad=0, tienda="T1"):
+    return pd.DataFrame(
+        [
             {
                 "tienda_id": tienda,
-                "modelo_color_id": "M1",
-                "stock_tienda": 0 if rota else 1,
-                "cantidad": cantidad if rota else 0,
-                "stock_cd_disponible": 5 if (rota and en_cd) else 0,
-                "venta_12s": venta / tallas,
+                "modelo_color_id": f"M{i}",
+                "sku": f"S{i}",
+                "talla": "38",
+                "venta_8s": venta,
+                "venta_12s": venta,
+                "stock_tienda": stock,
+                "stock_cd_disponible": cd,
+                "stock_transito": 0,
+                "cantidad": cantidad if stock == 0 and cd > 0 else 0,
+                "demanda_semanal": 0.5,
             }
-        )
-    return filas
-
-
-def test_tallas_que_el_cd_no_tiene_no_restan():
-    d = pd.DataFrame(_modelo("T1", quebradas=3, en_cd=False))
-    assert D.total(d)["antes"] == 1.0
-
-
-def test_tallas_que_el_cd_si_tiene_restan_y_el_envio_las_recupera():
-    d = pd.DataFrame(_modelo("T1", quebradas=3, en_cd=True, cantidad=1))
-    t = D.total(d)
-    assert t["antes"] == 0.75 and t["despues"] == 1.0
-
-
-def test_total_pondera_por_flujo_de_la_tienda():
-    d = pd.DataFrame(
-        _modelo("GRANDE", quebradas=0, en_cd=True, venta=900)
-        + _modelo("CHICA", quebradas=6, en_cd=True, venta=9)
+            for i, (venta, stock, cd) in enumerate(filas)
+        ]
     )
-    t = D.total(d)
-    assert t["antes"] > 0.98  # la tienda con más flujo pesa casi todo
-    assert set(D.por_tienda(d)["tienda_id"]) == {"GRANDE", "CHICA"}
 
 
-def test_kpis_del_piloto_simple_ponderada_y_wos():
-    filas = _modelo("T1", quebradas=1, en_cd=True, cantidad=1)  # 11/12 hoy, 12/12 después
-    for f in filas:
-        f["demanda_semanal"] = 0.5
-        f["stock_transito"] = 0
-    k = D.kpis(pd.DataFrame(filas))
-    assert k["activos"] == 12
-    assert round(k["simple_antes"], 3) == round(11 / 12, 3) and k["simple_despues"] == 1.0
-    assert k["simple_antes"] < D.MINIMO and k["simple_despues"] == D.META
-    assert k["wos_antes"] == 11 / 6 and k["wos_despues"] == 2.0
+def test_ejemplo_forus_da_50_por_ciento():
+    k = D.kpis(_detalle(EJEMPLO))
+    assert k["activos"] == 10  # SKU con venta en 8 semanas
+    assert k["simple_antes"] == 0.5  # 5 con stock en tienda / 10
 
 
-def test_kpis_no_cuentan_tallas_no_planificadas_y_dan_la_cifra_con_transito():
-    """Talla sin stock ni stock objetivo: no se repone, no es quiebre. Talla en camino: cuenta
-    en la disponibilidad con tránsito."""
-    filas = _modelo("T1", quebradas=2, en_cd=True, cantidad=0)
-    for f in filas:
-        f["demanda_semanal"] = 0.5
-        f["stock_transito"] = 0
-        f["stock_objetivo"] = 1
-    quebradas = [f for f in filas if f["stock_tienda"] == 0]
-    quebradas[0]["stock_objetivo"] = 0  # la tienda no la planifica
-    quebradas[1]["stock_transito"] = 1  # ya va en camino
-    k = D.kpis(pd.DataFrame(filas))
-    assert k["activos"] == 11
-    assert round(k["simple_antes"], 3) == round(10 / 11, 3)
-    assert k["con_transito_antes"] == 1.0
+def test_el_cd_no_cuenta_y_el_envio_recupera_solo_lo_que_hay_en_el_cd():
+    k = D.kpis(_detalle(EJEMPLO, cantidad=1))
+    assert k["simple_antes"] == 0.5
+    assert k["simple_despues"] == 0.9  # 4 quiebres con CD se reponen; el de CD 0 sigue en quiebre
+
+
+def test_quiebres_incluyen_los_que_el_cd_no_tiene():
+    q = D.quiebres(D.sku_activos(_detalle(EJEMPLO)))
+    assert len(q) == 5
+    assert (q["stock_cd_disponible"] == 0).sum() == 1
+
+
+def test_por_tienda_cuadra_con_el_total():
+    d = pd.concat([_detalle(EJEMPLO, tienda="T1"), _detalle(EJEMPLO[:4], tienda="T2")])
+    skus = D.sku_activos(d)
+    t = D.por_tienda_kpis(skus)
+    k = D.kpis_skus(skus)
+    assert t["activos"].sum() == k["activos"] == 14
+    assert t["disponibles"].sum() / t["activos"].sum() == k["simple_antes"]
+
+
+def test_con_transito_cuenta_lo_que_va_en_camino():
+    d = _detalle([(5, 0, 3), (5, 1, 0)])
+    d.loc[0, "stock_transito"] = 2
+    k = D.kpis(d)
+    assert k["simple_antes"] == 0.5 and k["con_transito_antes"] == 1.0
+    assert k["wos_antes"] == 3 / 1.0
+
+
+def test_corridas_sin_venta_8s_usan_12_semanas():
+    d = _detalle(EJEMPLO).drop(columns="venta_8s")
+    assert D.kpis(d)["simple_antes"] == 0.5

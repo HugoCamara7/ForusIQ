@@ -5,7 +5,8 @@ así la suma de las tiendas da exactamente el valor del velocímetro. Hojas:
 
 * «Por tienda»: SKU activos, disponibles, quiebres y disponibilidad (hoy, con tránsito,
   después del envío y ponderada por venta) de cada tienda, con el total del retail arriba;
-* «Tallas en quiebre»: cada talla activa sin stock que el CD sí tiene, y si hoy se envía;
+* «Tallas en quiebre»: cada SKU activo (vendió en 8 semanas) sin stock en la tienda, y si hoy
+  se envía;
 * «Cómo se calcula»: las definiciones.
 """
 
@@ -100,12 +101,12 @@ def tablas(res, tiendas: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.D
             "Stock tienda": q["stock_tienda"].fillna(0).astype(int),
             "Tránsito": q["stock_transito"].fillna(0).astype(int),
             "Stock CD": q["stock_cd_disponible"].fillna(0).astype(int),
-            "Venta 12S": q["venta_12s"].fillna(0).astype(int),
+            "Venta 8S": q["venta_8s"].fillna(0).astype(int),
             "Se envía hoy": q["cantidad"].fillna(0).astype(int),
         }
     )
     quie = quie.assign(_n=pd.to_numeric(quie["Cod Tienda"], errors="coerce")).sort_values(
-        ["_n", "Venta 12S"], ascending=[True, False]
+        ["_n", "Venta 8S"], ascending=[True, False]
     )
     return por.reset_index(drop=True), quie.drop(columns="_n").reset_index(drop=True), completo
 
@@ -113,13 +114,13 @@ def tablas(res, tiendas: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.D
 DEFINICIONES = [
     (
         "SKU activo",
-        "Talla de un modelo-color que la tienda maneja (tiene stock o vendió en 12 "
-        "semanas), con stock o planificada (stock objetivo > 0).",
+        "Tienda × SKU (talla) que vendió en las últimas 8 semanas cerradas. Un SKU sin venta "
+        "en 8 semanas no se mide, aunque tenga stock.",
     ),
     (
         "SKU disponible",
-        "SKU activo con stock en la tienda, o que el CD tampoco tiene (no se "
-        "puede reponer, así que no resta).",
+        "SKU activo con stock en la tienda (> 0). El stock del CD no cuenta: si vendió y no "
+        "tiene stock es quiebre, aunque el CD tampoco lo tenga.",
     ),
     (
         "Disponibilidad",
@@ -128,8 +129,8 @@ DEFINICIONES = [
     ),
     ("Con tránsito", "Cuenta además la talla que ya va en camino (pedidos en tránsito)."),
     ("Después del envío", "Disponibilidad si se recibe lo que propone esta corrida."),
-    ("Ponderada por venta", "Cada SKU pesa por su venta de 12 semanas."),
-    ("Tallas en quiebre", "SKU activos sin stock que el CD sí tiene."),
+    ("Ponderada por venta", "Cada SKU pesa por su venta de 8 semanas."),
+    ("Tallas en quiebre", "SKU activos sin stock en la tienda (tenga o no stock el CD)."),
     ("Semanas de cobertura", "(Stock + tránsito) / demanda semanal estimada."),
     ("Estado", "Óptima ≥ 93 %, En alerta 90–93 %, Crítica < 90 % (como el velocímetro)."),
 ]

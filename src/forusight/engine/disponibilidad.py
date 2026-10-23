@@ -1,18 +1,15 @@
-"""Disponibilidad (fill de tallas) como la mide Forus.
+"""Disponibilidad del retail (velocímetro) como la mide Forus.
 
-Por tienda × modelo-color que la tienda maneja (tiene stock o vendió en 12 semanas):
+    SKU activo     = tienda × SKU que vendió en las últimas 8 semanas cerradas
+                     (``disponibilidad.semanas_venta_activo``; columna ``venta_8s``)
+    SKU disponible = SKU activo con stock en la tienda (> 0)
+    disponibilidad = SKU disponibles / SKU activos      (quiebre = 1 − disponibilidad)
 
-    talla disponible  = tiene stock en la tienda
-                        o el CD tampoco la tiene (una talla que no existe en el CD no se
-                        puede reponer, así que no le resta disponibilidad al modelo)
-    disp. del modelo  = tallas disponibles / tallas del modelo en la tienda
+El stock del CD no cuenta: un SKU que vendió y no tiene stock en la tienda es quiebre aunque
+el CD tampoco lo tenga. Un SKU sin venta en las 8 semanas no se mide, aunque tenga stock.
+Ejemplo: 10 SKU con venta, 5 con stock en la tienda → 50 %.
 
-Ejemplo: modelo de 12 tallas con 3 tallas en quiebre que el CD no tiene → 100 %.
-Si el CD sí tiene esas 3 tallas → 9 / 12 = 75 % (y se corrige con el envío).
-
-La disponibilidad de la tienda promedia sus modelos ponderando por la venta del modelo, y la
-total promedia las tiendas ponderando por su flujo (venta de 12 semanas). Se calcula antes
-(stock actual) y después del envío (stock + cantidad).
+Se calcula hoy (stock), con tránsito (stock + tránsito) y después del envío (stock + cantidad).
 """
 
 from __future__ import annotations
@@ -20,88 +17,20 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-KEY = ["tienda_id", "modelo_color_id"]
-
-
-def por_modelo(detalle: pd.DataFrame) -> pd.DataFrame:
-    """Una fila por tienda × modelo-color manejado: disponibilidad antes y después."""
-    d = detalle[
-        [
-            "tienda_id",
-            "modelo_color_id",
-            "stock_tienda",
-            "cantidad",
-            "stock_cd_disponible",
-            "venta_12s",
-        ]
-    ].copy()
-    stock = d["stock_tienda"].fillna(0).to_numpy(dtype=float)
-    cant = d["cantidad"].fillna(0).to_numpy(dtype=float)
-    sin_cd = d["stock_cd_disponible"].fillna(0).to_numpy(dtype=float) <= 0
-    d["ok_antes"] = (stock > 0) | sin_cd
-    d["ok_despues"] = (stock + cant > 0) | sin_cd
-    d["con_stock"] = stock > 0
-    g = d.groupby(KEY, sort=False).agg(
-        tallas=("ok_antes", "size"),
-        ok_antes=("ok_antes", "sum"),
-        ok_despues=("ok_despues", "sum"),
-        con_stock=("con_stock", "sum"),
-        venta=("venta_12s", "sum"),
-    )
-    g = g.loc[(g["con_stock"] > 0) | (g["venta"] > 0)]  # modelos que la tienda maneja
-    g["disp_antes"] = g["ok_antes"] / g["tallas"]
-    g["disp_despues"] = g["ok_despues"] / g["tallas"]
-    return g.reset_index()
-
-
-def _prom(x: pd.Series, w: pd.Series) -> float:
-    w = w.clip(lower=0)
-    return float(np.average(x, weights=w)) if w.sum() > 0 else float(x.mean()) if len(x) else 1.0
-
-
-def por_tienda(detalle: pd.DataFrame) -> pd.DataFrame:
-    m = por_modelo(detalle)
-    if m.empty:
-        return pd.DataFrame(columns=["tienda_id", "disp_antes", "disp_despues", "flujo", "modelos"])
-    peso = m["venta"] + 1  # un modelo sin venta también cuenta, con peso mínimo
-    m = m.assign(_w=peso, _a=m["disp_antes"] * peso, _d=m["disp_despues"] * peso)
-    t = m.groupby("tienda_id").agg(
-        _a=("_a", "sum"),
-        _d=("_d", "sum"),
-        _w=("_w", "sum"),
-        flujo=("venta", "sum"),
-        modelos=("modelo_color_id", "size"),
-    )
-    t["disp_antes"] = t["_a"] / t["_w"]
-    t["disp_despues"] = t["_d"] / t["_w"]
-    return t.drop(columns=["_a", "_d", "_w"]).reset_index()
-
-
-def total(detalle: pd.DataFrame) -> dict:
-    """Disponibilidad total (ponderada por flujo de cada tienda) antes y después del envío."""
-    t = por_tienda(detalle)
-    if t.empty:
-        return {"antes": 1.0, "despues": 1.0, "tiendas": 0}
-    w = t["flujo"] + 1
-    return {
-        "antes": _prom(t["disp_antes"], w),
-        "despues": _prom(t["disp_despues"], w),
-        "tiendas": int(len(t)),
-    }
-
-
 #: Disponibilidad: la meta es 100 %; el mínimo aceptable es 92 % (quiebre ≤ 8 %).
 META = 1.0
 MINIMO = 0.92
 
 
+def _venta_activo(d: pd.DataFrame) -> pd.Series:
+    """Venta que define el SKU activo: 8 semanas; corridas sin la columna usan 12 semanas."""
+    col = "venta_8s" if "venta_8s" in d else "venta_12s"
+    return d[col].fillna(0).astype(float)
+
+
 def activos(detalle: pd.DataFrame) -> pd.DataFrame:
-    """SKU activos (los que cuenta :func:`kpis`): tallas de modelos que la tienda maneja, con
-    stock o planificadas (stock objetivo > 0)."""
-    d = detalle.merge(por_modelo(detalle)[KEY], on=KEY)
-    if "stock_objetivo" in d:  # sólo tallas planificadas (o con stock)
-        d = d.loc[(d["stock_tienda"].fillna(0) > 0) | (d["stock_objetivo"].fillna(0) > 0)]
-    return d.reset_index(drop=True)
+    """SKU activos (los que cuenta :func:`kpis`): tienda × SKU con venta en 8 semanas."""
+    return detalle.loc[_venta_activo(detalle) > 0].reset_index(drop=True)
 
 
 #: Columnas por SKU activo que guarda la corrida para el detalle de disponibilidad.
@@ -114,6 +43,7 @@ COLUMNAS_SKU = [
     "stock_transito",
     "cantidad",
     "stock_cd_disponible",
+    "venta_8s",
     "venta_12s",
     "demanda_semanal",
 ]
@@ -123,6 +53,8 @@ def sku_activos(detalle: pd.DataFrame) -> pd.DataFrame:
     """SKU activos con lo necesario para recalcular la disponibilidad por tienda (pocas
     columnas: se guarda en el resultado de la corrida para todo el retail)."""
     d = activos(detalle)
+    if "venta_8s" not in d:
+        d = d.assign(venta_8s=_venta_activo(d))
     for c in COLUMNAS_SKU:
         if c not in d:
             d[c] = 0.0 if c not in ("talla",) else ""
@@ -131,24 +63,33 @@ def sku_activos(detalle: pd.DataFrame) -> pd.DataFrame:
 
 def _flags(d: pd.DataFrame) -> pd.DataFrame:
     stock = d["stock_tienda"].fillna(0).astype(float)
-    trans = d["stock_transito"].fillna(0).astype(float)
+    trans = (
+        d["stock_transito"].fillna(0).astype(float)
+        if "stock_transito" in d
+        else pd.Series(0.0, index=d.index)
+    )
     cant = d["cantidad"].fillna(0).astype(float)
-    sin_cd = d["stock_cd_disponible"].fillna(0).astype(float) <= 0
+    dem = (
+        d["demanda_semanal"].fillna(0).astype(float)
+        if "demanda_semanal" in d
+        else pd.Series(0.0, index=d.index)
+    )
     return d.assign(
-        ok_antes=(stock > 0) | sin_cd,
-        ok_transito=(stock + trans > 0) | sin_cd,
-        ok_despues=(stock + cant > 0) | sin_cd,
-        quiebre=~((stock > 0) | sin_cd),
-        quiebre_se_repone=~((stock > 0) | sin_cd) & (cant > 0),
-        _venta=d["venta_12s"].fillna(0).astype(float),
+        ok_antes=stock > 0,
+        ok_transito=stock + trans > 0,
+        ok_despues=stock + cant > 0,
+        quiebre=stock <= 0,
+        quiebre_se_repone=(stock <= 0) & (cant > 0),
+        _venta=_venta_activo(d),
         _cob=stock + trans,
-        _dem=d["demanda_semanal"].fillna(0).astype(float),
+        _cant=cant,
+        _dem=dem,
     )
 
 
 def por_tienda_kpis(skus: pd.DataFrame) -> pd.DataFrame:
     """Disponibilidad por tienda con las mismas cuentas que el velocímetro (:func:`kpis`):
-    sumando sus tallas activas y disponibles se obtiene exactamente el total."""
+    sumando sus SKU activos y disponibles se obtiene exactamente el total."""
     cols = [
         "tienda_id",
         "activos",
@@ -205,7 +146,7 @@ def kpis_skus(skus: pd.DataFrame) -> dict:
 
 
 def quiebres(skus: pd.DataFrame) -> pd.DataFrame:
-    """Tallas activas en quiebre (sin stock y el CD sí la tiene), con lo que se envía hoy."""
+    """SKU activos en quiebre (vendieron y no tienen stock en la tienda), con lo que se envía."""
     if skus is None or skus.empty:
         return pd.DataFrame(columns=COLUMNAS_SKU)
     d = _flags(skus)
@@ -213,38 +154,28 @@ def quiebres(skus: pd.DataFrame) -> pd.DataFrame:
 
 
 def kpis(detalle: pd.DataFrame) -> dict:
-    """KPI del piloto sobre los SKU activos (de modelos que la tienda maneja).
+    """KPI sobre los SKU activos (venta en 8 semanas).
 
-    * disponibilidad simple = SKU disponibles / SKU activos (quiebre = 1 − disponibilidad);
-    * disponibilidad ponderada = misma cuenta ponderando cada SKU por su venta de 12 semanas;
-    * disponibilidad con tránsito = además cuenta la talla que ya va en camino;
+    * disponibilidad simple = SKU con stock en la tienda / SKU activos;
+    * disponibilidad ponderada = misma cuenta ponderando cada SKU por su venta de 8 semanas;
+    * disponibilidad con tránsito = además cuenta el SKU que ya va en camino;
     * WOS (semanas de cobertura) = (stock + tránsito [+ envío]) / demanda semanal.
-    SKU activo = talla de un modelo que la tienda maneja, con stock o con stock objetivo
-    (planificada): una talla que no se planifica para la tienda (objetivo 0) no se repone y
-    no cuenta como quiebre. Un SKU sin stock que el CD tampoco tiene tampoco cuenta.
     """
     d = activos(detalle)
     if d.empty:
         return {"activos": 0}
-    stock = d["stock_tienda"].fillna(0).to_numpy(dtype=float)
-    trans = d.get("stock_transito", pd.Series(0.0, index=d.index)).fillna(0).to_numpy(dtype=float)
-    cant = d["cantidad"].fillna(0).to_numpy(dtype=float)
-    sin_cd = d["stock_cd_disponible"].fillna(0).to_numpy(dtype=float) <= 0
-    venta = d["venta_12s"].fillna(0).to_numpy(dtype=float)
-    dem = d["demanda_semanal"].fillna(0).to_numpy(dtype=float)
-    ok_a = (stock > 0) | sin_cd
-    ok_d = (stock + cant > 0) | sin_cd
-    w = venta if venta.sum() > 0 else np.ones_like(venta)
-    dem_t = dem.sum()
+    f = _flags(d)
+    w = f["_venta"] if f["_venta"].sum() > 0 else pd.Series(1.0, index=f.index)
+    dem_t = f["_dem"].sum()
     return {
-        "activos": int(len(d)),
-        "simple_antes": float(ok_a.mean()),
-        "simple_despues": float(ok_d.mean()),
-        "con_transito_antes": float(((stock + trans > 0) | sin_cd).mean()),
-        "ponderada_antes": float(np.average(ok_a, weights=w)),
-        "ponderada_despues": float(np.average(ok_d, weights=w)),
-        "wos_antes": float((stock + trans).sum() / dem_t) if dem_t > 0 else float("nan"),
-        "wos_despues": float((stock + trans + cant).sum() / dem_t) if dem_t > 0 else float("nan"),
+        "activos": int(len(f)),
+        "simple_antes": float(f["ok_antes"].mean()),
+        "simple_despues": float(f["ok_despues"].mean()),
+        "con_transito_antes": float(f["ok_transito"].mean()),
+        "ponderada_antes": float(np.average(f["ok_antes"], weights=w)),
+        "ponderada_despues": float(np.average(f["ok_despues"], weights=w)),
+        "wos_antes": float(f["_cob"].sum() / dem_t) if dem_t > 0 else float("nan"),
+        "wos_despues": float((f["_cob"] + f["_cant"]).sum() / dem_t) if dem_t > 0 else float("nan"),
     }
 
 

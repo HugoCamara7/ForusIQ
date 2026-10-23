@@ -35,6 +35,7 @@ COLUMNAS_SALIDA = [
     "stock_tienda",
     "stock_transito",
     "venta_4s",
+    "venta_8s",
     "venta_12s",
     "demanda_semanal",
     "stock_objetivo",
