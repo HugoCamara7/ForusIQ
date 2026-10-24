@@ -5,8 +5,8 @@ así la suma de las tiendas da exactamente el valor del velocímetro. Hojas:
 
 * «Por tienda»: SKU activos, disponibles, quiebres y disponibilidad (hoy, con tránsito,
   después del envío y ponderada por venta) de cada tienda, con el total del retail arriba;
-* «Tallas en quiebre»: cada SKU activo (vendió en 8 semanas) sin stock en la tienda, y si hoy
-  se envía;
+* «Tallas en quiebre»: cada SKU activo (vendió en 8 semanas) sin stock en la tienda que el CD
+  sí tiene, y si hoy se envía;
 * «Cómo se calcula»: las definiciones.
 """
 
@@ -114,13 +114,14 @@ def tablas(res, tiendas: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.D
 DEFINICIONES = [
     (
         "SKU activo",
-        "Tienda × SKU (talla) que vendió en las últimas 8 semanas cerradas. Un SKU sin venta "
-        "en 8 semanas no se mide, aunque tenga stock.",
+        "Tienda × SKU (talla) que vendió en las últimas 8 semanas cerradas y que se repone en "
+        "esa tienda (no bloqueado ni de temporada que no se repone). Un SKU sin venta en 8 "
+        "semanas no se mide, aunque tenga stock.",
     ),
     (
         "SKU disponible",
-        "SKU activo con stock en la tienda (> 0). El stock del CD no cuenta: si vendió y no "
-        "tiene stock es quiebre, aunque el CD tampoco lo tenga.",
+        "SKU activo con stock en la tienda (> 0), o que el CD tampoco tiene (no se puede "
+        "reponer, así que no resta).",
     ),
     (
         "Disponibilidad",
@@ -130,7 +131,7 @@ DEFINICIONES = [
     ("Con tránsito", "Cuenta además la talla que ya va en camino (pedidos en tránsito)."),
     ("Después del envío", "Disponibilidad si se recibe lo que propone esta corrida."),
     ("Ponderada por venta", "Cada SKU pesa por su venta de 8 semanas."),
-    ("Tallas en quiebre", "SKU activos sin stock en la tienda (tenga o no stock el CD)."),
+    ("Tallas en quiebre", "SKU activos sin stock en la tienda que el CD sí tiene."),
     ("Semanas de cobertura", "(Stock + tránsito) / demanda semanal estimada."),
     ("Estado", "Óptima ≥ 93 %, En alerta 90–93 %, Crítica < 90 % (como el velocímetro)."),
 ]

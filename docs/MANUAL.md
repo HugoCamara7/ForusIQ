@@ -174,14 +174,15 @@ por qué.
 | Tiendas con envío | tiendas de la ruta con al menos 1 unidad |
 | Modelos color | modelos-color con al menos un envío |
 | Stock CD | Σ Stock en CD (disponible) |
-| **Disponibilidad del retail** | SKU con venta en 8 semanas y stock en tienda ÷ SKU con venta en 8 semanas (todas las tiendas) |
+| **Disponibilidad del retail** | SKU activos disponibles ÷ SKU activos (todas las tiendas) |
 | Con tránsito | igual, contando la talla que ya va en camino |
 | Después del envío | igual, sumando lo que se envía hoy |
 
-- **SKU activo:** tienda × SKU (talla) que vendió en las últimas 8 semanas cerradas. Un SKU sin
-  venta en 8 semanas no se mide, aunque tenga stock.
-- **Disponible:** tiene stock en la tienda. El CD no cuenta: un SKU que vendió y no tiene stock
-  es quiebre aunque el CD tampoco lo tenga (ej.: 10 SKU con venta, 5 con stock → 50 %).
+- **SKU activo:** tienda × SKU (talla) que vendió en las últimas 8 semanas cerradas y que se
+  repone en esa tienda (no bloqueado ni de temporada que no se repone). Un SKU sin venta en 8
+  semanas no se mide, aunque tenga stock.
+- **Disponible:** tiene stock en la tienda, o el CD tampoco lo tiene (no se puede reponer, así
+  que no resta).
 - Colores del velocímetro: rojo < 90 %, naranja 90–93 %, verde ≥ 93 % (meta).
 
 Recuadros de aviso:
