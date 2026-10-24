@@ -1,17 +1,18 @@
-"""Disponibilidad como la mide Forus: SKU con venta en 8 semanas que tienen stock en la tienda."""
+"""Disponibilidad como la mide Forus: SKU con venta en 8 semanas que se reponen en la tienda;
+disponible = con stock en la tienda o sin stock en el CD (no se puede reponer)."""
 
 import pandas as pd
 
 from forusight.engine import disponibilidad as D
 
-#: Ejemplo de Forus (22/10): venta total de 8 semanas, stock en tienda y stock del CD por SKU.
+#: Venta total de 8 semanas, stock en tienda y stock del CD por SKU.
 EJEMPLO = [
     (17, 1, 100),
     (10, 0, 50),
     (12, 0, 50),
     (16, 0, 1),
     (0, 1, 0),  # sin venta: no se mide aunque tenga stock
-    (15, 0, 0),  # vendió y no hay en ningún lado: es quiebre aunque el CD no tenga
+    (15, 0, 0),  # vendió y no hay en ningún lado: no se puede reponer, no resta
     (11, 1, 250),
     (0, 0, 1),
     (9, 1, 600),
@@ -36,28 +37,35 @@ def _detalle(filas, cantidad=0, tienda="T1"):
                 "stock_transito": 0,
                 "cantidad": cantidad if stock == 0 and cd > 0 else 0,
                 "demanda_semanal": 0.5,
+                "motivo_codigo": "NO_SIN_NECESIDAD",
             }
             for i, (venta, stock, cd) in enumerate(filas)
         ]
     )
 
 
-def test_ejemplo_forus_da_50_por_ciento():
+def test_ejemplo_sin_cd_cuenta_como_disponible():
     k = D.kpis(_detalle(EJEMPLO))
     assert k["activos"] == 10  # SKU con venta en 8 semanas
-    assert k["simple_antes"] == 0.5  # 5 con stock en tienda / 10
+    assert k["simple_antes"] == 0.6  # 5 con stock + 1 que el CD tampoco tiene / 10
 
 
-def test_el_cd_no_cuenta_y_el_envio_recupera_solo_lo_que_hay_en_el_cd():
+def test_el_envio_recupera_los_quiebres_que_el_cd_tiene():
     k = D.kpis(_detalle(EJEMPLO, cantidad=1))
-    assert k["simple_antes"] == 0.5
-    assert k["simple_despues"] == 0.9  # 4 quiebres con CD se reponen; el de CD 0 sigue en quiebre
+    assert k["simple_antes"] == 0.6 and k["simple_despues"] == 1.0
 
 
-def test_quiebres_incluyen_los_que_el_cd_no_tiene():
+def test_bloqueados_y_fuera_de_temporada_no_se_miden():
+    d = _detalle(EJEMPLO)
+    d.loc[1, "motivo_codigo"] = "NO_BLOQUEO_TIENDA"
+    d.loc[2, "motivo_codigo"] = "NO_TEMPORADA"
+    k = D.kpis(d)
+    assert k["activos"] == 8 and k["simple_antes"] == 6 / 8
+
+
+def test_quiebres_son_los_que_el_cd_si_tiene():
     q = D.quiebres(D.sku_activos(_detalle(EJEMPLO)))
-    assert len(q) == 5
-    assert (q["stock_cd_disponible"] == 0).sum() == 1
+    assert len(q) == 4 and (q["stock_cd_disponible"] > 0).all()
 
 
 def test_por_tienda_cuadra_con_el_total():
@@ -79,4 +87,4 @@ def test_con_transito_cuenta_lo_que_va_en_camino():
 
 def test_corridas_sin_venta_8s_usan_12_semanas():
     d = _detalle(EJEMPLO).drop(columns="venta_8s")
-    assert D.kpis(d)["simple_antes"] == 0.5
+    assert D.kpis(d)["simple_antes"] == 0.6

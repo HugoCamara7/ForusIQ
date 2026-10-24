@@ -211,7 +211,7 @@ with c2, st.container(key="card_disponibilidad"):
                 if r.get("disponibilidad_retail_transito") is not None
                 else ""
             )
-            + f"Después del envío: {despues:.1%} · {activos:,} SKU con venta en 8 semanas · meta ≥ 93 %",
+            + f"Después del envío: {despues:.1%} · {activos:,} SKU activos (venta 8 semanas) · meta ≥ 93 %",
         )
     )
     # Icono chico bajo el velocímetro: el detalle por tienda (y las tallas en quiebre).

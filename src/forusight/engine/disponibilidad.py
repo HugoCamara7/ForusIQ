@@ -1,13 +1,14 @@
 """Disponibilidad del retail (velocímetro) como la mide Forus.
 
     SKU activo     = tienda × SKU que vendió en las últimas 8 semanas cerradas
-                     (``disponibilidad.semanas_venta_activo``; columna ``venta_8s``)
-    SKU disponible = SKU activo con stock en la tienda (> 0)
+                     (``disponibilidad.semanas_venta_activo``; columna ``venta_8s``) y que
+                     Forusight repone en esa tienda (no bloqueado ni de temporada que no se
+                     repone: motivos NO_BLOQUEO_TIENDA y NO_TEMPORADA)
+    SKU disponible = SKU activo con stock en la tienda (> 0), o que el CD tampoco tiene
+                     (no se puede reponer, así que no resta)
     disponibilidad = SKU disponibles / SKU activos      (quiebre = 1 − disponibilidad)
 
-El stock del CD no cuenta: un SKU que vendió y no tiene stock en la tienda es quiebre aunque
-el CD tampoco lo tenga. Un SKU sin venta en las 8 semanas no se mide, aunque tenga stock.
-Ejemplo: 10 SKU con venta, 5 con stock en la tienda → 50 %.
+Un SKU sin venta en las 8 semanas no se mide, aunque tenga stock.
 
 Se calcula hoy (stock), con tránsito (stock + tránsito) y después del envío (stock + cantidad).
 """
@@ -28,9 +29,18 @@ def _venta_activo(d: pd.DataFrame) -> pd.Series:
     return d[col].fillna(0).astype(float)
 
 
+#: Motivos de un SKU que Forusight no repone en la tienda: no se mide en la disponibilidad.
+NO_SE_REPONE = ("NO_BLOQUEO_TIENDA", "NO_TEMPORADA")
+
+
 def activos(detalle: pd.DataFrame) -> pd.DataFrame:
-    """SKU activos (los que cuenta :func:`kpis`): tienda × SKU con venta en 8 semanas."""
-    return detalle.loc[_venta_activo(detalle) > 0].reset_index(drop=True)
+    """SKU activos (los que cuenta :func:`kpis`): tienda × SKU con venta en 8 semanas que no
+    está bloqueado ni fuera de temporada para la tienda."""
+    activo = _venta_activo(detalle) > 0
+    for col in ("motivo_bloqueo", "motivo_codigo"):
+        if col in detalle:
+            activo &= ~detalle[col].isin(NO_SE_REPONE)
+    return detalle.loc[activo].reset_index(drop=True)
 
 
 #: Columnas por SKU activo que guarda la corrida para el detalle de disponibilidad.
@@ -74,12 +84,13 @@ def _flags(d: pd.DataFrame) -> pd.DataFrame:
         if "demanda_semanal" in d
         else pd.Series(0.0, index=d.index)
     )
+    sin_cd = d["stock_cd_disponible"].fillna(0).astype(float) <= 0
     return d.assign(
-        ok_antes=stock > 0,
-        ok_transito=stock + trans > 0,
-        ok_despues=stock + cant > 0,
-        quiebre=stock <= 0,
-        quiebre_se_repone=(stock <= 0) & (cant > 0),
+        ok_antes=(stock > 0) | sin_cd,
+        ok_transito=(stock + trans > 0) | sin_cd,
+        ok_despues=(stock + cant > 0) | sin_cd,
+        quiebre=~((stock > 0) | sin_cd),
+        quiebre_se_repone=~((stock > 0) | sin_cd) & (cant > 0),
         _venta=_venta_activo(d),
         _cob=stock + trans,
         _cant=cant,
@@ -146,7 +157,8 @@ def kpis_skus(skus: pd.DataFrame) -> dict:
 
 
 def quiebres(skus: pd.DataFrame) -> pd.DataFrame:
-    """SKU activos en quiebre (vendieron y no tienen stock en la tienda), con lo que se envía."""
+    """SKU activos en quiebre (vendieron, sin stock en la tienda y el CD sí tiene), con lo que
+    se envía hoy."""
     if skus is None or skus.empty:
         return pd.DataFrame(columns=COLUMNAS_SKU)
     d = _flags(skus)
@@ -156,7 +168,7 @@ def quiebres(skus: pd.DataFrame) -> pd.DataFrame:
 def kpis(detalle: pd.DataFrame) -> dict:
     """KPI sobre los SKU activos (venta en 8 semanas).
 
-    * disponibilidad simple = SKU con stock en la tienda / SKU activos;
+    * disponibilidad simple = SKU con stock en la tienda (o sin stock en el CD) / SKU activos;
     * disponibilidad ponderada = misma cuenta ponderando cada SKU por su venta de 8 semanas;
     * disponibilidad con tránsito = además cuenta el SKU que ya va en camino;
     * WOS (semanas de cobertura) = (stock + tránsito [+ envío]) / demanda semanal.
