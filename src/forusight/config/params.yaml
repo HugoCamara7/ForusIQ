@@ -9,6 +9,7 @@ horizonte:
 disponibilidad:
   dias_min_exposicion: 14       # < 14 días con stock y sin venta => EXPOSICION_INSUFICIENTE
   quiebre_fraccion_core: 0.5    # modelo-color en QUIEBRE si >= 50% de sus tallas core están bajo el mínimo
+  semanas_venta_activo: 8       # velocímetro: SKU activo = vendió en las últimas 8 semanas; disponible = stock en tienda > 0
 
 demanda:
   exposicion_minima: 0.3        # venta / max(expo, 0.3)

@@ -65,6 +65,8 @@ class HorizonteParams(_Section):
 class DisponibilidadParams(_Section):
     dias_min_exposicion: int = Field(14, ge=1)
     quiebre_fraccion_core: float = Field(0.5, gt=0, le=1)
+    # Velocímetro: SKU activo = vendió en las últimas N semanas cerradas en la tienda.
+    semanas_venta_activo: int = Field(8, ge=1, le=16)
 
 
 class DemandaParams(_Section):
